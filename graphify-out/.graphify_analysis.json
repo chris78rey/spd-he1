@@ -1,0 +1,187 @@
+{
+  "communities": {
+    "0": [
+      "src_app",
+      "src_app_activedoc",
+      "src_app_activefolder",
+      "src_app_bulkdelete",
+      "src_app_bulkfavorite",
+      "src_app_confirmmove",
+      "src_app_createspace",
+      "src_app_createspacedialog",
+      "src_app_customspaces",
+      "src_app_dbpromise",
+      "src_app_docs",
+      "src_app_download",
+      "src_app_dragging",
+      "src_app_folders",
+      "src_app_handleshortcut",
+      "src_app_loading",
+      "src_app_movedialog",
+      "src_app_movetarget",
+      "src_app_newspacename",
+      "src_app_ondragenter",
+      "src_app_ondragleave",
+      "src_app_openpreview",
+      "src_app_preview",
+      "src_app_previewurl",
+      "src_app_query",
+      "src_app_removedoc",
+      "src_app_samples",
+      "src_app_searchinput",
+      "src_app_selectall",
+      "src_app_selectedids",
+      "src_app_snackbar",
+      "src_app_sortby",
+      "src_app_spaces",
+      "src_app_startmove",
+      "src_app_title",
+      "src_app_togglefavorite",
+      "src_app_toggleselected",
+      "src_app_typefilter",
+      "src_app_uploadinput",
+      "src_app_view",
+      "src_app_visibledocs"
+    ],
+    "1": [
+      "package",
+      "package_dependencies",
+      "package_dependencies_idb",
+      "package_dependencies_mdi_font",
+      "package_dependencies_vue",
+      "package_dependencies_vuetify",
+      "package_name",
+      "package_private",
+      "package_type",
+      "package_version",
+      "ref_idb",
+      "ref_mdi_font",
+      "ref_vite",
+      "ref_vitejs_plugin_vue",
+      "ref_vue",
+      "ref_vuetify",
+      "src_main",
+      "src_main_vuetify",
+      "src_style",
+      "vite_config"
+    ],
+    "2": [
+      "accessible_responsive",
+      "batch_organization",
+      "complete_action",
+      "error_recovery",
+      "find_recover",
+      "folio_product",
+      "measure_validate",
+      "primary_outcome",
+      "privacy_persistence",
+      "recognize_before_action",
+      "save_confidently",
+      "vuetify_patterns"
+    ],
+    "3": [
+      "package_scripts",
+      "package_scripts_build",
+      "package_scripts_dev",
+      "package_scripts_preview"
+    ],
+    "4": [
+      "package_devdependencies",
+      "package_devdependencies_vite",
+      "package_devdependencies_vitejs_plugin_vue"
+    ],
+    "5": [
+      "src_app_ondrop",
+      "src_app_prettysize",
+      "src_app_upload"
+    ]
+  },
+  "cohesion": {
+    "0": 0.04878048780487805,
+    "1": 0.11578947368421053,
+    "2": 0.24242424242424243,
+    "3": 0.5,
+    "4": 0.6666666666666666,
+    "5": 0.6666666666666666
+  },
+  "gods": [
+    {
+      "id": "primary_outcome",
+      "label": "Primary user outcome",
+      "degree": 5
+    },
+    {
+      "id": "find_recover",
+      "label": "Find and recover documents",
+      "degree": 5
+    },
+    {
+      "id": "package_scripts",
+      "label": "scripts",
+      "degree": 4
+    },
+    {
+      "id": "ref_vue",
+      "label": "vue",
+      "degree": 3
+    },
+    {
+      "id": "src_app_upload",
+      "label": "upload()",
+      "degree": 3
+    },
+    {
+      "id": "save_confidently",
+      "label": "Save documents confidently",
+      "degree": 3
+    },
+    {
+      "id": "batch_organization",
+      "label": "Batch organization",
+      "degree": 3
+    },
+    {
+      "id": "error_recovery",
+      "label": "Recover from mistakes",
+      "degree": 3
+    },
+    {
+      "id": "vuetify_patterns",
+      "label": "Vuetify interaction patterns",
+      "degree": 3
+    },
+    {
+      "id": "measure_validate",
+      "label": "Measure and validate",
+      "degree": 3
+    }
+  ],
+  "surprises": [],
+  "questions": [
+    {
+      "type": "bridge_node",
+      "question": "Why does `vue` connect `Community 1` to `Community 0`?",
+      "why": "High betweenness centrality (0.139) - this node is a cross-community bridge."
+    },
+    {
+      "type": "bridge_node",
+      "question": "Why does `idb` connect `Community 1` to `Community 0`?",
+      "why": "High betweenness centrality (0.132) - this node is a cross-community bridge."
+    },
+    {
+      "type": "isolated_nodes",
+      "question": "What connects `name`, `version`, `private` to the rest of the system?",
+      "why": "43 weakly-connected nodes found - possible documentation gaps or missing edges."
+    },
+    {
+      "type": "low_cohesion",
+      "question": "Should `Community 0` be split into smaller, more focused modules?",
+      "why": "Cohesion score 0.04878048780487805 - nodes in this community are weakly interconnected."
+    },
+    {
+      "type": "low_cohesion",
+      "question": "Should `Community 1` be split into smaller, more focused modules?",
+      "why": "Cohesion score 0.11578947368421053 - nodes in this community are weakly interconnected."
+    }
+  ]
+}

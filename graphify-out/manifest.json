@@ -1,0 +1,74 @@
+{
+  ".codex/hooks.json": {
+    "mtime": 1790712588.3570292,
+    "seen": 1790712598.408808,
+    "ast_hash": "00c047a3829b42e3be8495cb2a853cda",
+    "semantic_hash": "00c047a3829b42e3be8495cb2a853cda"
+  },
+  "package.json": {
+    "mtime": 1790714315.5862827,
+    "seen": 1790714406.1790369,
+    "ast_hash": "41f66247a9690fb51640c262f0359405",
+    "semantic_hash": ""
+  },
+  "src/App.vue": {
+    "mtime": 1790716648.9720533,
+    "seen": 1790716670.1407828,
+    "ast_hash": "10a04d80cb246eff69fd87ca676eff1a",
+    "semantic_hash": ""
+  },
+  "src/main.js": {
+    "mtime": 1790711822.217055,
+    "seen": 1790712598.4088182,
+    "ast_hash": "e83eaf359a817abd102a6602f34da10f",
+    "semantic_hash": "e83eaf359a817abd102a6602f34da10f"
+  },
+  "vite.config.js": {
+    "mtime": 1790714315.5862827,
+    "seen": 1790714406.1790442,
+    "ast_hash": "3a97d115189495c1320280cff46c6c45",
+    "semantic_hash": ""
+  },
+  "AGENTS.md": {
+    "mtime": 1790712639.0133576,
+    "seen": 1790712712.9048753,
+    "ast_hash": "0ccf21e54eba618647be985f81617dfb",
+    "semantic_hash": ""
+  },
+  "PRINCIPIOS_DE_PRODUCTO.md": {
+    "mtime": 1790712564.3108733,
+    "seen": 1790712712.9048777,
+    "ast_hash": "a55fc368d0878700c93f40bbf5c27171",
+    "semantic_hash": ""
+  },
+  "index.html": {
+    "mtime": 1790711822.217055,
+    "seen": 1790712712.904879,
+    "ast_hash": "5463116d7e2d724aca2bcba60e8f338d",
+    "semantic_hash": ""
+  },
+  "cmd/server/main.go": {
+    "mtime": 1790716660.0751235,
+    "seen": 1790716670.140771,
+    "ast_hash": "31f0c8251b57e3e60a2d3e27b6757618",
+    "semantic_hash": ""
+  },
+  "go.mod": {
+    "mtime": 1790714292.922135,
+    "seen": 1790714406.179034,
+    "ast_hash": "135d724b98701e4b9984cbd3eb7499af",
+    "semantic_hash": ""
+  },
+  "README.md": {
+    "mtime": 1790716648.9710531,
+    "seen": 1790716670.140792,
+    "ast_hash": "3ab054a9f4688ad58bdc41464cde3b00",
+    "semantic_hash": ""
+  },
+  "scripts/install-service.sh": {
+    "mtime": 1790715898.2573507,
+    "seen": 1790715948.022489,
+    "ast_hash": "cb8c48aec536d27ddd40572c76127e48",
+    "semantic_hash": ""
+  }
+}
