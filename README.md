@@ -1,18 +1,22 @@
 # Folio
 
+Las reglas funcionales de estructura ACFSS están en [`requerimientos/07_reglas_estructura_acfss.md`](requerimientos/07_reglas_estructura_acfss.md); las reglas OCR y la matriz de formularios por servicio, en [`requerimientos/08_reglas_ocr_y_checklist.md`](requerimientos/08_reglas_ocr_y_checklist.md). El pipeline lee el catálogo [`reglas_clasificacion.yaml`](reglas_clasificacion.yaml), extrae texto PDF de las páginas 1 y 2 y clasifica por frases confirmadas. Para escaneos necesita `pdftoppm`, Tesseract y el idioma `spa`; si no están disponibles, conserva el documento con prefijo `PENDIENTE_tmp_`.
+
 Folio valida el inicio de sesión contra Oracle desde el backend Go. Escribe el usuario y la contraseña personales de Oracle en la pantalla de acceso. Solo se permite el acceso a usuarios con el rol `SPD_EXTERNOS`, comprobado contra `USER_ROLE_PRIVS`. El navegador no conserva la contraseña y la conexión usada para validar el acceso se cierra al terminar esa comprobación. La sesión autoriza el acceso a Folio durante 8 horas.
 
 Las variables `ORACLE_USER` y `ORACLE_PASSWORD` de `.env` son la cuenta técnica que el backend utiliza para consultar `planilla_digital`; no se usan para iniciar sesión. Esa cuenta necesita permiso `SELECT` sobre la tabla. Los datos del formulario se usan únicamente para validar las credenciales y comprobar el rol `SPD_EXTERNOS`. El servidor también necesita `ORACLE_HOST`, `ORACLE_PORT` y `ORACLE_SERVICE`. `ORACLE_SCHEMA` indica el propietario de `planilla_digital`; en el entorno de prueba es `DIGITALIZACION`.
 
 ## Desarrollo local
 
-1. Copia y completa `.env` con el host, puerto y servicio Oracle.
+1. Copia `.env.example` como `.env` y completa las credenciales y datos de conexión Oracle.
 2. En una terminal, ejecuta `npm run dev:api`.
 3. En otra terminal, ejecuta `npm run dev` y abre la dirección que muestra Vite.
 
 El frontend envía `/api` al backend local en el puerto `8080`. Puedes cambiar ese puerto con `API_PORT`; si lo haces, actualiza también el proxy de Vite. Para publicar Folio, sirve la aplicación y el backend bajo el mismo origen con HTTPS y configura `COOKIE_SECURE=true`.
 
-La opción **Planilla digital** lee `planilla_digital` con la cuenta técnica de `.env` y presenta 10 filas por página, únicamente después de iniciar sesión con un usuario que tenga `SPD_EXTERNOS`. Los documentos de Folio siguen almacenándose en IndexedDB del navegador; no se migran a Oracle.
+La opción **Planilla digital** lee `planilla_digital` con la cuenta técnica de `.env` y presenta 10 filas por página, únicamente después de iniciar sesión con un usuario que tenga `SPD_EXTERNOS`. Cada lote usa un espacio permanente único en `FOLIO_DATA_DIR/expedientes/<JOB-ID>/`: `fuentes/` conserva los originales, `trabajo/<SERVICIO>_<MES>_<AÑO>/` contiene el expediente vigente y `reportes/` guarda la clasificación. La carga, el procesamiento y las reclasificaciones consultan ese mismo espacio; actualizar la clasificación reemplaza `trabajo/` de forma protegida sin tocar `fuentes/`. Los expedientes antiguos se importan copiando fuentes desde `staging/` al procesarlos de nuevo; las rutas anteriores quedan intactas. Los PDFs se clasifican con las reglas confirmadas; empates, archivos desconocidos y duplicados sin fusionar quedan pendientes. Si faltan Poppler (`pdftoppm`) o Tesseract con idioma `spa`, los escaneos quedan pendientes. La fusión de duplicados, la validación completa de documentos obligatorios, la carga parcial y la actualización del estado de digitalización en Oracle aún no están integradas. Los documentos de la biblioteca de Folio siguen almacenándose en IndexedDB del navegador; no se migran a Oracle.
+
+Para generar un paquete de demostración con fixtures de las reglas OCR confirmadas para los trámites de Oracle de septiembre de 2026, ejecuta `go run ./cmd/demo-lote -salida samples/carga-demo-oracle-09-2026-ocr-v3`. El generador consulta únicamente `PDI_TRAMITE` de filas planilladas y crea PDFs sintéticos para HCU 008/053/006/017/018A, cobertura, planilla individual, acta, ambigüedad, empate, documento sin coincidencia, página en blanco y un escaneo raster a ~200 DPI. Incluye `OCR_EXPECTED.csv` con los resultados esperados. Requiere `ffmpeg` para el escaneo. La salida está excluida de Git porque contiene identificadores de Oracle. Los contenidos PDF no son expedientes clínicos reales; las carpetas finales resueltas por Oracle sí usan los nombres de `PDI_PACIENTE`. El generador no modifica la base de datos.
 
 ## Inicio automático en Linux
 

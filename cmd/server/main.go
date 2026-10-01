@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -35,14 +36,19 @@ type session struct {
 }
 
 type server struct {
-	host         string
-	port         string
-	service      string
-	schema       string
-	serviceDB    *sql.DB
-	cookieSecure bool
-	mu           sync.Mutex
-	sessions     map[string]session
+	host          string
+	port          string
+	service       string
+	schema        string
+	serviceDB     *sql.DB
+	dataDir       string
+	stagingDir    string
+	workspacesDir string
+	maxIngest     int64
+	cookieSecure  bool
+	ingestMu      sync.Mutex
+	mu            sync.Mutex
+	sessions      map[string]session
 }
 
 type loginRequest struct {
@@ -53,13 +59,18 @@ type loginRequest struct {
 func main() {
 	_ = godotenv.Load()
 
+	dataDir := envOr("FOLIO_DATA_DIR", "data")
 	s := &server{
-		host:         os.Getenv("ORACLE_HOST"),
-		port:         os.Getenv("ORACLE_PORT"),
-		service:      os.Getenv("ORACLE_SERVICE"),
-		schema:       strings.ToUpper(strings.TrimSpace(os.Getenv("ORACLE_SCHEMA"))),
-		cookieSecure: strings.EqualFold(os.Getenv("COOKIE_SECURE"), "true"),
-		sessions:     make(map[string]session),
+		host:          os.Getenv("ORACLE_HOST"),
+		port:          os.Getenv("ORACLE_PORT"),
+		service:       os.Getenv("ORACLE_SERVICE"),
+		schema:        strings.ToUpper(strings.TrimSpace(os.Getenv("ORACLE_SCHEMA"))),
+		dataDir:       dataDir,
+		stagingDir:    filepath.Join(dataDir, "staging"),
+		workspacesDir: filepath.Join(dataDir, "expedientes"),
+		maxIngest:     envInt64("MAX_INGEST_UPLOAD_BYTES", 2<<30),
+		cookieSecure:  strings.EqualFold(os.Getenv("COOKIE_SECURE"), "true"),
+		sessions:      make(map[string]session),
 	}
 	if s.host == "" || s.port == "" || s.service == "" {
 		log.Fatal("ORACLE_HOST, ORACLE_PORT y ORACLE_SERVICE son obligatorios")
@@ -84,6 +95,18 @@ func main() {
 	mux.HandleFunc("/api/session", s.currentSession)
 	mux.HandleFunc("/api/logout", s.logout)
 	mux.HandleFunc("/api/planilla-digital", s.listPlanillaDigital)
+	mux.HandleFunc("/api/v1/ingesta/lote-dual", s.receiveDualUpload)
+	mux.HandleFunc("/api/v1/ingesta/procesar/", s.processStagedJob)
+	mux.HandleFunc("/api/v1/ingesta/clasificar/", s.reclassifyStagedJob)
+	mux.HandleFunc("/api/v1/ingesta/completar/", s.completeStagedJob)
+	mux.HandleFunc("/api/v1/ingesta/estado/", s.getStagedJobStatus)
+	mux.HandleFunc("/api/v1/ingesta/previsualizar/", s.getIngestPreview)
+	mux.HandleFunc("/api/v1/expedientes", s.listWorkspaces)
+	mux.HandleFunc("/api/v1/expedientes/eliminar/", s.deleteWorkspace)
+	mux.HandleFunc("/api/v1/expedientes/documentos/renombrar/", s.renameWorkspacePDF)
+	mux.HandleFunc("/api/v1/expedientes/documentos/archivo/", s.serveWorkspacePDF)
+	mux.HandleFunc("/api/v1/expedientes/documentos/", s.workspaceDocuments)
+	mux.HandleFunc("/api/v1/expedientes/descargar/", s.downloadWorkspaceZIP)
 	mux.Handle("/", http.FileServer(http.Dir("dist")))
 
 	addr := net.JoinHostPort(envOr("FOLIO_LISTEN_HOST", "127.0.0.1"), envOr("API_PORT", "8080"))
@@ -367,4 +390,17 @@ func envOr(key, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+func envInt64(key string, fallback int64) int64 {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.ParseInt(value, 10, 64)
+	if err != nil || parsed < 1 {
+		log.Printf("%s no es válido; se usará el valor predeterminado", key)
+		return fallback
+	}
+	return parsed
 }

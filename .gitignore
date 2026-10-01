@@ -2,6 +2,10 @@ node_modules/
 dist/
 /bin/
 /server
+/demo-lote
+/data/
+/samples/carga-demo-oracle-09-2026/
+/samples/carga-demo-oracle-09-2026-ocr*/
 .DS_Store
 
 # Local secrets

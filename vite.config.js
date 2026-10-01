@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
+const apiTarget = process.env.FOLIO_API_TARGET || 'http://localhost:8080'
 export default defineConfig({
   plugins: [vue()],
-  server: { proxy: { '/api': 'http://localhost:8080' } },
+  server: { proxy: { '/api': apiTarget } },
 })

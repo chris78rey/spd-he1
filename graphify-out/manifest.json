@@ -1,10 +1,4 @@
 {
-  ".codex/hooks.json": {
-    "mtime": 1790712588.3570292,
-    "seen": 1790712598.408808,
-    "ast_hash": "00c047a3829b42e3be8495cb2a853cda",
-    "semantic_hash": "00c047a3829b42e3be8495cb2a853cda"
-  },
   "package.json": {
     "mtime": 1790714315.5862827,
     "seen": 1790714406.1790369,
@@ -12,9 +6,9 @@
     "semantic_hash": ""
   },
   "src/App.vue": {
-    "mtime": 1790716648.9720533,
-    "seen": 1790716670.1407828,
-    "ast_hash": "10a04d80cb246eff69fd87ca676eff1a",
+    "mtime": 1790862006.7431364,
+    "seen": 1790862065.2294025,
+    "ast_hash": "85bb55aea08b5cecf34a64507c6910c9",
     "semantic_hash": ""
   },
   "src/main.js": {
@@ -24,9 +18,9 @@
     "semantic_hash": "e83eaf359a817abd102a6602f34da10f"
   },
   "vite.config.js": {
-    "mtime": 1790714315.5862827,
-    "seen": 1790714406.1790442,
-    "ast_hash": "3a97d115189495c1320280cff46c6c45",
+    "mtime": 1790780147.6014814,
+    "seen": 1790780173.3904922,
+    "ast_hash": "4098147b2a6374bc7abaee797f3955d9",
     "semantic_hash": ""
   },
   "AGENTS.md": {
@@ -48,27 +42,117 @@
     "semantic_hash": ""
   },
   "cmd/server/main.go": {
-    "mtime": 1790716660.0751235,
-    "seen": 1790716670.140771,
-    "ast_hash": "31f0c8251b57e3e60a2d3e27b6757618",
+    "mtime": 1790860966.9504292,
+    "seen": 1790861248.9821444,
+    "ast_hash": "8050496b2c68ff5bebe26c02be96efc2",
     "semantic_hash": ""
   },
   "go.mod": {
-    "mtime": 1790714292.922135,
-    "seen": 1790714406.179034,
-    "ast_hash": "135d724b98701e4b9984cbd3eb7499af",
+    "mtime": 1790792240.6005747,
+    "seen": 1790792511.7534633,
+    "ast_hash": "b23b92c8107ab9d5a11a3235141ffcc8",
     "semantic_hash": ""
   },
   "README.md": {
-    "mtime": 1790716648.9710531,
-    "seen": 1790716670.140792,
-    "ast_hash": "3ab054a9f4688ad58bdc41464cde3b00",
+    "mtime": 1790794330.130478,
+    "seen": 1790794393.3597004,
+    "ast_hash": "89914eca79fcbc539fdbbc7c47f14d3d",
     "semantic_hash": ""
   },
   "scripts/install-service.sh": {
     "mtime": 1790715898.2573507,
     "seen": 1790715948.022489,
     "ast_hash": "cb8c48aec536d27ddd40572c76127e48",
+    "semantic_hash": ""
+  },
+  "cmd/server/ingesta.go": {
+    "mtime": 1790861234.5761578,
+    "seen": 1790861248.9821413,
+    "ast_hash": "f9c462eefff549ce708a64e162d74941",
+    "semantic_hash": ""
+  },
+  "requerimientos/00req_general.md": {
+    "mtime": 1790785216.4831707,
+    "seen": 1790785255.1658084,
+    "ast_hash": "82d93f6877a1ece87da5042d955595c8",
+    "semantic_hash": ""
+  },
+  "requerimientos/01req_frontend.md": {
+    "mtime": 1790784534.2969115,
+    "seen": 1790784587.4552033,
+    "ast_hash": "8cc9891b71b796911ef0ee4a4fdece5f",
+    "semantic_hash": ""
+  },
+  "requerimientos/02req_oracle.md": {
+    "mtime": 1790784565.059104,
+    "seen": 1790784587.4552054,
+    "ast_hash": "1ff08211c536a89e598d2d6695bbd364",
+    "semantic_hash": ""
+  },
+  "requerimientos/04bandeja.md": {
+    "mtime": 1790778892.5766273,
+    "seen": 1790779606.80916,
+    "ast_hash": "17a98b3b2502e2004c51f5491f41a1d6",
+    "semantic_hash": ""
+  },
+  "requerimientos/04ocr_go.md": {
+    "mtime": 1790786263.2306812,
+    "seen": 1790786758.494868,
+    "ast_hash": "e79bb37ad6eea8c7ef687e8c08cac99e",
+    "semantic_hash": ""
+  },
+  "requerimientos/05req_gestion_objeciones.md": {
+    "mtime": 1790784576.286174,
+    "seen": 1790784587.4552119,
+    "ast_hash": "1b131298ab4a9c83e894afe347f880d6",
+    "semantic_hash": ""
+  },
+  "requerimientos/06req_motor.cierre.md": {
+    "mtime": 1790784534.2999115,
+    "seen": 1790784587.455214,
+    "ast_hash": "8c36747cbf79ec22b5b7d70275f1ef4c",
+    "semantic_hash": ""
+  },
+  "cmd/demo-lote/main.go": {
+    "mtime": 1790786695.071375,
+    "seen": 1790786758.4948168,
+    "ast_hash": "10a2656d30a9aeba374b69d93f0d6a46",
+    "semantic_hash": ""
+  },
+  "requerimientos/07_reglas_estructura_acfss.md": {
+    "mtime": 1790786263.2316813,
+    "seen": 1790786758.4948735,
+    "ast_hash": "9357cbf43c09fdda8a41c95bba1070bd",
+    "semantic_hash": ""
+  },
+  "reglas_clasificacion.yaml": {
+    "mtime": 1790786263.2286813,
+    "seen": 1790786758.4948583,
+    "ast_hash": "d5f89c6422a41db0ec83aec5681f5666",
+    "semantic_hash": ""
+  },
+  "requerimientos/08_reglas_ocr_y_checklist.md": {
+    "mtime": 1790862041.7833617,
+    "seen": 1790862065.2294383,
+    "ast_hash": "b737de231f8c8c81b8aa48b93f49e59b",
+    "semantic_hash": ""
+  },
+  "cmd/server/clasificacion.go": {
+    "mtime": 1790860200.861513,
+    "seen": 1790860212.4418678,
+    "ast_hash": "d4752fc1812709714b10263c9f244ca4",
+    "semantic_hash": ""
+  },
+  "cmd/server/workspace.go": {
+    "mtime": 1790861951.1237788,
+    "seen": 1790862065.229393,
+    "ast_hash": "afae18be466bd8bdf49e578b689ededd",
+    "semantic_hash": ""
+  },
+  "catalogos/codigos_msp.json": {
+    "mtime": 1790861901.401459,
+    "seen": 1790862065.2293675,
+    "ast_hash": "8a9b180f641ab16e6acade0a6a37eba4",
     "semantic_hash": ""
   }
 }
