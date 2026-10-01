@@ -236,10 +236,11 @@ type JobPlanilla struct {
     - Compara la cadena de texto obtenida contra las listas de `palabras_clave` definidas en `reglas_clasificacion.yaml`.
     - Al encontrar la primera coincidencia, asigna el `codigo_msp` correspondiente (ej. `HCU_008.pdf`, `HCU_053.pdf`, `C_COBERTURA.pdf`).
     - **Sin Coincidencia (No Identificado):** Si el texto no coincide por manchas o ilicitud en la imagen, el sistema **no detiene el lote**. Copia el archivo como `PENDIENTE_tmp_a1.pdf` dentro de la carpeta del paciente y actualiza el registro en Oracle con `PDI_ESTADO_DIGITALIZACION = 'REQUIERE_VALIDACION'` para su resolución en el visor manual.
-5. **Regla de Fusión de Repetidos (`merger.go`):**
-    
-    - Si en la planilla de un paciente se clasifican dos o más archivos bajo el mismo código normativo (ej. dos hojas independientes del formulario `HCU_008.pdf`), Go invoca la función de concatenación `pdfcpu.Merge`.
-    - Une las páginas en orden cronológico y genera un único PDF consolidado `HCU_008.pdf` en la carpeta del paciente.
+5. **Documentos reconocidos repetidos:**
+
+    - El primer documento ocupa el nombre MSP canónico (`HCU_008.pdf`); los siguientes reciben sufijos (`HCU_008_1.pdf`, `HCU_008_2.pdf`) y se marcan como pendientes de fusión, sin quedar como documentos no reconocidos.
+    - Desde la carpeta del paciente se revisan, ordenan y fusionan explícitamente. El resultado usa el nombre canónico; las fuentes anteriores se conservan en el expediente privado.
+    - La descarga del ZIP final se habilita cuando se resolvieron todos los grupos pendientes de fusión. El sistema no infiere el orden cronológico de páginas: lo confirma el usuario en la vista de fusión.
 6. **Control de Completitud por Servicio:**
     
     - Compara los formularios encontrados contra la lista de obligatorios traída de Oracle según el `PDI_COD_SERVICIO` (ej. si es Emergencia exige `HCU_008.pdf`; si es Hospitalización exige `HCU_006.pdf`).

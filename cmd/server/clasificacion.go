@@ -46,6 +46,7 @@ type classificationSummary struct {
 	Total                     int                 `json:"total"`
 	Classified                int                 `json:"clasificados"`
 	Pending                   int                 `json:"pendientes"`
+	FusionPending             int                 `json:"fusiones_pendientes"`
 	Vector                    int                 `json:"texto_vectorial"`
 	OCR                       int                 `json:"ocr"`
 	Unreadable                int                 `json:"sin_texto_legible"`
@@ -236,10 +237,10 @@ func runOCR(ctx context.Context, filePath string) (string, error) {
 
 func matchClassification(text string, rules classificationRules) (string, int, bool) {
 	normalized := normalizeOCRText(text)
-	bestCode, bestCount := "", 0
+	bestCode, bestCount, bestSpecificity := "", 0, 0
 	tied := false
 	for _, rule := range rules.Rules {
-		count := 0
+		count, specificity := 0, 0
 		seen := make(map[string]struct{}, len(rule.Keywords))
 		for _, keyword := range rule.Keywords {
 			normalizedKeyword := normalizeOCRText(keyword)
@@ -252,12 +253,17 @@ func matchClassification(text string, rules classificationRules) (string, int, b
 			seen[normalizedKeyword] = struct{}{}
 			if strings.Contains(normalized, normalizedKeyword) {
 				count++
+				specificity += len(normalizedKeyword)
 			}
 		}
 		if count > bestCount {
-			bestCode, bestCount, tied = rule.Code, count, false
-		} else if count > 0 && count == bestCount && rule.Code != bestCode {
-			tied = true
+			bestCode, bestCount, bestSpecificity, tied = rule.Code, count, specificity, false
+		} else if count > 0 && count == bestCount {
+			if specificity > bestSpecificity {
+				bestCode, bestSpecificity, tied = rule.Code, specificity, false
+			} else if specificity == bestSpecificity && rule.Code != bestCode {
+				tied = true
+			}
 		}
 	}
 	return bestCode, bestCount, tied

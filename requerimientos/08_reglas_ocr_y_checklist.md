@@ -37,18 +37,22 @@
 
 ## 2. Catálogo de señales confirmadas
 
-La fuente ejecutable del catálogo es [`../reglas_clasificacion.yaml`](../reglas_clasificacion.yaml). Las frases de cada regla se cuentan como coincidencias exactas distintas; varias apariciones de la misma frase cuentan una sola vez.
+La fuente ejecutable del catálogo es [`../reglas_clasificacion.yaml`](../reglas_clasificacion.yaml). Las frases de cada regla se cuentan como coincidencias exactas distintas; varias apariciones de la misma frase cuentan una sola vez. Gana la regla con más frases coincidentes; si hay empate, gana la que tenga mayor especificidad total de frases (longitud normalizada). Si también empata la especificidad, el documento queda pendiente de revisión.
 
 | Código canónico | Señales discriminatorias y patrones OCR confirmados |
 | --- | --- |
-| `HCU_008.pdf` | `FORMULARIO 008`, `EMERGENCIA`, `MOTIVO DE CONSULTA` |
+| `HCU_008.pdf` | `FORMULARIO 008` (señal específica; no usar `EMERGENCIA` ni `MOTIVO DE CONSULTA` por sí solas) |
 | `HCU_053.pdf` | `FORMULARIO 053`, `REFERENCIA`, `DERIVACION`, `CONTRARREFERENCIA`; discriminador adicional `ESTABLECIMIENTO QUE DERIVA` |
 | `HCU_006.pdf` | `FORMULARIO 006`, `EPICRISIS`, `RESUMEN DE ALTA`, `CUADRO CLINICO DE EGRESO` |
 | `HCU_017.pdf` | `FORMULARIO 017`, `PROTOCOLO QUIRURGICO`, `CIRUGIA` |
 | `HCU_018A.pdf` | `FORMULARIO 018A`, `TRANSANESTESICO`, `ANESTESIA` |
+| `HCU_012.pdf` | `FORMULARIO 12 IMAGENOLOGIA`, `RESULTADOS EXAMENES DE IMAGEN` |
+| `HCU_010.pdf` | `FORMULARIO 10 LABORATORIO CLINICO`, `RESULTADOS EXAMENES` |
+| `HCU_013.pdf` | `FORMULARIO 13`; `FORMULARIO 10 PATOLOGIA`, `RESULTADOS PAPANICOLAOUS`, `RESULTADOS PAP`, `ESTUDIO CITOLOGICO` (resultado de citología / 013B observado en expediente) |
 | `C_COBERTURA.pdf` | `COBERTURA DE SALUD`, `CERTIFICADO DE AFILIACION`, `COMPROBANTE DE DERECHO` |
 | `P_INDIVIDUAL.pdf` | `PLANILLA INDIVIDUAL`, `VALOR FACTURADO`, `LIQUIDACION INDIVIDUAL` |
 | `A_ENTREGA.pdf` | `ACTA DE ENTREGA`, `RECEPCION DEL SERVICIO` |
+| `I_PROCEDIMIENTO.pdf` | `PROCEDIMIENTO MENOR` |
 
 La separación HCU 006 / HCU 053 se basa especialmente en EPICRISIS, RESUMEN DE ALTA y CUADRO CLINICO DE EGRESO frente a REFERENCIA, DERIVACION, CONTRARREFERENCIA y ESTABLECIMIENTO QUE DERIVA.
 
@@ -138,4 +142,5 @@ Estado de implementación al 2026-09-30: el backend carga `reglas_clasificacion.
 - El backend valida el código contra el mismo catálogo; no confía en que la validación de la interfaz sea suficiente. Todos los códigos de este catálogo terminan en `.pdf` minúsculas. La lista refleja los nombres aportados para el flujo; no constituye por sí sola una certificación normativa independiente.
 - Si el código elegido ya está ocupado, el nuevo archivo recibe el primer sufijo libre (`HCU_008_1.pdf`, `HCU_008_2.pdf`, etc.) para no sobrescribir el existente. Esos duplicados siguen necesitando la consolidación posterior prevista en la sección 5.
 - Al reemplazar, el archivo local sustituye el contenido de la ruta seleccionada y adopta su nombre existente. El nombre externo se conserva como referencia del original; el contenido anterior queda en `fuentes/`.
+- Si varios PDFs de un paciente coinciden con el mismo código, el primero usa el nombre canónico y los demás reciben sufijos numéricos; quedan reconocidos y se marcan para revisión/fusión posterior. La interfaz permite ordenarlos y fusionarlos bajo el nombre canónico, conservando fuentes. No se permite descargar el ZIP final mientras haya grupos sin resolver.
 - Esta asignación manual de código no inspecciona el contenido ni comprueba que coincida con el tipo documental elegido. Los PDFs añadidos manualmente después de clasificar tampoco reciben la comparación automática de fechas clínicas descrita en la sección 1.

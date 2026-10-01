@@ -14,6 +14,9 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
+
+	"github.com/pdfcpu/pdfcpu/pkg/api"
 )
 
 type workspacePDF struct {
@@ -78,7 +81,7 @@ func (s *server) deleteWorkspace(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusMethodNotAllowed, "Método no permitido.")
 		return
 	}
-	entry, ok := s.getSession(r)
+	_, ok := s.getSession(r)
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "Inicia sesión para continuar.")
 		return
@@ -99,10 +102,6 @@ func (s *server) deleteWorkspace(w http.ResponseWriter, r *http.Request) {
 	job, err := s.loadStagedJob(id)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "No se encontró el espacio de trabajo.")
-		return
-	}
-	if job.Username != entry.username {
-		writeError(w, http.StatusForbidden, "No tienes acceso a este espacio de trabajo.")
 		return
 	}
 	s.ingestMu.Lock()
@@ -136,7 +135,7 @@ func (s *server) workspaceDocuments(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "El identificador del espacio no es válido.")
 		return
 	}
-	entry, ok := s.getSession(r)
+	_, ok := s.getSession(r)
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "Inicia sesión para continuar.")
 		return
@@ -146,9 +145,15 @@ func (s *server) workspaceDocuments(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "No se encontró el espacio de trabajo.")
 		return
 	}
-	if job.Username != entry.username {
-		writeError(w, http.StatusForbidden, "No tienes acceso a este espacio de trabajo.")
-		return
+	if r.Method == http.MethodPost {
+		s.ingestMu.Lock()
+		defer s.ingestMu.Unlock()
+		// Reload after taking the lock so concurrent additions reserve distinct suffixes.
+		job, err = s.loadStagedJob(id)
+		if err != nil {
+			writeError(w, http.StatusNotFound, "No se encontró el espacio de trabajo.")
+			return
+		}
 	}
 	if r.Method == http.MethodPost {
 		s.addWorkspacePDFs(w, r, job)
@@ -245,7 +250,7 @@ func (s *server) downloadWorkspaceZIP(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusMethodNotAllowed, "Método no permitido.")
 		return
 	}
-	entry, ok := s.getSession(r)
+	_, ok := s.getSession(r)
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "Inicia sesión para continuar.")
 		return
@@ -260,10 +265,6 @@ func (s *server) downloadWorkspaceZIP(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "No se encontró el espacio de trabajo.")
 		return
 	}
-	if job.Username != entry.username {
-		writeError(w, http.StatusForbidden, "No tienes acceso a este espacio de trabajo.")
-		return
-	}
 	if job.Status != "PROCESSED" && job.Status != "INCOMPLETE" {
 		writeError(w, http.StatusConflict, "Prepara primero los expedientes antes de descargar el ZIP.")
 		return
@@ -272,6 +273,15 @@ func (s *server) downloadWorkspaceZIP(w http.ResponseWriter, r *http.Request) {
 	rootInfo, err := os.Stat(root)
 	if err != nil || !rootInfo.IsDir() {
 		writeError(w, http.StatusNotFound, "No se encontró la carpeta preparada del expediente.")
+		return
+	}
+	fusionGroups, err := workspaceFusionGroups(root)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "No se pudo revisar si hay documentos pendientes de fusionar.")
+		return
+	}
+	if len(fusionGroups) > 0 {
+		writeError(w, http.StatusConflict, fmt.Sprintf("Hay %d grupo(s) de PDFs reconocidos pendientes de fusionar. Fusiónalos desde la carpeta del paciente antes de descargar el ZIP final.", len(fusionGroups)))
 		return
 	}
 	archiveName := packageFolderName(&job) + ".zip"
@@ -391,6 +401,68 @@ func listWorkspacePDFs(packageRoot string) ([]workspacePDF, []string, error) {
 	return documents, patients, nil
 }
 
+type workspaceFusionGroup struct {
+	Code          string   `json:"codigo"`
+	CanonicalPath string   `json:"ruta_canonica"`
+	Paths         []string `json:"rutas"`
+}
+
+var numberedMSPName = regexp.MustCompile(`^(.*)_([1-9][0-9]*)\.pdf$`)
+
+func workspaceFusionGroups(packageRoot string) ([]workspaceFusionGroup, error) {
+	codes, err := loadMSPPDFCodeSet()
+	if err != nil {
+		return nil, err
+	}
+	documents, _, err := listWorkspacePDFs(packageRoot)
+	if err != nil {
+		return nil, err
+	}
+	groups := make(map[string]*workspaceFusionGroup)
+	for _, document := range documents {
+		if !strings.HasPrefix(document.Path, "4. EXPEDIENTES/") {
+			continue
+		}
+		code := document.Name
+		if _, ok := codes[code]; !ok {
+			match := numberedMSPName.FindStringSubmatch(code)
+			if match == nil {
+				continue
+			}
+			code = match[1] + ".pdf"
+			if _, ok := codes[code]; !ok {
+				continue
+			}
+		}
+		directory := filepath.ToSlash(filepath.Dir(filepath.FromSlash(document.Path)))
+		key := directory + "/" + code
+		group := groups[key]
+		if group == nil {
+			group = &workspaceFusionGroup{Code: code, CanonicalPath: filepath.ToSlash(filepath.Join(directory, code))}
+			groups[key] = group
+		}
+		group.Paths = append(group.Paths, document.Path)
+	}
+	result := make([]workspaceFusionGroup, 0)
+	for _, group := range groups {
+		if len(group.Paths) < 2 {
+			continue
+		}
+		sort.Slice(group.Paths, func(i, j int) bool {
+			if group.Paths[i] == group.CanonicalPath {
+				return group.Paths[j] != group.CanonicalPath
+			}
+			if group.Paths[j] == group.CanonicalPath {
+				return false
+			}
+			return group.Paths[i] < group.Paths[j]
+		})
+		result = append(result, *group)
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].CanonicalPath < result[j].CanonicalPath })
+	return result, nil
+}
+
 func safeWorkspacePath(root, relative string) (string, error) {
 	if strings.TrimSpace(relative) == "" || strings.ContainsRune(relative, '\x00') {
 		return "", errors.New("ruta vacía")
@@ -441,7 +513,7 @@ func (s *server) serveWorkspacePDF(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusMethodNotAllowed, "Método no permitido.")
 		return
 	}
-	entry, ok := s.getSession(r)
+	_, ok := s.getSession(r)
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "Inicia sesión para continuar.")
 		return
@@ -454,10 +526,6 @@ func (s *server) serveWorkspacePDF(w http.ResponseWriter, r *http.Request) {
 	job, err := s.loadStagedJob(id)
 	if err != nil {
 		http.NotFound(w, r)
-		return
-	}
-	if job.Username != entry.username {
-		writeError(w, http.StatusForbidden, "No tienes acceso a este espacio de trabajo.")
 		return
 	}
 	if job.Status != "PROCESSED" && job.Status != "INCOMPLETE" {
@@ -491,7 +559,7 @@ func (s *server) renameWorkspacePDF(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusMethodNotAllowed, "Método no permitido.")
 		return
 	}
-	entry, ok := s.getSession(r)
+	_, ok := s.getSession(r)
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "Inicia sesión para continuar.")
 		return
@@ -513,10 +581,6 @@ func (s *server) renameWorkspacePDF(w http.ResponseWriter, r *http.Request) {
 	job, err := s.loadStagedJob(id)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "No se encontró el espacio de trabajo.")
-		return
-	}
-	if job.Username != entry.username {
-		writeError(w, http.StatusForbidden, "No tienes acceso a este espacio de trabajo.")
 		return
 	}
 	if job.Status != "PROCESSED" && job.Status != "INCOMPLETE" {
@@ -604,6 +668,221 @@ func (s *server) renameWorkspacePDF(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"path": newRelative, "name": newName})
+}
+
+func (s *server) mergeWorkspacePDFs(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "Método no permitido.")
+		return
+	}
+	if _, ok := s.getSession(r); !ok {
+		writeError(w, http.StatusUnauthorized, "Inicia sesión para continuar.")
+		return
+	}
+	id := strings.TrimPrefix(r.URL.Path, "/api/v1/expedientes/documentos/fusionar/")
+	if !validJobID(id) {
+		writeError(w, http.StatusBadRequest, "El identificador del espacio no es válido.")
+		return
+	}
+	var input struct {
+		Paths []string `json:"rutas"`
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 64*1024)
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil || len(input.Paths) < 2 || len(input.Paths) > 50 {
+		writeError(w, http.StatusBadRequest, "Selecciona entre 2 y 50 PDFs repetidos para fusionar.")
+		return
+	}
+	s.ingestMu.Lock()
+	defer s.ingestMu.Unlock()
+	job, err := s.loadStagedJob(id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "No se encontró el espacio de trabajo.")
+		return
+	}
+	if job.Status != "PROCESSED" && job.Status != "INCOMPLETE" {
+		writeError(w, http.StatusConflict, "Prepara primero el expediente antes de fusionar documentos.")
+		return
+	}
+	packageRoot := filepath.Join(s.jobRoot(job.ID), "trabajo", packageFolderName(&job))
+	groups, err := workspaceFusionGroups(packageRoot)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "No se pudieron revisar los PDFs repetidos.")
+		return
+	}
+	selected := make(map[string]bool, len(input.Paths))
+	for _, path := range input.Paths {
+		clean := filepath.ToSlash(filepath.Clean(filepath.FromSlash(path)))
+		if !strings.HasPrefix(clean, "4. EXPEDIENTES/") || selected[clean] {
+			writeError(w, http.StatusBadRequest, "La selección de PDFs repetidos no es válida.")
+			return
+		}
+		selected[clean] = true
+	}
+	var group *workspaceFusionGroup
+	for index := range groups {
+		if len(groups[index].Paths) != len(selected) {
+			continue
+		}
+		all := true
+		for _, path := range groups[index].Paths {
+			if !selected[path] {
+				all = false
+				break
+			}
+		}
+		if all {
+			group = &groups[index]
+			break
+		}
+	}
+	if group == nil {
+		writeError(w, http.StatusBadRequest, "Selecciona todos los PDFs del mismo tipo y paciente para fusionarlos.")
+		return
+	}
+	// Keep the user-selected order; it determines the page order in the merged PDF.
+	ordered := make([]string, 0, len(input.Paths))
+	for _, path := range input.Paths {
+		ordered = append(ordered, filepath.ToSlash(filepath.Clean(filepath.FromSlash(path))))
+	}
+	sourceRoot := s.jobSourcesDir(job.ID)
+	historyDir := filepath.Join(sourceRoot, "fusiones", time.Now().UTC().Format("20060102T150405.000000000"))
+	if err := os.MkdirAll(historyDir, 0700); err != nil {
+		writeError(w, http.StatusInternalServerError, "No se pudo preparar el historial de la fusión.")
+		return
+	}
+	inputs := make([]string, 0, len(ordered))
+	for index, relative := range ordered {
+		active, pathErr := safeWorkspacePath(packageRoot, relative)
+		archive := filepath.Join(historyDir, fmt.Sprintf("documento-%02d.pdf", index+1))
+		if pathErr != nil || copyPrivateFile(active, archive) != nil {
+			writeError(w, http.StatusInternalServerError, "No se pudieron conservar las fuentes antes de fusionar.")
+			return
+		}
+		inputs = append(inputs, archive)
+	}
+	externalRoot := filepath.Join(sourceRoot, "externos")
+	if err := os.MkdirAll(externalRoot, 0700); err != nil {
+		writeError(w, http.StatusInternalServerError, "No se pudo preparar la salida de la fusión.")
+		return
+	}
+	idBytes := make([]byte, 8)
+	if _, err := rand.Read(idBytes); err != nil {
+		writeError(w, http.StatusInternalServerError, "No se pudo generar un identificador de fusión.")
+		return
+	}
+	storedName := fmt.Sprintf("fusion-%x.pdf", idBytes)
+	mergedSource := filepath.Join(externalRoot, storedName)
+	if err := api.MergeCreateFile(inputs, mergedSource, false, nil); err != nil {
+		_ = os.Remove(mergedSource)
+		writeError(w, http.StatusUnprocessableEntity, "No se pudieron fusionar los PDFs seleccionados; se conservaron sin cambios.")
+		return
+	}
+	if err := validateStagedFile(mergedSource, ".pdf"); err != nil {
+		_ = os.Remove(mergedSource)
+		writeError(w, http.StatusUnprocessableEntity, "La fusión no produjo un PDF válido; se conservaron los originales.")
+		return
+	}
+	canonical, err := safeWorkspacePath(packageRoot, group.CanonicalPath)
+	if err != nil {
+		_ = os.Remove(mergedSource)
+		writeError(w, http.StatusBadRequest, "La ruta del PDF consolidado no es válida.")
+		return
+	}
+	backupPaths := make(map[string]string)
+	for index, relative := range group.Paths {
+		active, pathErr := safeWorkspacePath(packageRoot, relative)
+		if pathErr != nil {
+			writeError(w, http.StatusBadRequest, "Una ruta de PDF no es válida.")
+			return
+		}
+		backup := active + fmt.Sprintf(".folio-fusion-backup-%d", index)
+		if err := os.Rename(active, backup); err != nil {
+			for path, saved := range backupPaths {
+				_ = os.Rename(saved, path)
+			}
+			writeError(w, http.StatusInternalServerError, "No se pudieron resguardar temporalmente los PDFs originales.")
+			return
+		}
+		backupPaths[active] = backup
+	}
+	if err := copyPrivateFile(mergedSource, canonical); err != nil {
+		for path, saved := range backupPaths {
+			_ = os.Rename(saved, path)
+		}
+		_ = os.Remove(mergedSource)
+		writeError(w, http.StatusInternalServerError, "No se pudo guardar el PDF fusionado; se restauraron los originales.")
+		return
+	}
+	previousReplacements := make(map[string]string, len(job.Replacements))
+	for path, stored := range job.Replacements {
+		previousReplacements[path] = stored
+	}
+	previousExternal := append([]workspaceDocument(nil), job.ExternalPDFs...)
+	previousMerged := make(map[string][]string, len(job.MergedDuplicates))
+	for path, duplicates := range job.MergedDuplicates {
+		previousMerged[path] = append([]string(nil), duplicates...)
+	}
+	canonicalRelative := group.CanonicalPath
+	if job.Replacements == nil {
+		job.Replacements = make(map[string]string)
+	}
+	if job.MergedDuplicates == nil {
+		job.MergedDuplicates = make(map[string][]string)
+	}
+	job.Replacements[canonicalRelative] = storedName
+	duplicates := make([]string, 0, len(group.Paths)-1)
+	for _, path := range group.Paths {
+		if path != canonicalRelative {
+			duplicates = append(duplicates, path)
+		}
+	}
+	job.MergedDuplicates[canonicalRelative] = duplicates
+	job.ExternalPDFs = append(job.ExternalPDFs, workspaceDocument{ID: strings.TrimSuffix(storedName, ".pdf"), StoredName: storedName, OriginalName: group.Code, RelativePath: canonicalRelative})
+	if err := s.saveStagedJob(job); err != nil {
+		_ = os.Remove(canonical)
+		for path, saved := range backupPaths {
+			_ = os.Rename(saved, path)
+		}
+		job.Replacements, job.ExternalPDFs, job.MergedDuplicates = previousReplacements, previousExternal, previousMerged
+		_ = os.Remove(mergedSource)
+		writeError(w, http.StatusInternalServerError, "No se pudo registrar la fusión; se restauraron los originales.")
+		return
+	}
+	for _, saved := range backupPaths {
+		_ = os.Remove(saved)
+	}
+	// Update the stored report so duplicate entries no longer appear as separate active outputs.
+	reportPath := filepath.Join(s.jobRoot(job.ID), "reportes", "classification_report.json")
+	if raw, readErr := os.ReadFile(reportPath); readErr == nil {
+		var report classificationReport
+		if json.Unmarshal(raw, &report) == nil {
+			removed := make(map[string]bool, len(duplicates))
+			for _, path := range duplicates {
+				removed[path] = true
+			}
+			files := report.Files[:0]
+			for _, item := range report.Files {
+				if removed[item.Output] {
+					continue
+				}
+				if item.Output == canonicalRelative {
+					item.Reason = "FUSION_APLICADA"
+				}
+				files = append(files, item)
+			}
+			report.Files = files
+			report.Summary = summarizeClassification(report.Files)
+			if writeErr := writePrivateJSON(reportPath, report); writeErr != nil {
+				log.Printf("expediente %s: no se pudo actualizar el reporte tras fusionar: %v", job.ID, writeErr)
+			}
+		}
+	}
+	documents, patients, err := listWorkspacePDFs(packageRoot)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Se fusionaron los PDFs, pero no se pudo actualizar la lista.")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"job_id": job.ID, "documents": documents, "patients": patients, "fused": canonicalRelative, "merged_count": len(group.Paths)})
 }
 
 func (s *server) addWorkspacePDFs(w http.ResponseWriter, r *http.Request, job stagedJob) {
@@ -761,10 +1040,13 @@ func (s *server) addWorkspacePDFs(w http.ResponseWriter, r *http.Request, job st
 		return
 	}
 	added := make([]workspaceDocument, 0, len(files))
+	newTargets := make(map[string]bool)
 	rollback := func() {
 		for _, document := range added {
 			_ = os.Remove(filepath.Join(sourceRoot, document.StoredName))
-			if target, pathErr := safeWorkspacePath(packageRoot, document.RelativePath); pathErr == nil {
+		}
+		for relative := range newTargets {
+			if target, pathErr := safeWorkspacePath(packageRoot, relative); pathErr == nil {
 				_ = os.Remove(target)
 			}
 		}
@@ -791,34 +1073,49 @@ func (s *server) addWorkspacePDFs(w http.ResponseWriter, r *http.Request, job st
 			writeError(w, http.StatusBadRequest, "Uno de los archivos no contiene un PDF válido.")
 			return
 		}
+		// Adding a document never replaces another one. Repeated MSP codes get
+		// the next free suffix; replacement is handled by the explicit replace mode above.
 		filename, err := nextMSPPDFName(patientRoot, codes[index], "")
 		if err != nil {
 			_ = os.Remove(sourcePath)
 			rollback()
-			writeError(w, http.StatusInternalServerError, "No se pudo asignar un nombre MSP al PDF.")
+			writeError(w, http.StatusInternalServerError, "No se pudo comprobar un nombre PDF disponible.")
 			return
 		}
 		relative := filepath.ToSlash(filepath.Join(patientRelative, filename))
 		destination, err := safeWorkspacePath(packageRoot, relative)
-		if err != nil || copyPrivateFile(sourcePath, destination) != nil {
+		if err != nil {
 			_ = os.Remove(sourcePath)
 			rollback()
 			writeError(w, http.StatusInternalServerError, "No se pudo incorporar uno de los PDFs al expediente.")
 			return
 		}
+		if err := copyPrivateFile(sourcePath, destination); err != nil {
+			_ = os.Remove(sourcePath)
+			rollback()
+			writeError(w, http.StatusInternalServerError, "No se pudo incorporar uno de los PDFs al expediente.")
+			return
+		}
+		newTargets[relative] = true
 		added = append(added, workspaceDocument{ID: strings.TrimSuffix(storedName, ".pdf"), StoredName: storedName, OriginalName: safeOriginalFilename(file.Filename), RelativePath: relative, Size: size})
 	}
 	for _, document := range added {
 		path := filepath.ToSlash(document.RelativePath)
 		delete(job.DeletedPDFs, path)
-		kept := job.ExternalPDFs[:0]
-		for _, previous := range job.ExternalPDFs {
-			if filepath.ToSlash(previous.RelativePath) != path {
-				kept = append(kept, previous)
-			}
-		}
-		job.ExternalPDFs = kept
 	}
+	// Keep only the currently active source in the external-document manifest;
+	// earlier versions remain untouched as private files in fuentes/externos.
+	activeExternal := make(map[string]bool, len(added))
+	for _, document := range added {
+		activeExternal[filepath.ToSlash(document.RelativePath)] = true
+	}
+	keptExternal := job.ExternalPDFs[:0]
+	for _, previous := range job.ExternalPDFs {
+		if !activeExternal[filepath.ToSlash(previous.RelativePath)] {
+			keptExternal = append(keptExternal, previous)
+		}
+	}
+	job.ExternalPDFs = keptExternal
 	job.ExternalPDFs = append(job.ExternalPDFs, added...)
 	if err := s.saveStagedJob(job); err != nil {
 		rollback()
@@ -830,5 +1127,5 @@ func (s *server) addWorkspacePDFs(w http.ResponseWriter, r *http.Request, job st
 		writeError(w, http.StatusInternalServerError, "Los PDFs se guardaron, pero no se pudo actualizar su lista.")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"job_id": job.ID, "documents": documents, "patients": patients, "added": added})
+	writeJSON(w, http.StatusOK, map[string]any{"job_id": job.ID, "documents": documents, "patients": patients, "added": added, "added_count": len(added), "replaced_count": 0})
 }

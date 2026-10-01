@@ -4,39 +4,21 @@
 
 Las reglas detalladas de clasificación OCR, coincidencias, formularios obligatorios y fixtures están en [08_reglas_ocr_y_checklist.md](08_reglas_ocr_y_checklist.md); ese documento amplía y prevalece sobre las listas resumidas de formularios de esta página.
 
-## 1. Tipos de servicio
+## 1. Tipos de servicio y paquetes
 
-El sistema debe poder identificar estos tipos de prestación:
-
-1. Hospitalización / Internación / Hospital del Día.
-2. Emergencia.
-3. Ambulatorio / Laboratorio Clínico.
-4. Ambulatorio / Procedimientos.
-5. Ambulatorio / Consulta Externa.
-6. Hemodiálisis.
-7. Diálisis Peritoneal.
-8. Componentes Sanguíneos.
-9. Transporte Sanitario (prehospitalario y secundario: terrestre, aéreo o acuático).
-10. Trasplante.
-11. Coberturas Compartidas.
+Por el momento, la recepción de lotes nuevos admite únicamente tres macro-servicios: Hospitalización, Emergencia y Ambulatorio. Ambulatorio reúne Consulta Externa, Laboratorio Clínico, Imagenología, Procedimientos y Terapias. Los paquetes especializados (Hemodiálisis, Diálisis Peritoneal, Componentes Sanguíneos, Transporte Sanitario, Trasplante y Coberturas Compartidas) quedan fuera del selector hasta definir sus reglas.
 
 Los valores canónicos enviados por la interfaz y usados en nombres de carpeta/matriz son:
 
 | Opción visible | Token canónico |
 | --- | --- |
-| Hospitalización / Internación / Hospital del Día | `HOSPITALIZACION` |
+| Ambulatorio | `AMBULATORIO` |
 | Emergencia | `EMERGENCIA` |
-| Ambulatorio / Laboratorio Clínico | `AMBULATORIO_LABORATORIO_CLINICO` |
-| Ambulatorio / Procedimientos | `AMBULATORIO_PROCEDIMIENTOS` |
-| Ambulatorio / Consulta Externa | `AMBULATORIO_CONSULTA_EXTERNA` |
-| Hemodiálisis | `HEMODIALISIS` |
-| Diálisis Peritoneal | `DIALISIS_PERITONEAL` |
-| Componentes Sanguíneos | `COMPONENTES_SANGUINEOS` |
-| Transporte Sanitario | `TRANSPORTE_SANITARIO` |
-| Trasplante | `TRASPLANTE` |
-| Coberturas Compartidas | `COBERTURAS_COMPARTIDAS` |
+| Hospitalización | `HOSPITALIZACION` |
 
-No inventar formularios obligatorios para servicios cuya lista no esté definida.
+Los expedientes guardados con tokens anteriores conservan su carpeta y se pueden volver a abrir; esta compatibilidad no habilita esos tokens para crear lotes nuevos. No inventar formularios obligatorios para servicios cuya lista no esté definida.
+
+La carpeta madre usa el token de servicio elegido en el expediente. `PDI_SERVICIO` se consulta actualmente como dato de previsualización por trámite, pero todavía no hay una tabla confirmada que mapee códigos Oracle (`PDI_COD_SERVICIO` u otros) a macro-servicios o paquetes. No inferir ese mapa sin la lista institucional de códigos.
 
 ## 2. Identidad y nombres
 
@@ -78,9 +60,7 @@ Comunes obligatorios para cada paciente: `P_INDIVIDUAL.pdf` y `C_COBERTURA.pdf`.
 | --- | --- | --- |
 | Hospitalización / Internación | `HCU_006.pdf` (epicrisis), `HCU_053.pdf` (referencia/derivación), `HCU_017.pdf` (protocolo quirúrgico), `HCU_018A.pdf` (transanestésico), `HCU_007.pdf` (interconsultas), `HCU_113.pdf`, `HCU_114.pdf`, `HCU_115.pdf` (UCI) | `HCU_006` es clave; otros según cirugía, derivación, interconsulta o UCI. |
 | Emergencia | `HCU_008.pdf`, `HCU_053.pdf` | `HCU_008` corresponde a emergencia; `HCU_053` si hubo derivación. |
-| Ambulatorio / Laboratorio Clínico | `HCU_010.pdf` (010A/010B), `HCU_013.pdf`, `M_MULTIPLES.pdf` | `HCU_013` si aplica; `M_MULTIPLES` para muestras múltiples. |
-| Ambulatorio / Procedimientos | `I_PROCEDIMIENTO.pdf`, `HCU_018A.pdf`, `HCU_053.pdf` | Según procedimiento, anestesia o derivación. |
-| Ambulatorio / Consulta Externa | `HCU_002.pdf`, `T_REHABILITACION.pdf` | Rehabilitación si aplica. |
+| Ambulatorio | `HCU_002.pdf`, `HCU_010.pdf` (010A/010B), `HCU_012.pdf` (012A/012B), `HCU_013.pdf`, `I_PROCEDIMIENTO.pdf`, `T_REHABILITACION.pdf`, `M_MULTIPLES.pdf` | Según la atención: consulta, laboratorio, imagenología, procedimiento, rehabilitación o muestras múltiples. |
 | Hemodiálisis | `R_DIARIO D.pdf`, `R_ASISTENCIA D.pdf`, `R_EXAMENES D.pdf`, `I_TRIMESTRAL D.pdf`, `I_SOCIAL D.pdf` | Reportes diarios, mensuales, trimestrales o semestrales según el documento. |
 | Diálisis Peritoneal | `R.VISITA D.pdf`, `I_CAPACITACION D.pdf`, `D_JURADA.pdf` | Visita mensual, capacitación semestral y declaración anual según corresponda. |
 | Componentes Sanguíneos | Pendiente de especificación | No inferir formularios. |

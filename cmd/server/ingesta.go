@@ -42,20 +42,21 @@ type workspaceDocument struct {
 }
 
 type stagedJob struct {
-	ID           string              `json:"job_id"`
-	Status       string              `json:"status"`
-	Username     string              `json:"username"`
-	Month        string              `json:"mes"`
-	Year         string              `json:"anio"`
-	Service      string              `json:"tipo_servicio"`
-	ReceivedAt   time.Time           `json:"received_at"`
-	Files        []stagedUpload      `json:"files"`
-	Aliases      []string            `json:"legacy_ids,omitempty"`
-	ExternalPDFs []workspaceDocument `json:"external_pdfs,omitempty"`
-	Renames      map[string]string   `json:"renames,omitempty"`
-	Replacements map[string]string   `json:"replacements,omitempty"`
-	DeletedPDFs  map[string]bool     `json:"deleted_pdfs,omitempty"`
-	StatusDetail string              `json:"status_detail"`
+	ID               string              `json:"job_id"`
+	Status           string              `json:"status"`
+	Username         string              `json:"username"`
+	Month            string              `json:"mes"`
+	Year             string              `json:"anio"`
+	Service          string              `json:"tipo_servicio"`
+	ReceivedAt       time.Time           `json:"received_at"`
+	Files            []stagedUpload      `json:"files"`
+	Aliases          []string            `json:"legacy_ids,omitempty"`
+	ExternalPDFs     []workspaceDocument `json:"external_pdfs,omitempty"`
+	Renames          map[string]string   `json:"renames,omitempty"`
+	Replacements     map[string]string   `json:"replacements,omitempty"`
+	MergedDuplicates map[string][]string `json:"merged_duplicates,omitempty"`
+	DeletedPDFs      map[string]bool     `json:"deleted_pdfs,omitempty"`
+	StatusDetail     string              `json:"status_detail"`
 }
 
 var headerParts = []uploadPart{
@@ -85,7 +86,7 @@ func jobResponse(s *server, job stagedJob, output string, summary any) map[strin
 	if (status == "PROCESSED" || status == "INCOMPLETE") && len(missing) > 0 {
 		status = "INCOMPLETE"
 	}
-	result := map[string]any{"status": status, "job_id": job.ID, "message": job.StatusDetail, "workspace": s.jobRoot(job.ID), "missing_documents": missing, "files": job.Files, "mes": job.Month, "anio": job.Year, "tipo_servicio": job.Service}
+	result := map[string]any{"status": status, "job_id": job.ID, "message": job.StatusDetail, "workspace": s.jobRoot(job.ID), "missing_documents": missing, "files": job.Files, "mes": job.Month, "anio": job.Year, "tipo_servicio": job.Service, "creado_por": job.Username}
 	if output != "" {
 		result["output"] = output
 	}
@@ -258,7 +259,7 @@ func (s *server) getIngestPreview(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusMethodNotAllowed, "Método no permitido.")
 		return
 	}
-	entry, ok := s.getSession(r)
+	_, ok := s.getSession(r)
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "Inicia sesión para continuar.")
 		return
@@ -273,10 +274,6 @@ func (s *server) getIngestPreview(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "No se encontró el lote para previsualizar.")
 		return
 	}
-	if job.Username != entry.username {
-		writeError(w, http.StatusForbidden, "No tienes acceso a este espacio de trabajo.")
-		return
-	}
 	if !s.hasClinicalSource(job) {
 		writeError(w, http.StatusGone, "Este lote ya no conserva su ZIP fuente.")
 		return
@@ -289,6 +286,119 @@ func (s *server) getIngestPreview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"vista_previa": preview})
+}
+
+// replaceStagedZIP lets an operator correct the clinical ZIP after Oracle preview
+// has exposed mismatched routes or trámites, without losing the saved period.
+func (s *server) replaceStagedZIP(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "Método no permitido.")
+		return
+	}
+	if _, ok := s.getSession(r); !ok {
+		writeError(w, http.StatusUnauthorized, "Inicia sesión para continuar.")
+		return
+	}
+	id := strings.TrimPrefix(r.URL.Path, "/api/v1/ingesta/reemplazar-zip/")
+	if !validJobID(id) {
+		writeError(w, http.StatusBadRequest, "El identificador del lote no es válido.")
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, s.maxIngest)
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		writeError(w, http.StatusBadRequest, "No se pudo leer el ZIP corregido.")
+		return
+	}
+	if r.MultipartForm != nil {
+		defer r.MultipartForm.RemoveAll()
+	}
+	files := r.MultipartForm.File["zip_file"]
+	if len(files) != 1 || files[0].Size == 0 || !strings.EqualFold(filepath.Ext(files[0].Filename), ".zip") {
+		writeError(w, http.StatusBadRequest, "Selecciona un archivo ZIP no vacío.")
+		return
+	}
+	s.ingestMu.Lock()
+	defer s.ingestMu.Unlock()
+	job, err := s.loadStagedJob(id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "No se encontró el expediente guardado.")
+		return
+	}
+	if job.Status != "STAGED" && job.Status != "REQUIERE_REVISION" {
+		writeError(w, http.StatusConflict, "Solo puedes cambiar el ZIP antes de preparar el expediente.")
+		return
+	}
+	sourceRoot := s.jobSourcesDir(id)
+	if err := os.MkdirAll(sourceRoot, 0700); err != nil {
+		writeError(w, http.StatusInternalServerError, "No se pudo preparar el almacenamiento privado del ZIP.")
+		return
+	}
+	temp, err := os.CreateTemp(sourceRoot, ".lote-nuevo-*.zip")
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "No se pudo preparar la carga del ZIP.")
+		return
+	}
+	tempPath := temp.Name()
+	_ = temp.Close()
+	if err := os.Remove(tempPath); err != nil {
+		writeError(w, http.StatusInternalServerError, "No se pudo preparar la carga del ZIP.")
+		return
+	}
+	defer os.Remove(tempPath)
+	if _, err := saveUploadPart(files[0], tempPath); err != nil {
+		writeError(w, http.StatusInternalServerError, "No se pudo guardar el ZIP corregido.")
+		return
+	}
+	archive, err := zip.OpenReader(tempPath)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "El archivo seleccionado no es un ZIP válido.")
+		return
+	}
+	_ = archive.Close()
+	digest, err := sha256Path(tempPath)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "No se pudo verificar el ZIP corregido.")
+		return
+	}
+	currentPath := filepath.Join(sourceRoot, "lote.zip")
+	backupPath := filepath.Join(sourceRoot, fmt.Sprintf("lote-anterior-%s.zip", time.Now().UTC().Format("20060102T150405.000000000")))
+	if _, err := os.Stat(currentPath); err == nil {
+		if err := os.Rename(currentPath, backupPath); err != nil {
+			writeError(w, http.StatusInternalServerError, "No se pudo conservar la versión anterior del ZIP.")
+			return
+		}
+	}
+	if err := os.Rename(tempPath, currentPath); err != nil {
+		_ = os.Rename(backupPath, currentPath)
+		writeError(w, http.StatusInternalServerError, "No se pudo activar el ZIP corregido.")
+		return
+	}
+	found := false
+	for index := range job.Files {
+		if job.Files[index].Field == "zip_file" {
+			job.Files[index].StoredName = "lote.zip"
+			job.Files[index].OriginalName = safeOriginalFilename(files[0].Filename)
+			job.Files[index].Size = files[0].Size
+			job.Files[index].SHA256 = digest
+			found = true
+			break
+		}
+	}
+	if !found {
+		_ = os.Remove(currentPath)
+		_ = os.Rename(backupPath, currentPath)
+		writeError(w, http.StatusConflict, "El expediente guardado no tiene un ZIP fuente registrado.")
+		return
+	}
+	job.Status = "STAGED"
+	job.StatusDetail = "ZIP actualizado en el mismo espacio. Revisa el cruce con Oracle antes de preparar los expedientes."
+	if err := s.saveStagedJob(job); err != nil {
+		_ = os.Remove(currentPath)
+		_ = os.Rename(backupPath, currentPath)
+		writeError(w, http.StatusInternalServerError, "No se pudo registrar el ZIP corregido; se restauró el anterior.")
+		return
+	}
+	writeJSON(w, http.StatusOK, jobResponse(s, job, "", nil))
 }
 
 func parseOracleDate(value sql.NullString) time.Time {
@@ -306,6 +416,9 @@ func summarizeClassification(files []classificationResult) classificationSummary
 	var summary classificationSummary
 	for _, file := range files {
 		summary.Total++
+		if file.Reason == "FUSION_PENDIENTE" {
+			summary.FusionPending++
+		}
 		if strings.HasPrefix(file.Code, "PENDIENTE_") {
 			summary.Pending++
 		} else {
@@ -341,7 +454,7 @@ func (s *server) processStagedJob(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusMethodNotAllowed, "Método no permitido.")
 		return
 	}
-	entry, ok := s.getSession(r)
+	_, ok := s.getSession(r)
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "Inicia sesión para continuar.")
 		return
@@ -354,10 +467,6 @@ func (s *server) processStagedJob(w http.ResponseWriter, r *http.Request) {
 	job, err := s.loadStagedJob(id)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "No se encontró el expediente por ese ID.")
-		return
-	}
-	if job.Username != entry.username {
-		writeError(w, http.StatusForbidden, "No tienes acceso a este espacio de trabajo.")
 		return
 	}
 	if job.Status != "STAGED" {
@@ -396,7 +505,7 @@ func (s *server) reclassifyStagedJob(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusMethodNotAllowed, "Método no permitido.")
 		return
 	}
-	entry, ok := s.getSession(r)
+	_, ok := s.getSession(r)
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "Inicia sesión para continuar.")
 		return
@@ -409,10 +518,6 @@ func (s *server) reclassifyStagedJob(w http.ResponseWriter, r *http.Request) {
 	job, err := s.loadStagedJob(id)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "No se encontró este lote en el espacio permanente. Si se borraron los datos de prueba, vuelve a recibir el ZIP clínico para crear un expediente nuevo.")
-		return
-	}
-	if job.Username != entry.username {
-		writeError(w, http.StatusForbidden, "No tienes acceso a este espacio de trabajo.")
 		return
 	}
 	if job.Status != "PROCESSED" && job.Status != "INCOMPLETE" {
@@ -455,7 +560,7 @@ func (s *server) completeStagedJob(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusMethodNotAllowed, "Método no permitido.")
 		return
 	}
-	entry, ok := s.getSession(r)
+	_, ok := s.getSession(r)
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "Inicia sesión para continuar.")
 		return
@@ -468,10 +573,6 @@ func (s *server) completeStagedJob(w http.ResponseWriter, r *http.Request) {
 	job, err := s.loadStagedJob(id)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "No se encontró el expediente por ese ID.")
-		return
-	}
-	if job.Username != entry.username {
-		writeError(w, http.StatusForbidden, "No tienes acceso a este espacio de trabajo.")
 		return
 	}
 	id = job.ID
@@ -575,7 +676,7 @@ func (s *server) getStagedJobStatus(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusMethodNotAllowed, "Método no permitido.")
 		return
 	}
-	entry, ok := s.getSession(r)
+	_, ok := s.getSession(r)
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "Inicia sesión para continuar.")
 		return
@@ -588,10 +689,6 @@ func (s *server) getStagedJobStatus(w http.ResponseWriter, r *http.Request) {
 	job, err := s.loadStagedJob(id)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "No se encontró este lote en el espacio permanente.")
-		return
-	}
-	if job.Username != entry.username {
-		writeError(w, http.StatusForbidden, "No tienes acceso a este espacio de trabajo.")
 		return
 	}
 	if !s.hasClinicalSource(job) {
@@ -617,7 +714,7 @@ func (s *server) listWorkspaces(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusMethodNotAllowed, "Método no permitido.")
 		return
 	}
-	entry, ok := s.getSession(r)
+	_, ok := s.getSession(r)
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "Inicia sesión para continuar.")
 		return
@@ -633,7 +730,7 @@ func (s *server) listWorkspaces(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		job, loadErr := s.loadStagedJob(directory.Name())
-		if loadErr != nil || job.Username != entry.username || !s.hasClinicalSource(job) {
+		if loadErr != nil || !s.hasClinicalSource(job) {
 			continue
 		}
 		response := jobResponse(s, job, "", nil)
@@ -707,7 +804,7 @@ func (s *server) buildPatientFolders(ctx context.Context, job *stagedJob, output
 		if entry.UncompressedSize64 > 256<<20 {
 			return report, errors.New("Un PDF del ZIP excede el límite de 256 MiB por archivo.")
 		}
-		clean := strings.ReplaceAll(entry.Name, `\`, "/")
+		clean := strings.Trim(strings.ReplaceAll(entry.Name, `\`, "/"), "/")
 		parts := strings.Split(clean, "/")
 		if len(parts) != 2 || !tramitePattern.MatchString(parts[0]) || !strings.EqualFold(filepath.Ext(parts[1]), ".pdf") || path.Base(parts[1]) != parts[1] {
 			return report, errors.New("El ZIP debe contener solo archivos PDF dentro de carpetas cuyo nombre sea el PDI_TRAMITE numérico.")
@@ -756,10 +853,17 @@ func (s *server) buildPatientFolders(ctx context.Context, job *stagedJob, output
 			classified.Reason = "SIN_COINCIDENCIA"
 		}
 		destination := filepath.Join(folder, classifiedName)
-		if _, statErr := os.Stat(destination); statErr == nil {
-			classified.Code = pendingPDFName(strings.TrimSuffix(originalName, filepath.Ext(originalName)) + "_" + parts[0])
-			classified.Reason = "CODIGO_DUPLICADO_REQUIERE_FUSION"
-			destination = filepath.Join(folder, classified.Code)
+		if classified.Code != "" {
+			if _, statErr := os.Stat(destination); statErr == nil {
+				uniqueName, nameErr := nextMSPPDFName(folder, classifiedName, "")
+				if nameErr != nil {
+					_ = os.Remove(workFile.Name())
+					return report, errors.New("No se pudo reservar un nombre para el PDF duplicado.")
+				}
+				classified.Code = uniqueName
+				classified.Reason = "FUSION_PENDIENTE"
+				destination = filepath.Join(folder, uniqueName)
+			}
 		}
 		if err := os.Rename(workFile.Name(), destination); err != nil {
 			_ = os.Remove(workFile.Name())
@@ -826,6 +930,22 @@ func (s *server) buildPatientFolders(ctx context.Context, job *stagedJob, output
 			return report, errors.New("No se pudo conservar un PDF reemplazado durante la reclasificación.")
 		}
 	}
+	for canonical, duplicates := range job.MergedDuplicates {
+		for index := range report.Files {
+			if report.Files[index].Output == canonical {
+				report.Files[index].Reason = "FUSION_APLICADA"
+			}
+		}
+		for _, relative := range duplicates {
+			destination, pathErr := safeWorkspacePath(tempPackageRoot, relative)
+			if pathErr != nil {
+				return report, errors.New("Un PDF de una fusión guardada tiene una ruta inválida.")
+			}
+			if err := os.Remove(destination); err != nil && !errors.Is(err, os.ErrNotExist) {
+				return report, errors.New("No se pudo aplicar una fusión guardada durante la reclasificación.")
+			}
+		}
+	}
 	for relative, deleted := range job.DeletedPDFs {
 		if !deleted {
 			continue
@@ -840,7 +960,19 @@ func (s *server) buildPatientFolders(ctx context.Context, job *stagedJob, output
 	}
 	filtered := report.Files[:0]
 	for _, result := range report.Files {
-		if !job.DeletedPDFs[result.Output] {
+		mergedAway := false
+		for _, paths := range job.MergedDuplicates {
+			for _, path := range paths {
+				if result.Output == path {
+					mergedAway = true
+					break
+				}
+			}
+			if mergedAway {
+				break
+			}
+		}
+		if !job.DeletedPDFs[result.Output] && !mergedAway {
 			filtered = append(filtered, result)
 		}
 	}
@@ -1204,7 +1336,7 @@ func (s *server) receiveDualUpload(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "No se pudo revisar el espacio existente para este período.")
 		return
 	} else {
-		candidate, legacyRoot, findErr := s.findLegacyPeriodWorkspace(service, month, year, entry.username, incomingDigest)
+		candidate, legacyRoot, findErr := s.findLegacyPeriodWorkspace(service, month, year, incomingDigest)
 		if findErr != nil {
 			writeError(w, http.StatusInternalServerError, "No se pudo revisar expedientes anteriores de este período.")
 			return
@@ -1220,10 +1352,6 @@ func (s *server) receiveDualUpload(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if existing != nil {
-		if existing.Username != entry.username {
-			writeError(w, http.StatusForbidden, "El espacio de este período pertenece a otro usuario autorizado.")
-			return
-		}
 		storedZip := ""
 		storedDigest := ""
 		for _, file := range existing.Files {
@@ -1403,17 +1531,14 @@ func safeOriginalFilename(filename string) string {
 
 func validServiceCode(value string) bool {
 	switch value {
-	case "HOSPITALIZACION", "EMERGENCIA", "AMBULATORIO_LABORATORIO_CLINICO",
-		"AMBULATORIO_PROCEDIMIENTOS", "AMBULATORIO_CONSULTA_EXTERNA", "HEMODIALISIS",
-		"DIALISIS_PERITONEAL", "COMPONENTES_SANGUINEOS", "TRANSPORTE_SANITARIO",
-		"TRASPLANTE", "COBERTURAS_COMPARTIDAS":
+	case "HOSPITALIZACION", "EMERGENCIA", "AMBULATORIO":
 		return true
 	default:
 		return false
 	}
 }
 
-func (s *server) findLegacyPeriodWorkspace(service, month, year, username, digest string) (stagedJob, string, error) {
+func (s *server) findLegacyPeriodWorkspace(service, month, year, digest string) (stagedJob, string, error) {
 	entries, err := os.ReadDir(s.workspacesDir)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -1434,7 +1559,7 @@ func (s *server) findLegacyPeriodWorkspace(service, month, year, username, diges
 			continue
 		}
 		var candidate stagedJob
-		if json.Unmarshal(data, &candidate) != nil || candidate.Service != service || candidate.Month != month || candidate.Year != year || candidate.Username != username || !s.hasClinicalSource(candidate) {
+		if json.Unmarshal(data, &candidate) != nil || candidate.Service != service || candidate.Month != month || candidate.Year != year || !s.hasClinicalSource(candidate) {
 			continue
 		}
 		candidateDigest := ""

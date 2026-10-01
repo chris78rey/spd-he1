@@ -4,7 +4,7 @@ import { openDB } from 'idb'
 import mspPdfCodes from '../catalogos/codigos_msp.json'
 
 const dbPromise = openDB('folio-documentos', 1, { upgrade(db) { db.createObjectStore('files', { keyPath: 'id' }) } })
-const folders = ['Todos los documentos', 'Mi espacio', 'Trabajo', 'Personal', 'Compartido conmigo', 'Favoritos', 'Papelera']
+const folders = ['Todos los documentos', 'Favoritos']
 const activeFolder = ref(folders[0])
 const query = ref('')
 const sortBy = ref('Recientes')
@@ -33,6 +33,7 @@ const oraclePassword = ref('')
 const showPassword = ref(false)
 const signingIn = ref(false)
 const currentUser = ref('')
+const displayUser = computed(() => currentUser.value.toLocaleUpperCase('es'))
 const activePage = ref('documents')
 const planillaPage = ref(1)
 const planillaData = ref({ columns: [], rows: [], total: 0, totalPages: 1 })
@@ -42,17 +43,9 @@ const ingestMonth = ref('')
 const ingestYear = ref(String(new Date().getFullYear()))
 const ingestService = ref('')
 const ingestServices = [
-  { title: 'Hospitalización / Internación / Hospital del Día', value: 'HOSPITALIZACION' },
+  { title: 'Ambulatorio', value: 'AMBULATORIO' },
   { title: 'Emergencia', value: 'EMERGENCIA' },
-  { title: 'Ambulatorio / Laboratorio Clínico', value: 'AMBULATORIO_LABORATORIO_CLINICO' },
-  { title: 'Ambulatorio / Procedimientos', value: 'AMBULATORIO_PROCEDIMIENTOS' },
-  { title: 'Ambulatorio / Consulta Externa', value: 'AMBULATORIO_CONSULTA_EXTERNA' },
-  { title: 'Hemodiálisis', value: 'HEMODIALISIS' },
-  { title: 'Diálisis Peritoneal', value: 'DIALISIS_PERITONEAL' },
-  { title: 'Componentes Sanguíneos', value: 'COMPONENTES_SANGUINEOS' },
-  { title: 'Transporte Sanitario', value: 'TRANSPORTE_SANITARIO' },
-  { title: 'Trasplante', value: 'TRASPLANTE' },
-  { title: 'Coberturas Compartidas', value: 'COBERTURAS_COMPARTIDAS' },
+  { title: 'Hospitalización', value: 'HOSPITALIZACION' },
 ]
 const ingestMonths = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'].map((title, index) => ({ title, value: String(index + 1).padStart(2, '0') }))
 const ingestFileFields = [
@@ -62,6 +55,8 @@ const ingestFileFields = [
   { field: 'oficio_file', title: 'Oficio de pago', detail: 'PDF firmado por representante legal', accept: '.pdf,application/pdf', icon: 'mdi-file-document-outline' },
 ]
 const ingestFiles = ref({ zip_file: null, matriz_file: null, consolidada_file: null, oficio_file: null })
+const zipReplacementInput = ref(null)
+const zipReplacementSending = ref(false)
 const ingestSending = ref(false)
 const completionSending = ref(false)
 const ingestProcessing = ref(false)
@@ -77,6 +72,8 @@ const ingestPreviewPageSize = 10
 const savedWorkspaces = ref([])
 const selectedSavedWorkspace = ref('')
 const savedWorkspacesLoading = ref(false)
+const ingestMode = ref('new')
+const ingestModeTouched = ref(false)
 const openingSavedWorkspace = ref(false)
 const workspacePDFs = ref([])
 const workspacePatients = ref([])
@@ -94,6 +91,9 @@ const replacePDFDialog = ref(false)
 const replacePDFTarget = ref('')
 const deletePDFTarget = ref('')
 const deletePDFDialog = ref(false)
+const mergePDFDialog = ref(false)
+const mergePDFPaths = ref([])
+const mergeSending = ref(false)
 const deleteWorkspaceDialog = ref(false)
 const workspaceDeleteCode = ref('')
 const workspaceDeleteInput = ref('')
@@ -104,24 +104,54 @@ const workspacePatientPDFs = computed(() => {
   const prefix = workspacePatient.value ? `4. EXPEDIENTES/${workspacePatient.value}/` : ''
   return prefix ? workspacePDFs.value.filter(document => document.path.startsWith(prefix)) : []
 })
+const workspaceFusionGroups = computed(() => {
+  const allowed = new Set(mspPdfCodes.map(option => option.value.toLowerCase()))
+  const groups = new Map()
+  for (const document of workspacePDFs.value) {
+    if (!document.path.startsWith('4. EXPEDIENTES/')) continue
+    let code = document.name
+    if (!allowed.has(code.toLowerCase())) {
+      const match = code.match(/^(.*)_([1-9]\d*)\.pdf$/i)
+      if (!match) continue
+      code = `${match[1]}.pdf`
+      if (!allowed.has(code.toLowerCase())) continue
+    }
+    const key = `${document.path.slice(0, document.path.lastIndexOf('/') + 1)}${code.toLowerCase()}`
+    const group = groups.get(key) || { code, paths: [] }
+    group.paths.push(document.path)
+    groups.set(key, group)
+  }
+  return [...groups.values()].filter(group => group.paths.length > 1).map(group => {
+    const canonical = group.paths.find(path => path.toLowerCase().endsWith(`/${group.code.toLowerCase()}`))
+    group.paths.sort((a, b) => a === canonical ? -1 : b === canonical ? 1 : a.localeCompare(b))
+    return group
+  })
+})
+const selectedWorkspaceFusionGroup = computed(() => workspaceFusionGroups.value.find(group => group.paths.includes(selectedWorkspacePDF.value)) || null)
+const queuedWorkspaceDuplicates = computed(() => {
+  const seen = new Set(workspacePatientPDFs.value.map(document => standardCodeForFilename(document.name).toLowerCase()).filter(Boolean))
+  let duplicates = 0
+  for (const item of workspaceUploadFiles.value) {
+    const code = item.code?.toLowerCase()
+    if (!code) continue
+    if (seen.has(code)) duplicates++
+    seen.add(code)
+  }
+  return duplicates
+})
 const mspPDFOptions = mspPdfCodes
 function standardCodeForFilename(filename = '') {
   const canonical = filename.replace(/_\d+(?=\.pdf$)/i, '').toLowerCase()
   return mspPDFOptions.find(option => option.value.toLowerCase() === canonical)?.value || ''
+}
+function isPendingWorkspaceDocument(document) {
+  return /^PENDIENTE_tmp_/i.test(document?.name || '')
 }
 const workspacePDFURL = computed(() => selectedWorkspacePDF.value && ingestResult.value?.job_id
   ? `/api/v1/expedientes/documentos/archivo/${encodeURIComponent(ingestResult.value.job_id)}?path=${encodeURIComponent(selectedWorkspacePDF.value)}`
   : '')
 let dragDepth = 0
 const spaces = computed(() => ['Trabajo','Personal','Mi espacio',...customSpaces.value])
-const samples = [
-  { id:'demo-1', name:'Propuesta de marca — Q3', ext:'PDF', size:'2.4 MB', date:'Hoy, 10:42', addedAt:Date.now()-1000*60*45, folder:'Trabajo', color:'pdf', icon:'mdi-file-pdf-box', author:'Tú', favorite:true },
-  { id:'demo-2', name:'Presupuesto familiar', ext:'XLSX', size:'840 KB', date:'Ayer, 16:20', addedAt:Date.now()-1000*60*60*28, folder:'Personal', color:'sheet', icon:'mdi-file-excel', author:'Tú' },
-  { id:'demo-3', name:'Notas de reunión · Equipo', ext:'DOCX', size:'1.2 MB', date:'Ayer, 09:15', addedAt:Date.now()-1000*60*60*33, folder:'Trabajo', color:'word', icon:'mdi-file-word', author:'Valentina R.' },
-  { id:'demo-4', name:'Ideas para el proyecto', ext:'PDF', size:'3.1 MB', date:'18 sep, 14:30', addedAt:Date.now()-1000*60*60*24*11, folder:'Mi espacio', color:'pdf', icon:'mdi-file-pdf-box', author:'Tú' },
-  { id:'demo-5', name:'Contrato de servicios', ext:'DOCX', size:'560 KB', date:'16 sep, 11:08', addedAt:Date.now()-1000*60*60*24*13, folder:'Trabajo', color:'word', icon:'mdi-file-word', author:'Tú' },
-  { id:'demo-6', name:'Referencias visuales', ext:'JPG', size:'4.8 MB', date:'12 sep, 17:55', addedAt:Date.now()-1000*60*60*24*18, folder:'Personal', color:'image', icon:'mdi-image-outline', author:'Tú' },
-]
 async function loadDocuments() {
   try { const db = await dbPromise; docs.value = await db.getAll('files') } catch { snackbar.value = 'No se pudo abrir el almacenamiento local.' }
   loading.value = false
@@ -262,6 +292,36 @@ async function renameWorkspacePDF() {
   } catch (error) { workspaceNotice.value = error.message || 'No se pudo cambiar el nombre del PDF.' }
   finally { workspaceBusy.value = false }
 }
+function openWorkspaceFusion() {
+  if (!selectedWorkspaceFusionGroup.value) return
+  mergePDFPaths.value = [...selectedWorkspaceFusionGroup.value.paths]
+  mergePDFDialog.value = true
+}
+function moveWorkspaceFusionPDF(index, offset) {
+  const target = index + offset
+  if (target < 0 || target >= mergePDFPaths.value.length) return
+  const [path] = mergePDFPaths.value.splice(index, 1)
+  mergePDFPaths.value.splice(target, 0, path)
+}
+async function confirmWorkspaceFusion() {
+  if (!ingestResult.value?.job_id || mergePDFPaths.value.length < 2 || mergeSending.value) return
+  mergeSending.value = true
+  workspaceNotice.value = ''
+  try {
+    const response = await fetch(`/api/v1/expedientes/documentos/fusionar/${encodeURIComponent(ingestResult.value.job_id)}`, {
+      method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rutas: mergePDFPaths.value }),
+    })
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok) throw new Error(data.error || 'No se pudieron fusionar los PDFs.')
+    mergePDFDialog.value = false
+    mergePDFPaths.value = []
+    await loadWorkspaceDocuments(data.job_id, data.fused)
+    workspaceNotice.value = `${data.merged_count} PDFs fusionados en ${data.fused.split('/').at(-1)}. Las fuentes originales se conservaron.`
+    await loadSavedWorkspaces()
+  } catch (error) { workspaceNotice.value = error.message || 'No se pudieron fusionar los PDFs.' }
+  finally { mergeSending.value = false }
+}
 function selectWorkspacePDFs(event) {
   const files = [...(event.target.files || [])]
   workspaceNotice.value = ''
@@ -316,7 +376,11 @@ async function addWorkspacePDFs() {
     workspaceUploadFiles.value = []
     workspacePDFs.value = data.documents || []
     workspacePatients.value = data.patients || []
-    workspaceNotice.value = 'PDFs añadidos al espacio persistente del expediente.'
+    const replacedCount = data.replaced_count || 0
+    const addedCount = data.added_count ?? (data.added?.length || 0)
+    workspaceNotice.value = replacedCount
+      ? `${addedCount} PDF${addedCount === 1 ? '' : 's'} añadido${addedCount === 1 ? '' : 's'} y ${replacedCount} reemplazado${replacedCount === 1 ? '' : 's'}. Las versiones anteriores se conservan como fuentes.`
+      : `${addedCount} PDF${addedCount === 1 ? '' : 's'} añadido${addedCount === 1 ? '' : 's'} al expediente.`
     selectedWorkspacePDF.value = data.added?.at(-1)?.relative_path || selectedWorkspacePDF.value
     workspaceRename.value = standardCodeForFilename(selectedWorkspaceDocument.value?.name || '')
     ingestProgress.value = 100
@@ -491,6 +555,34 @@ async function submitIngest() {
     ingestSending.value = false
   }
 }
+async function replaceIngestZIP(event) {
+  const file = event.target.files?.[0] || null
+  event.target.value = ''
+  if (!file || !ingestResult.value?.job_id || zipReplacementSending.value) return
+  if (!file.name.toLowerCase().endsWith('.zip') || file.size === 0) {
+    ingestError.value = 'Selecciona un archivo ZIP que no esté vacío.'
+    return
+  }
+  ingestError.value = ''
+  zipReplacementSending.value = true
+  ingestPreview.value = null
+  ingestPreviewError.value = ''
+  const form = new FormData()
+  form.append('zip_file', file)
+  try {
+    const response = await fetch(`/api/v1/ingesta/reemplazar-zip/${encodeURIComponent(ingestResult.value.job_id)}`, {
+      method: 'POST', credentials: 'same-origin', body: form,
+    })
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok) throw new Error(data.error || 'No se pudo actualizar el ZIP guardado.')
+    ingestResult.value = data
+    localStorage.setItem('folio-ingest-result', JSON.stringify(data))
+    await loadIngestPreview(data.job_id)
+    await loadSavedWorkspaces()
+  } catch (error) {
+    ingestError.value = error.message || 'No se pudo actualizar el ZIP guardado.'
+  } finally { zipReplacementSending.value = false }
+}
 async function processIngest() {
   const jobId = ingestResult.value?.job_id || existingIngestJobId.value.trim()
   if (!jobId || ingestProcessing.value) return
@@ -615,7 +707,7 @@ const savedWorkspaceItems = computed(() => savedWorkspaces.value.map(workspace =
   const monthName = ingestMonths.find(month => month.value === String(workspace.period || '').slice(5, 7))?.title || workspace.mes
   const serviceName = ingestServices.find(service => service.value === workspace.tipo_servicio)?.title || workspace.tipo_servicio
   const state = workspace.status === 'STAGED' ? 'pendiente de preparar' : workspace.status === 'INCOMPLETE' ? 'incompleto' : 'preparado'
-  return { title: `${serviceName} · ${monthName} ${workspace.anio} · ${state}`, value: workspace.job_id }
+  return { title: `${serviceName} · ${monthName} ${workspace.anio} · ${state} · recibido por ${workspace.creado_por || 'usuario anterior'}`, value: workspace.job_id }
 }))
 async function loadSavedWorkspaces() {
   savedWorkspacesLoading.value = true
@@ -624,9 +716,17 @@ async function loadSavedWorkspaces() {
     if (!response.ok) return
     const data = await response.json()
     savedWorkspaces.value = data.workspaces || []
+    if (!ingestModeTouched.value && !ingestResult.value) ingestMode.value = savedWorkspaces.value.length ? 'resume' : 'new'
     if (!savedWorkspaces.value.some(workspace => workspace.job_id === selectedSavedWorkspace.value)) selectedSavedWorkspace.value = savedWorkspaces.value[0]?.job_id || ''
   } catch { /* Se puede continuar con la carga manual si no responde la lista. */ }
   finally { savedWorkspacesLoading.value = false }
+}
+function switchIngestMode(mode) {
+  if (!mode || mode === ingestMode.value) return
+  ingestModeTouched.value = true
+  if (ingestResult.value) startNewIngest()
+  ingestMode.value = mode
+  if (mode === 'resume') loadSavedWorkspaces()
 }
 async function openSavedWorkspace() {
   if (!selectedSavedWorkspace.value || openingSavedWorkspace.value) return
@@ -636,6 +736,8 @@ async function openSavedWorkspace() {
     const response = await fetch(`/api/v1/ingesta/estado/${encodeURIComponent(selectedSavedWorkspace.value)}`, { credentials: 'same-origin' })
     const data = await response.json().catch(() => ({}))
     if (!response.ok) throw new Error(data.error || 'No se pudo abrir el espacio guardado.')
+    ingestMode.value = 'resume'
+    ingestModeTouched.value = true
     ingestResult.value = data
     localStorage.setItem('folio-ingest-result', JSON.stringify(data))
     if (data.output) await loadWorkspaceDocuments(data.job_id)
@@ -645,6 +747,8 @@ async function openSavedWorkspace() {
   finally { openingSavedWorkspace.value = false }
 }
 function startNewIngest() {
+  ingestMode.value = 'new'
+  ingestModeTouched.value = true
   ingestResult.value = null
   ingestPreview.value = null
   ingestPreviewError.value = ''
@@ -715,7 +819,11 @@ async function addMissingDocuments() {
 onMounted(async () => {
   try {
     const savedIngest = JSON.parse(localStorage.getItem('folio-ingest-result') || 'null')
-    if (savedIngest?.job_id) ingestResult.value = savedIngest
+    if (savedIngest?.job_id) {
+      ingestResult.value = savedIngest
+      ingestMode.value = 'resume'
+      ingestModeTouched.value = true
+    }
   } catch { localStorage.removeItem('folio-ingest-result') }
   await checkSession()
   window.addEventListener('keydown', handleShortcut)
@@ -726,10 +834,8 @@ watch(preview, (doc, previous) => {
   previewUrl.value = doc?.blob ? URL.createObjectURL(doc.blob) : ''
 })
 const visibleDocs = computed(() => {
-  let items = [...samples, ...docs.value]
+  let items = [...docs.value]
   if (activeFolder.value === 'Favoritos') items = items.filter(d => d.favorite)
-  else if (activeFolder.value === 'Compartido conmigo') items = items.filter(d => d.author !== 'Tú')
-  else if (activeFolder.value === 'Papelera') items = []
   else if (activeFolder.value !== 'Todos los documentos') items = items.filter(d => d.folder === activeFolder.value)
   if (query.value.trim()) { const q = query.value.toLowerCase(); items = items.filter(d => (d.name+' '+d.ext+' '+d.folder).toLowerCase().includes(q)) }
   if (typeFilter.value !== 'Todo') items = items.filter(d => d.color === typeFilter.value)
@@ -761,13 +867,12 @@ function startMove(doc = null) { activeDoc.value = doc; moveTarget.value = space
 async function confirmMove() {
   const moving = activeDoc.value ? [activeDoc.value] : [...docs.value].filter(doc => selectedIds.value.includes(doc.id))
   let count = 0
-  for (const doc of moving) { if (doc.id.startsWith('demo-')) continue; doc.folder = moveTarget.value; await (await dbPromise).put('files', doc); count++ }
-  if (moving.some(doc => doc.id.startsWith('demo-'))) snackbar.value = 'Los archivos de ejemplo no se pueden mover.'
-  else snackbar.value = `${count} ${count === 1 ? 'documento movido' : 'documentos movidos'} a «${moveTarget.value}»`
+  for (const doc of moving) { doc.folder = moveTarget.value; await (await dbPromise).put('files', doc); count++ }
+  snackbar.value = `${count} ${count === 1 ? 'documento movido' : 'documentos movidos'} a «${moveTarget.value}»`
   moveDialog.value = false; activeDoc.value = null; selectedIds.value = []
 }
-async function bulkFavorite() { const moving = docs.value.filter(doc => selectedIds.value.includes(doc.id) && !doc.id.startsWith('demo-')); for (const doc of moving) { doc.favorite = true; await (await dbPromise).put('files', doc) }; snackbar.value = `${moving.length} ${moving.length === 1 ? 'documento añadido' : 'documentos añadidos'} a favoritos`; selectedIds.value = [] }
-async function bulkDelete() { const moving = docs.value.filter(doc => selectedIds.value.includes(doc.id) && !doc.id.startsWith('demo-')); for (const doc of moving) await (await dbPromise).delete('files', doc.id); docs.value = docs.value.filter(doc => !selectedIds.value.includes(doc.id) || doc.id.startsWith('demo-')); snackbar.value = `${moving.length} ${moving.length === 1 ? 'documento eliminado' : 'documentos eliminados'}`; selectedIds.value = [] }
+async function bulkFavorite() { const moving = docs.value.filter(doc => selectedIds.value.includes(doc.id)); for (const doc of moving) { doc.favorite = true; await (await dbPromise).put('files', doc) }; snackbar.value = `${moving.length} ${moving.length === 1 ? 'documento añadido' : 'documentos añadidos'} a favoritos`; selectedIds.value = [] }
+async function bulkDelete() { const moving = docs.value.filter(doc => selectedIds.value.includes(doc.id)); for (const doc of moving) await (await dbPromise).delete('files', doc.id); docs.value = docs.value.filter(doc => !selectedIds.value.includes(doc.id)); snackbar.value = `${moving.length} ${moving.length === 1 ? 'documento eliminado' : 'documentos eliminados'}`; selectedIds.value = [] }
 async function upload(event) {
   const files = [...(event.target.files || [])]
   if (!files.length) return
@@ -776,7 +881,7 @@ async function upload(event) {
     const ext = (file.name.split('.').pop() || 'FILE').toUpperCase()
     const typeMap = { PDF:['pdf','mdi-file-pdf-box'], DOC:['word','mdi-file-word'], DOCX:['word','mdi-file-word'], XLS:['sheet','mdi-file-excel'], XLSX:['sheet','mdi-file-excel'], PNG:['image','mdi-image-outline'], JPG:['image','mdi-image-outline'], JPEG:['image','mdi-image-outline'] }
     const [color, icon] = typeMap[ext] || ['other','mdi-file-outline']
-    const doc = { id: crypto.randomUUID(), name:file.name, ext, size:prettySize(file.size), bytes:file.size, date:'Ahora', addedAt:Date.now(), folder:activeFolder.value === 'Todos los documentos' ? 'Mi espacio' : activeFolder.value, color, icon, author:'Tú', blob:file, mime:file.type, favorite:false }
+    const doc = { id: crypto.randomUUID(), name:file.name, ext, size:prettySize(file.size), bytes:file.size, date:'Ahora', addedAt:Date.now(), folder:activeFolder.value === 'Todos los documentos' || activeFolder.value === 'Favoritos' ? 'Mi espacio' : activeFolder.value, color, icon, blob:file, mime:file.type, favorite:false }
     await db.put('files', doc)
     docs.value.unshift(doc)
   }
@@ -784,12 +889,11 @@ async function upload(event) {
   event.target.value = ''
 }
 async function toggleFavorite(doc) {
-  if (doc.id.startsWith('demo-')) { doc.favorite = !doc.favorite; snackbar.value = doc.favorite ? 'Añadido a favoritos' : 'Quitado de favoritos'; return }
   doc.favorite = !doc.favorite; await (await dbPromise).put('files', doc); snackbar.value = doc.favorite ? 'Añadido a favoritos' : 'Quitado de favoritos'
 }
-function openPreview(doc) { if (!doc.blob) { snackbar.value = 'Sube un archivo para ver su contenido.'; return }; preview.value = doc }
-function download(doc) { if (!doc.blob) { snackbar.value = 'Los documentos de ejemplo son solo una vista previa.'; return }; const url=URL.createObjectURL(doc.blob); const a=document.createElement('a'); a.href=url; a.download=doc.name; a.click(); URL.revokeObjectURL(url) }
-async function removeDoc(doc) { if (doc.id.startsWith('demo-')) { snackbar.value='Los documentos de ejemplo no se pueden eliminar.'; return }; await (await dbPromise).delete('files', doc.id); docs.value=docs.value.filter(d=>d.id!==doc.id); preview.value=null; snackbar.value='Documento eliminado' }
+function openPreview(doc) { if (!doc.blob) { snackbar.value = 'El archivo no está disponible en este navegador.'; return }; preview.value = doc }
+function download(doc) { if (!doc.blob) { snackbar.value = 'El archivo no está disponible en este navegador.'; return }; const url=URL.createObjectURL(doc.blob); const a=document.createElement('a'); a.href=url; a.download=doc.name; a.click(); URL.revokeObjectURL(url) }
+async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id); docs.value=docs.value.filter(d=>d.id!==doc.id); preview.value=null; snackbar.value='Documento eliminado' }
 </script>
 
 <template>
@@ -818,7 +922,7 @@ async function removeDoc(doc) { if (doc.id.startsWith('demo-')) { snackbar.value
         <button class="upload-btn" @click="uploadInput?.click()"><v-icon icon="mdi-plus" size="20" /> Subir documento <v-icon class="upload-arrow" icon="mdi-chevron-down" size="17" /></button>
         <input ref="uploadInput" type="file" multiple hidden @change="upload" />
         <div class="nav-label">BIBLIOTECA</div>
-        <button v-for="(folder,i) in folders.slice(0,6)" :key="folder" class="nav-item" :class="{selected:activePage==='documents'&&activeFolder===folder}" @click="activePage='documents';activeFolder=folder"><v-icon :icon="['mdi-view-grid-outline','mdi-folder-outline','mdi-briefcase-outline','mdi-account-outline','mdi-account-multiple-outline','mdi-star-outline'][i]" size="19"/><span>{{ folder }}</span><span v-if="folder==='Todos los documentos'" class="nav-count">{{ samples.length + docs.length }}</span></button>
+        <button v-for="folder in folders" :key="folder" class="nav-item" :class="{selected:activePage==='documents'&&activeFolder===folder}" @click="activePage='documents';activeFolder=folder"><v-icon :icon="folder==='Todos los documentos' ? 'mdi-view-grid-outline' : 'mdi-star-outline'" size="19"/><span>{{ folder }}</span><span v-if="folder==='Todos los documentos'" class="nav-count">{{ docs.length }}</span></button>
         <div class="sidebar-divider"></div>
         <div class="nav-label">ESPACIOS</div>
         <button v-for="(f,i) in spaces" :key="f+'space'" class="nav-item space-item" :class="{selected:activePage==='documents'&&activeFolder===f}" @click="activePage='documents';activeFolder=f"><span class="space-dot" :class="'dot-'+(i%3)"></span><span>{{ f }}</span></button>
@@ -828,13 +932,13 @@ async function removeDoc(doc) { if (doc.id.startsWith('demo-')) { snackbar.value
         <div class="nav-label">PROCESOS</div>
         <button class="nav-item" :class="{selected:activePage==='ingesta'}" @click="activePage='ingesta'"><v-icon icon="mdi-cloud-upload-outline" size="19"/><span>Recibir planillas</span></button>
         <button class="add-space" @click="createSpaceDialog=true"><v-icon icon="mdi-plus" size="17"/> Crear espacio</button>
-          <div class="sidebar-bottom"><div class="storage-row"><span>Almacenamiento</span><span>{{ docs.length ? prettySize(docs.reduce((a,d)=>a+(d.bytes||0),0)) : '0 MB' }} / 5 GB</span></div><div class="storage-track"><span :style="{width:Math.max(3,Math.min(100,docs.reduce((a,d)=>a+(d.bytes||0),0)/(5*1024*1024*1024)*100))+'%'}"></span></div><button class="profile" @click="signOut"><span class="avatar">{{ currentUser.slice(0,1).toUpperCase() }}</span><span class="profile-copy"><b>{{ currentUser }}</b><small>Cerrar sesión</small></span><v-icon icon="mdi-logout" size="18"/></button></div>
+          <div class="sidebar-bottom"><div class="storage-row"><span>Guardado en este navegador</span><span>{{ docs.length ? prettySize(docs.reduce((a,d)=>a+(d.bytes||0),0)) : '0 MB' }}</span></div><button class="profile" @click="signOut"><span class="avatar">{{ displayUser.slice(0,1) }}</span><span class="profile-copy"><b>{{ displayUser }}</b><small>Cerrar sesión</small></span><v-icon icon="mdi-logout" size="18"/></button></div>
       </aside>
       <main class="main-area">
-        <header class="topbar"><div class="breadcrumbs"><span>Espacios</span><v-icon icon="mdi-chevron-right" size="16"/><b>{{ title }}</b></div><div class="top-actions"><button class="icon-btn" aria-label="Ayuda" @click="snackbar='Tus documentos se guardan en este navegador.'"><v-icon icon="mdi-help-circle-outline"/></button><button class="icon-btn notification-btn" aria-label="Notificaciones" @click="snackbar='No tienes notificaciones nuevas.'"><v-icon icon="mdi-bell-outline"/><i></i></button><span class="avatar top-avatar">{{ currentUser.slice(0,1).toUpperCase() }}</span></div></header>
+        <header class="topbar"><div class="breadcrumbs"><span>Espacios</span><v-icon icon="mdi-chevron-right" size="16"/><b>{{ title }}</b></div><div class="top-actions"><span class="avatar top-avatar">{{ displayUser.slice(0,1) }}</span></div></header>
         <section v-if="activePage==='documents'" class="content-wrap">
-          <div class="welcome-line"><div><div class="eyebrow">LUNES, 22 DE SEPTIEMBRE</div><h1>{{ title }}<span class="title-period">.</span></h1><p class="subtitle">Todo lo que necesitas, en un solo lugar.</p></div><button class="primary-upload" @click="uploadInput?.click()"><v-icon icon="mdi-upload" size="18"/> Subir documento</button></div>
-          <div class="stats-row"><div class="stat-card"><span class="stat-icon green"><v-icon icon="mdi-file-multiple-outline"/></span><div><span class="stat-label">Documentos</span><strong>{{ samples.length + docs.length }} <small>archivos</small></strong></div></div><div class="stat-card"><span class="stat-icon peach"><v-icon icon="mdi-folder-multiple-outline"/></span><div><span class="stat-label">Espacios</span><strong>3 <small>activos</small></strong></div></div><div class="stat-card storage-stat"><span class="stat-icon lavender"><v-icon icon="mdi-cloud-outline"/></span><div class="stat-flex"><div><span class="stat-label">Almacenamiento</span><strong>{{ docs.length ? prettySize(docs.reduce((a,d)=>a+(d.bytes||0),0)) : '0 MB' }} <small>de 5 GB</small></strong></div><div class="storage-track mini"><span :style="{width:Math.max(3,Math.min(100,docs.reduce((a,d)=>a+(d.bytes||0),0)/(5*1024*1024*1024)*100))+'%'}"></span></div></div></div></div>
+          <div class="welcome-line"><div><div class="eyebrow">BIBLIOTECA PERSONAL</div><h1>{{ title }}<span class="title-period">.</span></h1><p class="subtitle">Busca, organiza y abre tus documentos guardados.</p></div><button class="primary-upload" @click="uploadInput?.click()"><v-icon icon="mdi-upload" size="18"/> Subir documento</button></div>
+          <div class="stats-row"><div class="stat-card"><span class="stat-icon green"><v-icon icon="mdi-file-multiple-outline"/></span><div><span class="stat-label">Documentos</span><strong>{{ docs.length }} <small>archivos</small></strong></div></div><div class="stat-card"><span class="stat-icon peach"><v-icon icon="mdi-folder-multiple-outline"/></span><div><span class="stat-label">Espacios</span><strong>{{ spaces.length }} <small>activos</small></strong></div></div></div>
           <section class="recent-section"><div class="section-heading"><div><h2>{{ activeFolder==='Todos los documentos' ? 'Tus archivos' : 'Archivos' }} <span class="muted-count">{{ visibleDocs.length }}</span></h2><p>Organiza y encuentra lo que buscas.</p></div><button class="text-action" @click="activeFolder=folders[0]">Ver todo <v-icon icon="mdi-arrow-right" size="16"/></button></div>
             <div class="toolbar"><div class="search-wrap"><v-icon icon="mdi-magnify" size="19"/><input ref="searchInput" v-model="query" placeholder="Buscar documentos..." aria-label="Buscar documentos"/><kbd>⌘ K</kbd></div><div class="toolbar-right"><v-select v-model="sortBy" :items="['Recientes','Nombre','Tamaño']" prepend-inner-icon="mdi-sort" class="sort-select" aria-label="Ordenar documentos"/><div class="view-switch"><button :class="{active:view==='grid'}" aria-label="Vista de cuadrícula" @click="view='grid'"><v-icon icon="mdi-view-grid-outline" size="18"/></button><button :class="{active:view==='list'}" aria-label="Vista de lista" @click="view='list'"><v-icon icon="mdi-view-list-outline" size="19"/></button></div></div></div>
             <div class="filter-row"><v-chip-group v-model="typeFilter" selected-class="filter-chip-selected" mandatory color="primary"><v-chip value="Todo" size="small" variant="outlined" filter>Todos los tipos</v-chip><v-chip value="pdf" size="small" variant="outlined" prepend-icon="mdi-file-pdf-box">PDF</v-chip><v-chip value="word" size="small" variant="outlined" prepend-icon="mdi-file-word">Word</v-chip><v-chip value="sheet" size="small" variant="outlined" prepend-icon="mdi-file-excel">Hojas de cálculo</v-chip><v-chip value="image" size="small" variant="outlined" prepend-icon="mdi-image-outline">Imágenes</v-chip></v-chip-group><v-select v-model="dateFilter" class="date-filter" :items="['Cualquier fecha','Últimos 7 días','Últimos 30 días']" prepend-inner-icon="mdi-calendar-blank-outline" aria-label="Filtrar por fecha"/><v-chip v-if="query" size="small" closable variant="tonal" color="secondary" @click:close="query=''">“{{ query }}”</v-chip></div>
@@ -843,7 +947,6 @@ async function removeDoc(doc) { if (doc.id.startsWith('demo-')) { snackbar.value
             <div v-else-if="!visibleDocs.length" class="empty-state"><span class="empty-icon"><v-icon icon="mdi-folder-search-outline" size="32"/></span><h3>No encontramos documentos</h3><p>Prueba con otra búsqueda o añade un documento a tu espacio.</p><button class="primary-upload" @click="uploadInput?.click()"><v-icon icon="mdi-upload" size="18"/> Subir documento</button></div>
             <div v-else class="document-grid" :class="{'list-view':view==='list'}"><article v-for="doc in visibleDocs" :key="doc.id" class="document-card" :class="{'is-selected':selectedIds.includes(doc.id)}" @click="openPreview(doc)"><div class="doc-cover" :class="'cover-'+doc.color"><div class="paper-sheet"><div class="sheet-header"><span class="file-badge" :class="'badge-'+doc.color">{{ doc.ext }}</span><v-menu location="bottom end"><template #activator="{ props }"><button v-bind="props" class="more-btn" aria-label="Opciones del documento" @click.stop><v-icon icon="mdi-dots-horizontal" size="19"/></button></template><v-list density="compact" min-width="185" class="doc-menu"><v-list-item prepend-icon="mdi-eye-outline" title="Vista previa" @click="openPreview(doc)"/><v-list-item :prepend-icon="doc.favorite ? 'mdi-star' : 'mdi-star-outline'" :title="doc.favorite ? 'Quitar favorito' : 'Añadir a favoritos'" @click="toggleFavorite(doc)"/><v-list-item prepend-icon="mdi-folder-move-outline" title="Mover a…" @click="startMove(doc)"/><v-list-item prepend-icon="mdi-download-outline" title="Descargar" @click="download(doc)"/><v-divider class="my-1"/><v-list-item prepend-icon="mdi-delete-outline" title="Eliminar" class="text-error" @click="removeDoc(doc)"/></v-list></v-menu></div><div v-if="doc.color==='image'" class="image-art"><div></div><span>✳</span><i></i></div><div v-else class="fake-lines"><span class="line-title"></span><span></span><span></span><span class="line-short"></span><span class="line-gap"></span><span></span><span class="line-mid"></span></div><span class="page-corner"></span></div><v-btn class="select-doc" :class="{checked:selectedIds.includes(doc.id)}" :icon="selectedIds.includes(doc.id) ? 'mdi-check-circle' : 'mdi-checkbox-blank-circle-outline'" size="small" variant="flat" aria-label="Seleccionar documento" @click.stop="toggleSelected(doc)"/></div><div class="doc-info"><div class="doc-type-icon" :class="'type-'+doc.color"><v-icon :icon="doc.icon" size="19"/></div><div class="doc-detail"><h3>{{ doc.name }}</h3><p>{{ doc.ext }} <i>·</i> {{ doc.size }} <i>·</i> {{ doc.date }}</p></div><v-tooltip :text="doc.favorite ? 'Favorito' : 'Más opciones'"><template #activator="{ props }"><v-btn v-bind="props" class="favorite-btn" :icon="doc.favorite ? 'mdi-star' : 'mdi-star-outline'" size="small" variant="text" :color="doc.favorite ? 'amber-darken-2' : 'grey'" aria-label="Añadir a favoritos" @click.stop="toggleFavorite(doc)"/></template></v-tooltip></div></article></div>
           </section>
-          <section class="shared-banner"><div class="shared-ornament"><v-icon icon="mdi-folder-heart-outline" size="29"/></div><div><h3>Comparte tus ideas con el equipo</h3><p>Crea un espacio compartido y trabajen juntos en sus documentos.</p></div><button @click="snackbar='Pronto podrás invitar a tu equipo.'">Invitar a alguien <v-icon icon="mdi-arrow-right" size="16"/></button></section>
           <footer>Hecho con cuidado para tus documentos <span>✳</span></footer>
         </section>
         <section v-else-if="activePage==='planilla'" class="content-wrap planilla-content">
@@ -860,13 +963,18 @@ async function removeDoc(doc) { if (doc.id.startsWith('demo-')) { snackbar.value
         </section>
         <section v-else class="content-wrap ingest-content">
           <div class="welcome-line"><div><div class="eyebrow">RECEPCIÓN DE EXPEDIENTES</div><h1>Recibir lote de planillas<span class="title-period">.</span></h1><p class="subtitle">Carga el ZIP de planillas y añade los documentos habilitantes cuando los tengas.</p></div></div>
-          <v-alert class="ingest-notice" type="info" variant="tonal" density="comfortable" prepend-icon="mdi-information-outline">Puedes empezar con el ZIP de planillas. Después añade la matriz, la planilla consolidada y el oficio al mismo expediente.</v-alert>
+          <v-alert class="ingest-notice" type="info" variant="tonal" density="comfortable" prepend-icon="mdi-information-outline">{{ ingestMode === 'resume' ? 'Abre un período existente para revisar sus documentos o continuar el trabajo en el mismo espacio.' : 'Puedes empezar con el ZIP de planillas. Después añade la matriz, la planilla consolidada y el oficio al mismo expediente.' }}</v-alert>
+          <v-btn-toggle :model-value="ingestMode" class="ingest-mode-switch" color="primary" divided mandatory rounded="lg" @update:model-value="switchIngestMode">
+            <v-btn type="button" value="resume" prepend-icon="mdi-folder-clock-outline">Abrir período guardado <span class="ingest-mode-count">{{ savedWorkspaceItems.length }}</span></v-btn>
+            <v-btn type="button" value="new" prepend-icon="mdi-plus-circle-outline">Crear período nuevo</v-btn>
+          </v-btn-toggle>
           <form class="ingest-form" @submit.prevent="submitIngest">
-            <section v-if="savedWorkspaceItems.length || savedWorkspacesLoading" class="ingest-card saved-workspaces-card">
-              <div class="ingest-card-heading"><span class="ingest-step"><v-icon icon="mdi-folder-clock-outline" size="18"/></span><div><h2>Volver a un período guardado</h2><p>Abre el mismo expediente para continuar donde lo dejaste, sin subir el ZIP otra vez.</p></div><v-spacer/><v-btn type="button" icon="mdi-refresh" variant="text" aria-label="Actualizar expedientes guardados" :loading="savedWorkspacesLoading" @click="loadSavedWorkspaces"/></div>
-              <div class="saved-workspaces-row"><v-select v-model="selectedSavedWorkspace" :items="savedWorkspaceItems" label="Servicio y período" prepend-inner-icon="mdi-folder-open-outline" density="comfortable" hide-details/><v-btn type="button" color="primary" prepend-icon="mdi-folder-open-outline" :loading="openingSavedWorkspace" :disabled="!selectedSavedWorkspace" @click="openSavedWorkspace">Abrir período</v-btn></div>
+            <section v-if="ingestMode === 'resume' && !ingestResult" class="ingest-card saved-workspaces-card">
+              <div class="ingest-card-heading"><span class="ingest-step"><v-icon icon="mdi-folder-clock-outline" size="18"/></span><div><h2>Volver a un período guardado</h2><p>Busca un período compartido para abrirlo y continuar el trabajo, aunque lo haya recibido otra persona.</p></div><v-spacer/><v-btn type="button" icon="mdi-refresh" variant="text" aria-label="Actualizar expedientes guardados" :loading="savedWorkspacesLoading" @click="loadSavedWorkspaces"/></div>
+              <div class="saved-workspaces-row"><v-select v-model="selectedSavedWorkspace" :items="savedWorkspaceItems" label="Servicio y período" :placeholder="savedWorkspacesLoading ? 'Cargando períodos…' : 'No tienes períodos guardados'" prepend-inner-icon="mdi-folder-open-outline" density="comfortable" :disabled="savedWorkspacesLoading || !savedWorkspaceItems.length" hide-details/><v-btn type="button" color="primary" prepend-icon="mdi-folder-open-outline" :loading="openingSavedWorkspace" :disabled="!selectedSavedWorkspace" @click="openSavedWorkspace">Abrir período</v-btn></div>
+              <div v-if="!savedWorkspacesLoading && !savedWorkspaceItems.length" class="saved-workspaces-empty"><v-icon icon="mdi-folder-search-outline" size="24"/><span><strong>No hay períodos guardados todavía</strong><small>Crea un período nuevo y aparecerá aquí para que cualquier cuenta autorizada pueda continuarlo.</small></span><v-btn type="button" variant="text" color="primary" @click="switchIngestMode('new')">Crear período nuevo</v-btn></div>
             </section>
-            <template v-if="!ingestResult">
+            <template v-if="ingestMode === 'new' && !ingestResult">
             <section class="ingest-card">
               <div class="ingest-card-heading"><span class="ingest-step">1</span><div><h2>Define el lote</h2><p>Selecciona el mes, año y tipo de atención del ZIP.</p></div></div>
               <div class="ingest-period-grid">
@@ -889,13 +997,13 @@ async function removeDoc(doc) { if (doc.id.startsWith('demo-')) { snackbar.value
             </template>
             <v-alert v-if="ingestError" type="error" variant="tonal" density="comfortable" role="alert">{{ ingestError }}</v-alert>
           <section v-if="ingestResult" class="ingest-card current-job-card">
-              <div class="ingest-card-heading"><span class="ingest-step">{{ ingestResult.status === 'STAGED' ? '3' : '✓' }}</span><div><h2>{{ ingestResult.status === 'STAGED' ? 'Lote de planillas recibido' : 'Espacio de trabajo del período' }}</h2><p>{{ ingestResult.status === 'STAGED' ? 'El ZIP ya está guardado. El siguiente paso prepara las carpetas por paciente.' : 'Este espacio se reutiliza para el mismo servicio y período.' }}</p></div></div>
+              <div class="ingest-card-heading"><span class="ingest-step">{{ ['STAGED','REQUIERE_REVISION'].includes(ingestResult.status) ? '3' : '✓' }}</span><div><h2>{{ ['STAGED','REQUIERE_REVISION'].includes(ingestResult.status) ? 'Lote de planillas recibido' : 'Espacio de trabajo del período' }}</h2><p>{{ ['STAGED','REQUIERE_REVISION'].includes(ingestResult.status) ? 'El ZIP está guardado. Revisa el cruce antes de preparar las carpetas por paciente.' : 'Este espacio se reutiliza para el mismo servicio y período.' }}</p></div></div>
               <div class="ingest-job-id"><span>ID del lote</span><code>{{ ingestResult.job_id }}</code></div>
               <v-alert v-if="ingestResult.reuse_notice" type="info" variant="tonal" density="comfortable">{{ ingestResult.reuse_notice }}</v-alert>
-              <v-alert :type="ingestResult.status === 'PROCESSED' ? 'success' : 'info'" variant="tonal" density="comfortable" prepend-icon="mdi-information-outline">
-                <strong>{{ ingestResult.status === 'STAGED' ? 'Siguiente paso: preparar expedientes' : ingestResult.status === 'INCOMPLETE' ? 'Expediente preparado; faltan documentos habilitantes.' : 'Expediente preparado para revisión.' }}</strong><div>{{ ingestResult.message }}</div>
+              <v-alert :type="ingestResult.status === 'PROCESSED' ? 'success' : ingestResult.status === 'REQUIERE_REVISION' ? 'warning' : 'info'" variant="tonal" density="comfortable" prepend-icon="mdi-information-outline">
+                <strong>{{ ['STAGED','REQUIERE_REVISION'].includes(ingestResult.status) ? 'Siguiente paso: revisar y preparar expedientes' : ingestResult.status === 'INCOMPLETE' ? 'Expediente preparado; faltan documentos habilitantes.' : 'Expediente preparado para revisión.' }}</strong><div>{{ ingestResult.message }}</div>
               </v-alert>
-              <div v-if="ingestResult.status === 'STAGED'" class="ingest-next-step"><p v-if="!ingestPreview">Revisa la vista previa antes de preparar el expediente.</p><p v-else-if="!ingestPreviewReadyToPrepare">Corrige el ZIP o el período seleccionado: hay carpetas que no se pueden emparejar o entradas fuera de la estructura esperada.</p><p v-else>Los {{ ingestPreview.pdfs }} PDFs están dentro de {{ ingestPreview.carpetas_tramite }} carpetas y todos sus trámites se encuentran en Oracle para el período seleccionado.</p><v-btn color="primary" size="large" prepend-icon="mdi-folder-cog-outline" :loading="ingestProcessing" :disabled="!ingestPreviewReadyToPrepare" @click="processIngest">Preparar expedientes</v-btn></div>
+              <div v-if="['STAGED','REQUIERE_REVISION'].includes(ingestResult.status)" class="ingest-next-step"><p v-if="!ingestPreview">Revisa la vista previa antes de preparar el expediente.</p><p v-else-if="!ingestPreviewReadyToPrepare">La vista previa encontró {{ ingestPreview.tramites_sin_oracle }} trámite(s) sin coincidencia y {{ ingestPreview.entradas_invalidas }} ruta(s) inválida(s). Puedes corregir el período o cargar un ZIP corregido para este mismo expediente.</p><p v-else>Los {{ ingestPreview.pdfs }} PDFs están dentro de {{ ingestPreview.carpetas_tramite }} carpetas y todos sus trámites se encuentran en Oracle para el período seleccionado.</p><v-btn color="primary" size="large" prepend-icon="mdi-folder-cog-outline" :loading="ingestProcessing" :disabled="!ingestPreviewReadyToPrepare" @click="processIngest">Preparar expedientes</v-btn><input ref="zipReplacementInput" type="file" accept=".zip,application/zip" hidden @change="replaceIngestZIP"/><v-btn v-if="!ingestPreviewReadyToPrepare" type="button" variant="outlined" prepend-icon="mdi-file-replace-outline" :loading="zipReplacementSending" :disabled="ingestProcessing" @click="zipReplacementInput?.click()">Subir ZIP corregido</v-btn></div>
             </section>
             <section v-if="ingestResult && (ingestPreview || ingestPreviewLoading || ingestPreviewError)" class="ingest-card ingest-preview-card">
               <div class="ingest-card-heading"><span class="ingest-step"><v-icon icon="mdi-folder-search-outline" size="19"/></span><div><h2>Vista previa del ZIP y cruce con Oracle</h2><p>Período seleccionado: {{ ingestPreview?.mes || ingestResult.mes }}/{{ ingestPreview?.anio || ingestResult.anio }} · Servicio: {{ ingestPreview?.tipo_servicio || ingestService }}</p></div><v-spacer/><v-btn type="button" icon="mdi-refresh" variant="text" aria-label="Actualizar vista previa del ZIP" :loading="ingestPreviewLoading" @click="loadIngestPreview(ingestResult.job_id)"/></div>
@@ -937,7 +1045,8 @@ async function removeDoc(doc) { if (doc.id.startsWith('demo-')) { snackbar.value
             </div>
             <section v-if="ingestResult?.output" class="ingest-card review-card">
               <div class="ingest-card-heading"><span class="ingest-step">4</span><div><h2>Revisión de documentos</h2><p>La clasificación se ejecuta al preparar el expediente. Los pendientes requieren revisión documental antes del cierre.</p></div></div>
-              <v-alert v-if="ingestResult.clasificacion" type="info" variant="tonal" density="comfortable">{{ ingestResult.clasificacion.clasificados }} PDFs identificados y {{ ingestResult.clasificacion.pendientes }} pendientes, de {{ ingestResult.clasificacion.total }}. Lectura: {{ ingestResult.clasificacion.texto_vectorial }} con texto PDF, {{ ingestResult.clasificacion.ocr }} por OCR y {{ ingestResult.clasificacion.sin_texto_legible ?? 0 }} sin texto legible.</v-alert>
+              <v-alert v-if="ingestResult.clasificacion" type="info" variant="tonal" density="comfortable">{{ ingestResult.clasificacion.clasificados }} PDFs identificados y {{ ingestResult.clasificacion.pendientes }} sin identificar, de {{ ingestResult.clasificacion.total }}. Lectura: {{ ingestResult.clasificacion.texto_vectorial }} con texto PDF, {{ ingestResult.clasificacion.ocr }} por OCR y {{ ingestResult.clasificacion.sin_texto_legible ?? 0 }} sin texto legible.</v-alert>
+              <v-alert v-if="ingestResult.clasificacion?.fusiones_pendientes" type="warning" variant="tonal" density="comfortable">{{ ingestResult.clasificacion.fusiones_pendientes }} PDF(s) adicionales fueron reconocidos y se conservaron con nombre numerado. Revísalos y fusiónalos desde la carpeta del paciente cuando corresponda.</v-alert>
               <v-alert v-if="ingestResult.clasificacion?.documentos_fecha_fuera_atencion?.length" type="warning" variant="tonal" density="comfortable" prepend-icon="mdi-calendar-alert-outline">
                 <strong>{{ ingestResult.clasificacion.documentos_fecha_fuera_atencion.length }} PDF con fechas fuera del intervalo de atención de Oracle.</strong>
                 <p>Se compara el texto de las primeras páginas con PDI_FECHA_DESDE y PDI_FECHA_HASTA del PDI_TRAMITE correspondiente. Son alertas de revisión: no bloquean ni cambian el expediente.</p>
@@ -950,14 +1059,15 @@ async function removeDoc(doc) { if (doc.id.startsWith('demo-')) { snackbar.value
             </section>
             <section v-if="ingestResult?.output" class="ingest-card workspace-files-card">
               <div class="ingest-card-heading"><span class="ingest-step">5</span><div><h2>Documentos del paciente</h2><p>Elige una carpeta para ver, añadir o reemplazar sus PDFs.</p></div><v-spacer/><v-btn type="button" icon="mdi-refresh" variant="text" aria-label="Actualizar lista de PDFs" :loading="workspaceBusy" @click="loadWorkspaceDocuments(ingestResult.job_id, selectedWorkspacePDF)"/></div>
-              <v-alert v-if="workspaceNotice" :type="workspaceNotice.includes('Se guardó') || workspaceNotice.includes('añadidos') || workspaceNotice.includes('reemplazado') || workspaceNotice.includes('quitado') || workspaceNotice.includes('descargó') ? 'success' : 'warning'" variant="tonal" density="compact" class="workspace-notice">{{ workspaceNotice }}</v-alert>
+              <v-alert v-if="workspaceNotice" :type="workspaceNotice.includes('Se guardó') || workspaceNotice.includes('añadidos') || workspaceNotice.includes('reemplazado') || workspaceNotice.includes('quitado') || workspaceNotice.includes('descargó') || workspaceNotice.includes('fusionaron') ? 'success' : 'warning'" variant="tonal" density="compact" class="workspace-notice">{{ workspaceNotice }}</v-alert>
+              <v-alert v-if="workspaceFusionGroups.length" type="warning" variant="tonal" density="comfortable" prepend-icon="mdi-content-copy">Hay {{ workspaceFusionGroups.length }} grupo(s) de documentos repetidos. Se conservaron con nombres numerados para revisarlos y fusionarlos después. Las fuentes originales se mantienen.</v-alert>
               <v-select v-model="workspacePatient" :items="workspacePatients" label="Carpeta del paciente" prepend-inner-icon="mdi-folder-account-outline" density="comfortable" class="workspace-patient-select" :disabled="!workspacePatients.length || replacePDFDialog" @update:model-value="selectWorkspacePatient"/>
               <div class="workspace-file-layout">
                 <div class="workspace-file-list">
                   <div class="workspace-file-count">{{ workspacePatientPDFs.length }} PDFs en esta carpeta</div>
                   <div v-for="document in workspacePatientPDFs" :key="document.path" class="workspace-file-entry">
                     <button type="button" class="workspace-file-row" :class="{ selected: selectedWorkspacePDF === document.path }" @click.prevent="selectWorkspacePDF(document.path)">
-                      <v-icon icon="mdi-file-pdf-box" color="error" size="20"/><span><strong>{{ document.name }}</strong><small>{{ document.path }}</small></span><v-icon v-if="selectedWorkspacePDF === document.path" icon="mdi-eye-outline" size="18"/>
+                      <v-icon icon="mdi-file-pdf-box" color="error" size="20"/><span><strong>{{ document.name }}</strong><small>{{ document.path }}</small></span><v-chip v-if="isPendingWorkspaceDocument(document)" size="x-small" color="warning" variant="tonal">Sin nombre MSP</v-chip><v-chip v-else-if="workspaceFusionGroups.some(group => group.paths.includes(document.path))" size="x-small" color="warning" variant="tonal">Fusionar después</v-chip><v-icon v-if="selectedWorkspacePDF === document.path" icon="mdi-eye-outline" size="18"/>
                     </button>
                     <v-btn type="button" icon="mdi-delete-outline" variant="text" size="small" color="error" :aria-label="`Quitar ${document.name}`" title="Quitar PDF de esta carpeta" @click="requestDeleteWorkspacePDF(document.path)"/>
                   </div>
@@ -967,13 +1077,17 @@ async function removeDoc(doc) { if (doc.id.startsWith('demo-')) { snackbar.value
                   <div v-if="selectedWorkspaceDocument" class="workspace-preview-heading"><strong>{{ selectedWorkspaceDocument.name }}</strong><span>{{ prettySize(selectedWorkspaceDocument.size) }}</span></div>
                   <iframe v-if="workspacePDFURL" :key="workspacePDFURL" :src="workspacePDFURL" :title="selectedWorkspaceDocument?.name || 'Vista previa del PDF'" />
                   <div v-else class="workspace-empty">Selecciona un PDF de la lista para verlo aquí.</div>
+                  <div v-if="selectedWorkspaceDocument" class="workspace-rename-panel">
+                    <div class="workspace-rename-copy"><strong>{{ isPendingWorkspaceDocument(selectedWorkspaceDocument) ? 'Asigna un nombre del catálogo MSP' : 'Cambiar nombre del documento' }}</strong><small>La vista previa ayuda a revisar el contenido. Asignar un nombre organiza el PDF, pero no confirma su clasificación.</small></div>
+                    <div class="workspace-edit-row">
+                      <v-autocomplete v-model="workspaceRename" :items="mspPDFOptions" item-title="title" item-value="value" :label="isPendingWorkspaceDocument(selectedWorkspaceDocument) ? 'Nombre MSP' : 'Nombre estándar MSP'" placeholder="Selecciona el tipo de documento" prepend-inner-icon="mdi-rename-box-outline" density="comfortable" variant="outlined" clearable hide-details/>
+                      <v-btn type="button" color="primary" variant="tonal" prepend-icon="mdi-content-save-outline" :loading="workspaceBusy" :disabled="!workspaceRename" @click="renameWorkspacePDF">{{ isPendingWorkspaceDocument(selectedWorkspaceDocument) ? 'Asignar nombre' : 'Guardar nombre' }}</v-btn>
+                    </div>
+                  </div>
                 </div>
               </div>
-              <div v-if="selectedWorkspaceDocument" class="workspace-edit-row">
-                <v-autocomplete v-model="workspaceRename" :items="mspPDFOptions" item-title="title" item-value="value" label="Nombre estándar MSP" placeholder="Selecciona el tipo de documento" prepend-inner-icon="mdi-rename-box-outline" density="comfortable" variant="outlined" clearable hide-details/>
-                <v-btn type="button" color="primary" variant="tonal" prepend-icon="mdi-content-save-outline" :loading="workspaceBusy" :disabled="!workspaceRename" @click="renameWorkspacePDF">Guardar nombre</v-btn>
-              </div>
-              <p v-if="selectedWorkspaceDocument" class="workspace-hint">El nombre se elige del catálogo y siempre termina en .pdf. Si ya existe otro documento con ese código, se asigna una secuencia (_1, _2…).</p>
+              <div v-if="selectedWorkspaceFusionGroup" class="workspace-fusion-row"><span>{{ selectedWorkspaceFusionGroup.paths.length }} PDFs corresponden a {{ selectedWorkspaceFusionGroup.code }}. Ordénalos y fusiónalos cuando hayas revisado su contenido.</span><v-btn type="button" color="warning" variant="tonal" prepend-icon="mdi-file-document-multiple-outline" :disabled="workspaceBusy || mergeSending" @click="openWorkspaceFusion">Revisar fusión</v-btn></div>
+              <p v-if="selectedWorkspaceDocument" class="workspace-hint">Si añades un tipo que ya existe, se conserva como una copia numerada para revisar o fusionar después. Para sustituir una versión, usa “Reemplazar PDF seleccionado”.</p>
               <div class="workspace-add-row">
                 <input ref="workspacePDFInput" type="file" accept=".pdf,application/pdf" multiple hidden @change="selectWorkspacePDFs" />
                 <v-btn type="button" variant="outlined" prepend-icon="mdi-file-pdf-box" :disabled="workspaceSending" @click="workspacePDFInput?.click()">{{ workspaceUploadFiles.length ? 'Añadir más PDFs a la selección' : 'Seleccionar PDFs para añadir' }}</v-btn>
@@ -981,16 +1095,26 @@ async function removeDoc(doc) { if (doc.id.startsWith('demo-')) { snackbar.value
                 <v-btn type="button" color="warning" variant="tonal" prepend-icon="mdi-file-replace-outline" :disabled="!selectedWorkspaceDocument || workspaceSending" @click="replacePDFInput?.click()">Reemplazar PDF seleccionado</v-btn>
               </div>
               <div v-if="workspaceUploadFiles.length" class="workspace-upload-queue">
-                <div class="workspace-upload-queue-heading"><strong>{{ workspaceUploadFiles.length }} PDF{{ workspaceUploadFiles.length === 1 ? '' : 's' }} para añadir</strong><span>Asigna a cada archivo el nombre con el que quedará en esta carpeta.</span></div>
+                <div class="workspace-upload-queue-heading"><strong>{{ workspaceUploadFiles.length }} PDF{{ workspaceUploadFiles.length === 1 ? '' : 's' }} para añadir</strong><span>Asigna el paciente y nombre MSP. Si ya existe ese tipo de documento, se añadirá con el siguiente sufijo disponible para revisar o fusionar después.</span></div>
                 <div v-for="(item, index) in workspaceUploadFiles" :key="item.id" class="workspace-upload-item">
                   <div class="workspace-upload-source"><v-icon icon="mdi-file-pdf-box" color="error"/><span><strong>{{ item.file.name }}</strong><small>{{ prettySize(item.file.size) }}</small></span></div>
-                  <v-autocomplete v-model="item.code" :items="mspPDFOptions" item-title="title" item-value="value" label="Nombre estándar MSP" placeholder="Selecciona el documento" density="compact" variant="outlined" clearable hide-details/>
+                <v-autocomplete v-model="item.code" :items="mspPDFOptions" item-title="title" item-value="value" label="Nombre estándar MSP" placeholder="Selecciona el documento" density="compact" variant="outlined" clearable hide-details @update:model-value="item.replaceExisting = workspacePatientPDFs.some(document => document.name.toLowerCase() === (item.code || '').toLowerCase())"/>
                   <v-btn type="button" icon="mdi-close" variant="text" size="small" :aria-label="`Quitar ${item.file.name} de la selección`" @click="removeQueuedWorkspacePDF(index)"/>
                 </div>
-                <div class="workspace-upload-submit"><span>El nombre original del archivo solo se conserva como referencia; no se usa en la carpeta de entrega.</span><v-btn type="button" color="primary" prepend-icon="mdi-cloud-upload-outline" :loading="workspaceSending" :disabled="!workspacePatient || workspaceUploadFiles.some(item => !item.code)" @click="addWorkspacePDFs">Añadir a esta carpeta</v-btn></div>
+                <div class="workspace-upload-submit"><span>{{ queuedWorkspaceDuplicates ? `${queuedWorkspaceDuplicates} PDF(s) se añadirán con sufijo; el documento actual se conserva. ` : '' }}Para sustituir uno existente, usa “Reemplazar PDF seleccionado”.</span><v-btn type="button" color="primary" prepend-icon="mdi-cloud-upload-outline" :loading="workspaceSending" :disabled="!workspacePatient || workspaceUploadFiles.some(item => !item.code)" @click="addWorkspacePDFs">Añadir PDFs</v-btn></div>
               </div>
               <div v-if="workspaceSending" class="ingest-progress"><div><span>Guardando PDFs en el espacio de trabajo…</span><strong>{{ ingestProgress }}%</strong></div><v-progress-linear :model-value="ingestProgress" color="primary" rounded/></div>
-              <div class="workspace-download-row"><span>Descarga la carpeta madre con la estructura y los archivos actuales. Revisa pendientes y documentos obligatorios antes de entregar al MSP.</span><v-btn type="button" color="primary" prepend-icon="mdi-folder-zip-outline" :loading="workspaceBusy" @click="downloadWorkspaceZIP">Descargar expediente ZIP</v-btn></div>
+              <div class="workspace-download-row"><span>{{ workspaceFusionGroups.length ? `Fusiona los ${workspaceFusionGroups.length} grupos repetidos antes de descargar el ZIP final.` : 'Descarga la carpeta madre con la estructura y los archivos actuales. Revisa pendientes y documentos obligatorios antes de entregar al MSP.' }}</span><v-btn type="button" color="primary" prepend-icon="mdi-folder-zip-outline" :loading="workspaceBusy" :disabled="workspaceFusionGroups.length > 0" @click="downloadWorkspaceZIP">Descargar expediente ZIP</v-btn></div>
+              <v-dialog v-model="mergePDFDialog" max-width="620">
+                <v-card class="action-dialog">
+                  <v-card-title>Revisar y fusionar PDFs</v-card-title>
+                  <v-card-text>
+                    <p>Los PDFs se unirán en el orden de esta lista y el resultado conservará el nombre estándar. Los archivos fuente originales permanecerán en el historial privado del expediente.</p>
+                    <div class="workspace-fusion-list"><div v-for="(path, index) in mergePDFPaths" :key="path" class="workspace-fusion-item"><span><strong>{{ index + 1 }}.</strong> {{ path.split('/').at(-1) }}</span><div><v-btn type="button" icon="mdi-arrow-up" size="small" variant="text" :disabled="index === 0 || mergeSending" :aria-label="`Mover ${path.split('/').at(-1)} arriba`" @click="moveWorkspaceFusionPDF(index, -1)"/><v-btn type="button" icon="mdi-arrow-down" size="small" variant="text" :disabled="index === mergePDFPaths.length - 1 || mergeSending" :aria-label="`Mover ${path.split('/').at(-1)} abajo`" @click="moveWorkspaceFusionPDF(index, 1)"/></div></div></div>
+                  </v-card-text>
+                  <v-card-actions><v-spacer/><v-btn type="button" variant="text" :disabled="mergeSending" @click="mergePDFDialog=false">Cancelar</v-btn><v-btn type="button" color="warning" prepend-icon="mdi-file-document-multiple-outline" :loading="mergeSending" @click="confirmWorkspaceFusion">Fusionar PDFs</v-btn></v-card-actions>
+                </v-card>
+              </v-dialog>
               <v-dialog v-model="deletePDFDialog" max-width="440">
                 <v-card class="action-dialog">
                   <v-card-title>Quitar PDF de la carpeta</v-card-title>
@@ -1021,9 +1145,9 @@ async function removeDoc(doc) { if (doc.id.startsWith('demo-')) { snackbar.value
             </section>
             <div v-if="ingestResult" class="ingest-submit-row"><span>¿Necesitas recibir planillas de otro período o servicio?</span><v-btn type="button" variant="text" prepend-icon="mdi-plus" @click="startNewIngest">Recibir otro período</v-btn></div>
             <div v-if="ingestResult" class="ingest-submit-row workspace-danger-row"><span>Elimina permanentemente toda la carpeta de este período, incluidas fuentes, reportes y PDFs.</span><v-btn type="button" color="error" variant="tonal" prepend-icon="mdi-folder-remove-outline" @click="requestDeleteWorkspace">Eliminar carpeta completa</v-btn></div>
-            <v-expansion-panels v-if="!ingestResult" variant="accordion" class="ingest-resume-panel"><v-expansion-panel><v-expansion-panel-title>¿Ya recibiste un lote y quieres continuar?</v-expansion-panel-title><v-expansion-panel-text><p>Escribe el ID que apareció cuando subiste el lote.</p><div class="ingest-submit-row"><v-text-field v-model="existingIngestJobId" label="ID del lote" placeholder="JOB-…" density="comfortable" hide-details/><v-btn color="primary" prepend-icon="mdi-folder-cog-outline" :loading="ingestProcessing" :disabled="!existingIngestJobId.trim()" @click="processIngest">Abrir lote</v-btn></div></v-expansion-panel-text></v-expansion-panel></v-expansion-panels>
+            <v-expansion-panels v-if="!ingestResult && ingestMode === 'new'" variant="accordion" class="ingest-resume-panel"><v-expansion-panel><v-expansion-panel-title>¿Tienes el ID de un lote?</v-expansion-panel-title><v-expansion-panel-text><p>Escribe el ID que apareció al recibir el lote.</p><div class="ingest-submit-row"><v-text-field v-model="existingIngestJobId" label="ID del lote" placeholder="JOB-…" density="comfortable" hide-details/><v-btn color="primary" prepend-icon="mdi-folder-cog-outline" :loading="ingestProcessing" :disabled="!existingIngestJobId.trim()" @click="processIngest">Abrir lote por ID</v-btn></div></v-expansion-panel-text></v-expansion-panel></v-expansion-panels>
             <div v-if="ingestSending || completionSending" class="ingest-progress"><div><span>{{ completionSending ? 'Subiendo documentos habilitantes…' : 'Subiendo lote de planillas…' }}</span><strong>{{ ingestProgress }}%</strong></div><v-progress-linear :model-value="ingestProgress" color="primary" rounded/></div>
-            <div v-if="!ingestResult" class="ingest-submit-row"><span>El ZIP se guardará en el espacio privado del servidor.</span><v-btn type="submit" color="primary" size="large" prepend-icon="mdi-cloud-upload-outline" :loading="ingestSending" :disabled="!ingestValid || ingestSending">{{ ingestSending ? 'Subiendo ZIP…' : 'Recibir lote de planillas' }}</v-btn></div>
+            <div v-if="!ingestResult && ingestMode === 'new'" class="ingest-submit-row"><span>El ZIP se guardará en el espacio privado del servidor.</span><v-btn type="submit" color="primary" size="large" prepend-icon="mdi-cloud-upload-outline" :loading="ingestSending" :disabled="!ingestValid || ingestSending">{{ ingestSending ? 'Subiendo ZIP…' : 'Recibir lote de planillas' }}</v-btn></div>
           </form>
           <footer>Hecho con cuidado para tus documentos <span>✳</span></footer>
         </section>
@@ -1031,7 +1155,7 @@ async function removeDoc(doc) { if (doc.id.startsWith('demo-')) { snackbar.value
     </div>
     <div v-if="dragging" class="drop-overlay"><div class="drop-message"><v-icon icon="mdi-cloud-upload-outline" size="46"/><h2>Suelta tus archivos aquí</h2><p>Se guardarán en {{ activeFolder === folders[0] ? 'Mi espacio' : activeFolder }}</p></div></div>
     <v-dialog v-model="createSpaceDialog" max-width="420"><v-card class="action-dialog"><v-card-title>Crear un espacio</v-card-title><v-card-text><p>Organiza tus archivos en un espacio nuevo.</p><v-text-field v-model="newSpaceName" label="Nombre del espacio" placeholder="Ej. Clientes" prepend-inner-icon="mdi-folder-outline" maxlength="36" autofocus @keyup.enter="createSpace"/></v-card-text><v-card-actions><v-spacer/><v-btn variant="text" @click="createSpaceDialog=false">Cancelar</v-btn><v-btn color="primary" :disabled="!newSpaceName.trim()" @click="createSpace">Crear espacio</v-btn></v-card-actions></v-card></v-dialog>
-    <v-dialog v-model="moveDialog" max-width="420"><v-card class="action-dialog"><v-card-title>Mover {{ activeDoc ? 'documento' : `${selectedIds.length} documentos` }}</v-card-title><v-card-text><p>Elige el espacio de destino.</p><v-select v-model="moveTarget" :items="spaces" label="Espacio" prepend-inner-icon="mdi-folder-outline"/><div v-if="activeDoc?.id.startsWith('demo-')" class="demo-note"><v-icon icon="mdi-information-outline" size="17"/> Los archivos de ejemplo no se pueden mover.</div></v-card-text><v-card-actions><v-spacer/><v-btn variant="text" @click="moveDialog=false">Cancelar</v-btn><v-btn color="primary" @click="confirmMove">Mover</v-btn></v-card-actions></v-card></v-dialog>
+    <v-dialog v-model="moveDialog" max-width="420"><v-card class="action-dialog"><v-card-title>Mover {{ activeDoc ? 'documento' : `${selectedIds.length} documentos` }}</v-card-title><v-card-text><p>Elige el espacio de destino.</p><v-select v-model="moveTarget" :items="spaces" label="Espacio" prepend-inner-icon="mdi-folder-outline"/></v-card-text><v-card-actions><v-spacer/><v-btn variant="text" @click="moveDialog=false">Cancelar</v-btn><v-btn color="primary" @click="confirmMove">Mover</v-btn></v-card-actions></v-card></v-dialog>
     <v-dialog v-model="preview" max-width="720"><v-card v-if="preview" class="preview-card"><div class="preview-head"><div class="doc-type-icon" :class="'type-'+preview.color"><v-icon :icon="preview.icon" size="20"/></div><div class="preview-name"><b>{{ preview.name }}</b><small>{{ preview.ext }} · {{ preview.size }}</small></div><v-btn icon="mdi-download-outline" variant="text" aria-label="Descargar" @click="download(preview)"/><v-btn icon="mdi-delete-outline" variant="text" aria-label="Eliminar" @click="removeDoc(preview)"/><v-btn icon="mdi-close" variant="text" aria-label="Cerrar" @click="preview=null"/></div><div class="preview-body"><template v-if="preview.mime?.startsWith('image/')"><img :src="previewUrl" :alt="preview.name"/></template><template v-else-if="preview.mime==='application/pdf'"><iframe :src="previewUrl" :title="preview.name"/></template><div v-else class="preview-placeholder"><v-icon :icon="preview.icon" size="48"/><p>Vista previa disponible para imágenes y archivos PDF.</p><button class="primary-upload" @click="download(preview)"><v-icon icon="mdi-download-outline"/> Descargar archivo</button></div></div></v-card></v-dialog>
     <v-snackbar v-model="snackbar" timeout="2600" location="bottom end" color="primary">{{ snackbar }}<template #actions><v-btn variant="text" @click="snackbar=''">Cerrar</v-btn></template></v-snackbar>
   </v-app>

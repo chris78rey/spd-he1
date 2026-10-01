@@ -28,7 +28,9 @@ alias:
   HCU_053.pdf: HCU_053.pdf
 reglas:
   - codigo: HCU_008.pdf
-    palabras_clave: ["FORMULARIO 008", "EMERGENCIA", "MOTIVO DE CONSULTA"]
+    palabras_clave: ["FORMULARIO 008"]
+  - codigo: HCU_002.pdf
+    palabras_clave: ["REPORTE DE NOTAS DE EVOLUCION", "NOTAS DE EVOLUCION DE"]
   - codigo: HCU_053.pdf
     palabras_clave: ["FORMULARIO 053", "REFERENCIA", "DERIVACION", "CONTRARREFERENCIA", "ESTABLECIMIENTO QUE DERIVA"]
   - codigo: HCU_006.pdf
@@ -37,10 +39,18 @@ reglas:
     palabras_clave: ["FORMULARIO 017", "PROTOCOLO QUIRURGICO", "CIRUGIA"]
   - codigo: HCU_018A.pdf
     palabras_clave: ["FORMULARIO 018A", "TRANSANESTESICO", "ANESTESIA"]
+  - codigo: HCU_012.pdf
+    palabras_clave: ["FORMULARIO 12 IMAGENOLOGIA", "RESULTADOS EXAMENES DE IMAGEN"]
+  - codigo: HCU_010.pdf
+    palabras_clave: ["FORMULARIO 10 LABORATORIO CLINICO", "RESULTADOS EXAMENES"]
+  - codigo: HCU_013.pdf
+    palabras_clave: ["FORMULARIO 13", "FORMULARIO 10 PATOLOGIA", "RESULTADOS PAPANICOLAOUS", "RESULTADOS PAP", "ESTUDIO CITOLOGICO"]
   - codigo: C_COBERTURA.pdf
     palabras_clave: ["COBERTURA DE SALUD", "CERTIFICADO DE AFILIACION", "COMPROBANTE DE DERECHO"]
   - codigo: P_INDIVIDUAL.pdf
     palabras_clave: ["PLANILLA INDIVIDUAL", "VALOR FACTURADO", "LIQUIDACION INDIVIDUAL"]
   - codigo: A_ENTREGA.pdf
     palabras_clave: ["ACTA DE ENTREGA", "RECEPCION DEL SERVICIO"]
+  - codigo: I_PROCEDIMIENTO.pdf
+    palabras_clave: ["PROCEDIMIENTO MENOR"]
 # Los demás códigos conocidos aún no tienen frases confirmadas para clasificación OCR.
