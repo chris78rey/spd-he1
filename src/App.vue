@@ -80,6 +80,9 @@ const coveragePlanillas = ref([])
 const coverageSelectedIds = ref([])
 const coverageLoading = ref(false)
 const coverageGenerating = ref(false)
+const coverageProgress = ref('')
+const coverageSelectableRows = computed(() => coveragePlanillas.value.filter(row => row.pdi_cobertura !== 'S'))
+const coverageAllSelected = computed(() => coverageSelectableRows.value.length > 0 && coverageSelectableRows.value.every(row => coverageSelectedIds.value.includes(row.pdi_id)))
 const coverageManualUploadingId = ref(null)
 const coverageError = ref('')
 const coverageNotice = ref('')
@@ -277,48 +280,69 @@ function toggleCoveragePlanilla(row) {
   if (!row || (row.pdi_cobertura === 'S' && !row.hoja_generada)) return
   const selected = new Set(coverageSelectedIds.value)
   if (selected.has(row.pdi_id)) selected.delete(row.pdi_id)
-  else if (selected.size < 10) selected.add(row.pdi_id)
+  else selected.add(row.pdi_id)
   coverageSelectedIds.value = [...selected]
+}
+function toggleAllCoveragePlanillas() {
+  const selectable = coverageSelectableRows.value.map(row => row.pdi_id)
+  coverageSelectedIds.value = coverageAllSelected.value
+    ? coverageSelectedIds.value.filter(id => !selectable.includes(id))
+    : [...new Set([...coverageSelectedIds.value, ...selectable])]
 }
 async function generateCoverageSheets() {
   if (!selectedCoverageWorkspace.value || !coverageSelectedIds.value.length || coverageGenerating.value) return
+  const selectedIds = [...coverageSelectedIds.value]
+  const jobId = selectedCoverageWorkspace.value
   coverageGenerating.value = true
   coverageError.value = ''
   coverageNotice.value = ''
   try {
-    const response = await fetch(`/api/v1/coberturas/generar/${encodeURIComponent(selectedCoverageWorkspace.value)}`, {
-      method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pdi_ids: coverageSelectedIds.value }),
-    })
+    const processed = []
+    const failures = []
+    for (let offset = 0; offset < selectedIds.length; offset += 10) {
+      const batch = selectedIds.slice(offset, offset + 10)
+      coverageProgress.value = `Procesando ${Math.min(offset + batch.length, selectedIds.length)} de ${selectedIds.length} planillas…`
+      const response = await fetch(`/api/v1/coberturas/generar/${encodeURIComponent(jobId)}`, {
+        method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pdi_ids: batch }),
+      })
+      if (response.status === 401) { await signOut(); return }
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(result.error || 'No se pudieron generar las hojas seleccionadas.')
+      processed.push(...(result.generadas || []))
+      failures.push(...(result.errores || []))
+    }
+    await loadCoveragePlanillas(jobId)
+    coverageSelectedIds.value = selectedIds.filter(id => coveragePlanillas.value.some(row => row.pdi_id === id))
+    const manualCount = failures.filter(item => item.manual).length
+    const dataErrorCount = failures.length - manualCount
+    coverageNotice.value = `${processed.length} planillas revisadas; las hojas disponibles quedaron guardadas en sus expedientes.${manualCount ? ` ${manualCount} requieren descarga manual en el portal MSP.` : ''}${dataErrorCount ? ` ${dataErrorCount} requieren corregir datos o revisar el expediente.` : ''}`
+  } catch (error) {
+    coverageError.value = error.message || 'No se pudieron generar las hojas seleccionadas.'
+  } finally { coverageProgress.value = ''; coverageGenerating.value = false }
+}
+async function downloadSelectedCoverageSheets() {
+  if (!selectedCoverageWorkspace.value || !coverageSelectedIds.value.length || coverageGenerating.value) return
+  coverageGenerating.value = true
+  coverageError.value = ''
+  try {
+    const response = await fetch(`/api/v1/coberturas/descargar/${encodeURIComponent(selectedCoverageWorkspace.value)}?pdi_ids=${coverageSelectedIds.value.join(',')}`, { credentials: 'same-origin' })
     if (response.status === 401) { await signOut(); return }
     if (!response.ok) {
       const data = await response.json().catch(() => ({}))
-      throw new Error(data.error || 'No se pudieron generar las hojas seleccionadas.')
+      throw new Error(data.error || 'No se pudo preparar el ZIP de las hojas seleccionadas.')
     }
-    const result = await response.json().catch(() => ({}))
-    if (result.generadas?.length) {
-      const download = await fetch(`/api/v1/coberturas/descargar/${encodeURIComponent(selectedCoverageWorkspace.value)}?pdi_ids=${result.generadas.join(',')}`, { credentials: 'same-origin' })
-      if (!download.ok) {
-        const data = await download.json().catch(() => ({}))
-        throw new Error(data.error || 'Las hojas se guardaron, pero no se pudo preparar la descarga ZIP.')
-      }
-      const blob = await download.blob()
-      const url = URL.createObjectURL(blob)
-      const disposition = download.headers.get('Content-Disposition') || ''
-      const filename = disposition.match(/filename="?([^";]+)"?/i)?.[1] || 'coberturas.zip'
-      const anchor = document.createElement('a')
-      anchor.href = url
-      anchor.download = filename
-      anchor.click()
-      URL.revokeObjectURL(url)
-    }
-    coverageSelectedIds.value = []
-    await loadCoveragePlanillas(selectedCoverageWorkspace.value)
-    const manualCount = result.errores?.filter(item => item.manual).length || 0
-    const dataErrorCount = (result.errores?.length || 0) - manualCount
-    coverageNotice.value = `${result.generadas?.length || 0} planillas procesadas${result.generadas?.length ? ', hojas guardadas y descargadas' : ''}.${manualCount ? ` ${manualCount} requieren descarga manual en el portal MSP.` : ''}${dataErrorCount ? ` ${dataErrorCount} requieren corregir datos o revisar el expediente.` : ''}`
+    const blob = await response.blob()
+    const url = URL.createObjectURL(blob)
+    const disposition = response.headers.get('Content-Disposition') || ''
+    const filename = disposition.match(/filename="?([^";]+)"?/i)?.[1] || 'coberturas.zip'
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = filename
+    anchor.click()
+    URL.revokeObjectURL(url)
   } catch (error) {
-    coverageError.value = error.message || 'No se pudieron generar las hojas seleccionadas.'
+    coverageError.value = error.message || 'No se pudo descargar el ZIP.'
   } finally { coverageGenerating.value = false }
 }
 async function uploadManualCoverageSheets(row, event) {
@@ -1213,16 +1237,17 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
           <footer>Hecho con cuidado para tus documentos <span>✳</span></footer>
         </section>
         <section v-else-if="activePage==='coberturas'" class="content-wrap">
-          <div class="welcome-line"><div><div class="eyebrow">COBERTURAS DEL LOTE</div><h1>Hojas de cobertura<span class="title-period">.</span></h1><p class="subtitle">Se consulta el período y servicio definidos al recibir el ZIP; las hojas se guardan en el expediente y se descargan en un ZIP.</p></div><v-btn type="button" variant="tonal" prepend-icon="mdi-refresh" :loading="coverageLoading || savedWorkspacesLoading" @click="openCoverageDownloads">Actualizar</v-btn></div>
+          <div class="welcome-line"><div><div class="eyebrow">COBERTURAS DEL LOTE</div><h1>Hojas de cobertura<span class="title-period">.</span></h1><p class="subtitle">Las hojas se guardan en la carpeta de cada paciente. Puedes descargar una copia ZIP si la necesitas.</p></div><v-btn type="button" variant="tonal" prepend-icon="mdi-refresh" :loading="coverageLoading || savedWorkspacesLoading" @click="openCoverageDownloads">Actualizar</v-btn></div>
           <v-card class="planilla-card coverage-card" rounded="xl" elevation="0">
-            <div class="coverage-toolbar"><v-select :model-value="selectedCoverageWorkspace" :items="savedWorkspaces.filter(workspace => ['PROCESSED','INCOMPLETE'].includes(workspace.status)).map(workspace => ({ title: `${coverageServiceLabel(workspace.tipo_servicio)} · ${coverageMonthLabel(workspace.mes)} ${workspace.anio}`, value: workspace.job_id }))" label="Servicio y período del ZIP" placeholder="Selecciona un lote preparado" prepend-inner-icon="mdi-folder-zip-outline" density="comfortable" hide-details :disabled="savedWorkspacesLoading || coverageLoading" @update:model-value="loadCoveragePlanillas"/><v-btn color="primary" prepend-icon="mdi-file-download-outline" :loading="coverageGenerating" :disabled="!coverageSelectedIds.length || coverageGenerating" @click="generateCoverageSheets">Generar y descargar ({{ coverageSelectedIds.length }})</v-btn></div>
+            <div class="coverage-toolbar"><v-select :model-value="selectedCoverageWorkspace" :items="savedWorkspaces.filter(workspace => ['PROCESSED','INCOMPLETE'].includes(workspace.status)).map(workspace => ({ title: `${coverageServiceLabel(workspace.tipo_servicio)} · ${coverageMonthLabel(workspace.mes)} ${workspace.anio}`, value: workspace.job_id }))" label="Servicio y período del ZIP" placeholder="Selecciona un lote preparado" prepend-inner-icon="mdi-folder-zip-outline" density="comfortable" hide-details :disabled="savedWorkspacesLoading || coverageLoading || coverageGenerating" @update:model-value="loadCoveragePlanillas"/><v-btn color="primary" prepend-icon="mdi-content-save-outline" :loading="coverageGenerating" :disabled="!coverageSelectedIds.length || coverageGenerating" @click="generateCoverageSheets">Generar y guardar ({{ coverageSelectedIds.length }})</v-btn><v-btn variant="tonal" prepend-icon="mdi-download-outline" :loading="coverageGenerating" :disabled="!coverageSelectedIds.length || coverageSelectedIds.length > 500 || coverageGenerating" @click="downloadSelectedCoverageSheets">Descargar ZIP ({{ coverageSelectedIds.length }})</v-btn></div>
+            <div v-if="coverageProgress" class="coverage-notice"><v-progress-circular indeterminate color="primary" size="18"/><span>{{ coverageProgress }}</span></div>
             <div v-if="coverageNotice" class="coverage-notice"><v-icon icon="mdi-information-outline"/><span>{{ coverageNotice }}</span></div>
             <div v-if="coverageError" class="planilla-state planilla-error"><v-icon icon="mdi-alert-circle-outline"/><span>{{ coverageError }}</span><v-btn size="small" variant="text" @click="loadCoveragePlanillas()">Reintentar</v-btn></div>
             <div v-else-if="coverageLoading" class="planilla-state"><v-progress-circular indeterminate color="primary" size="22"/><span>Consultando planillas MSP del lote…</span></div>
             <div v-else-if="!selectedCoverageWorkspace" class="planilla-state"><v-icon icon="mdi-folder-search-outline"/><span>Prepara primero el ZIP en “Recibir planillas” y selecciona aquí ese mismo servicio y período.</span></div>
             <div v-else-if="!coveragePlanillas.length" class="planilla-state"><v-icon icon="mdi-file-search-outline"/><span>No se encontraron planillas MSP de ese período en las carpetas del ZIP.</span></div>
-            <div v-else class="planilla-table-wrap"><v-table class="planilla-table" density="comfortable" fixed-header height="min(62vh, 620px)"><thead><tr><th></th><th>Trámite del ZIP</th><th>Paciente</th><th>Fecha hasta</th><th>Estado de cobertura</th><th>Acción manual</th></tr></thead><tbody><tr v-for="row in coveragePlanillas" :key="row.pdi_id"><td><input type="checkbox" :checked="coverageSelectedIds.includes(row.pdi_id)" :disabled="(row.pdi_cobertura === 'S' && !row.hoja_generada) || (coverageSelectedIds.length >= 10 && !coverageSelectedIds.includes(row.pdi_id))" aria-label="Seleccionar planilla" @change="toggleCoveragePlanilla(row)"/></td><td>{{ row.pdi_tramite }}</td><td>{{ row.paciente || '—' }}</td><td>{{ row.fecha_hasta || '—' }}</td><td><v-chip size="small" :color="row.pdi_cobertura === 'S' ? 'success' : row.hoja_generada ? 'info' : (row.descarga_manual || row.motivo_manual) ? 'error' : 'warning'" variant="tonal">{{ row.pdi_cobertura === 'S' ? 'Generada' : row.hoja_generada ? 'PDF en expediente · Oracle pendiente' : row.descarga_manual ? 'Descarga manual' : row.motivo_manual ? 'Revisar datos' : 'Pendiente' }}</v-chip><small v-if="row.motivo_manual" class="coverage-failure">{{ row.motivo_manual }}</small></td><td><div v-if="row.descarga_manual" class="coverage-manual"><a href="https://coberturasalud.msp.gob.ec/" target="_blank" rel="noopener noreferrer">Abrir portal MSP</a><small v-if="row.coberturas_manual?.length">Descarga un PDF por cédula: {{ row.coberturas_manual.map(member => member.cedula).join(', ') }}</small><label class="coverage-manual-upload"><input type="file" accept="application/pdf,.pdf" multiple :disabled="coverageManualUploadingId === row.pdi_id" @change="uploadManualCoverageSheets(row,$event)"/>{{ coverageManualUploadingId === row.pdi_id ? 'Adjuntando…' : 'Adjuntar PDFs descargados' }}</label></div><span v-else>—</span></td></tr></tbody></v-table></div>
-            <div v-if="coveragePlanillas.length" class="coverage-footnote">Selecciona hasta 10 planillas por descarga. Para menores de edad también se consulta la cobertura de los dependientes registrados.</div>
+            <div v-else class="planilla-table-wrap"><v-table class="planilla-table" density="comfortable" fixed-header height="min(62vh, 620px)"><thead><tr><th><label title="Seleccionar todas las pendientes"><input type="checkbox" :checked="coverageAllSelected" :disabled="!coverageSelectableRows.length || coverageGenerating" aria-label="Seleccionar todas las planillas pendientes" @change="toggleAllCoveragePlanillas"/> Todas</label></th><th>Trámite del ZIP</th><th>Paciente</th><th>Fecha hasta</th><th>Estado de cobertura</th><th>Acción manual</th></tr></thead><tbody><tr v-for="row in coveragePlanillas" :key="row.pdi_id"><td><input type="checkbox" :checked="coverageSelectedIds.includes(row.pdi_id)" :disabled="(row.pdi_cobertura === 'S' && !row.hoja_generada) || coverageGenerating" :aria-label="`Seleccionar planilla ${row.pdi_tramite}`" @change="toggleCoveragePlanilla(row)"/></td><td>{{ row.pdi_tramite }}</td><td>{{ row.paciente || '—' }}</td><td>{{ row.fecha_hasta || '—' }}</td><td><v-chip size="small" :color="row.pdi_cobertura === 'S' ? 'success' : row.hoja_generada ? 'info' : (row.descarga_manual || row.motivo_manual) ? 'error' : 'warning'" variant="tonal">{{ row.pdi_cobertura === 'S' ? 'Generada' : row.hoja_generada ? 'PDF en expediente · Oracle pendiente' : row.descarga_manual ? 'Descarga manual' : row.motivo_manual ? 'Revisar datos' : 'Pendiente' }}</v-chip><small v-if="row.motivo_manual" class="coverage-failure">{{ row.motivo_manual }}</small></td><td><div v-if="row.descarga_manual" class="coverage-manual"><a href="https://coberturasalud.msp.gob.ec/" target="_blank" rel="noopener noreferrer">Abrir portal MSP</a><small v-if="row.coberturas_manual?.length">Descarga un PDF por cédula: {{ row.coberturas_manual.map(member => member.cedula).join(', ') }}</small><label class="coverage-manual-upload"><input type="file" accept="application/pdf,.pdf" multiple :disabled="coverageManualUploadingId === row.pdi_id" @change="uploadManualCoverageSheets(row,$event)"/>{{ coverageManualUploadingId === row.pdi_id ? 'Adjuntando…' : 'Adjuntar PDFs descargados' }}</label></div><span v-else>—</span></td></tr></tbody></v-table></div>
+            <div v-if="coveragePlanillas.length" class="coverage-footnote">Marca la casilla del encabezado para seleccionar todas las pendientes. Se procesan en grupos de 10; las hojas generadas se guardan en cada expediente. El ZIP admite hasta 500 planillas.</div>
           </v-card>
         </section>
         <section v-else class="content-wrap ingest-content">

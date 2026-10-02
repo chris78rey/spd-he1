@@ -23,6 +23,7 @@ import (
 )
 
 const maxCoverageBatch = 10
+const maxCoverageDownload = 500
 
 var coverageCedulaPattern = regexp.MustCompile(`^\d{10}$`)
 
@@ -369,7 +370,7 @@ func (s *server) downloadCoverageSheets(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	ids := strings.Split(r.URL.Query().Get("pdi_ids"), ",")
-	if len(ids) == 0 || len(ids) > maxCoverageBatch {
+	if len(ids) == 0 || len(ids) > maxCoverageDownload {
 		writeError(w, http.StatusBadRequest, "La descarga no contiene una selección válida.")
 		return
 	}
