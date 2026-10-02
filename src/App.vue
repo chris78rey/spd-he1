@@ -49,7 +49,7 @@ const ingestServices = [
 ]
 const ingestMonths = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'].map((title, index) => ({ title, value: String(index + 1).padStart(2, '0') }))
 const ingestFileFields = [
-  { field: 'zip_file', title: 'Lote clínico', detail: 'Archivo ZIP con las carpetas numéricas de planillas', accept: '.zip', icon: 'mdi-folder-zip-outline' },
+  { field: 'zip_file', title: 'Lote', detail: 'Archivo ZIP con las carpetas numéricas de planillas', accept: '.zip', icon: 'mdi-folder-zip-outline' },
   { field: 'matriz_file', title: 'Matriz de planillaje', detail: 'Libro Excel habilitado para macros', accept: '.xlsm', icon: 'mdi-file-excel-outline' },
   { field: 'consolidada_file', title: 'Planilla consolidada', detail: 'PDF firmado por responsables médico y financiero', accept: '.pdf,application/pdf', icon: 'mdi-file-pdf-box' },
   { field: 'oficio_file', title: 'Oficio de pago', detail: 'PDF firmado por representante legal', accept: '.pdf,application/pdf', icon: 'mdi-file-document-outline' },
@@ -1042,7 +1042,11 @@ function startNewIngest() {
   existingIngestJobId.value = ''
   localStorage.removeItem('folio-ingest-result')
 }
-const completionFields = computed(() => ingestFileFields.filter(item => item.field !== 'zip_file' && (ingestResult.value?.missing_documents || []).some(label => label.startsWith(item.title === 'Matriz de planillaje' ? 'Matriz' : item.title === 'Planilla consolidada' ? 'Planilla consolidada' : 'Oficio'))))
+const completionFields = computed(() => {
+  if (!['STAGED', 'PROCESSED', 'INCOMPLETE', 'REQUIERE_REVISION'].includes(ingestResult.value?.status)) return []
+  return ingestFileFields.filter(item => item.field !== 'zip_file')
+})
+function currentCompletionFile(field) { return ingestResult.value?.files?.find(file => file.field === field) || null }
 const completionFiles = ref({ matriz_file: null, consolidada_file: null, oficio_file: null })
 const completionValid = computed(() => completionFields.value.length > 0 && completionFields.value.every(item => {
   const file = completionFiles.value[item.field]
@@ -1285,6 +1289,19 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
             </section>
             </template>
             <v-alert v-if="ingestError" type="error" variant="tonal" density="comfortable" role="alert">{{ ingestError }}</v-alert>
+            <div v-if="['STAGED', 'PROCESSED', 'INCOMPLETE', 'REQUIERE_REVISION'].includes(ingestResult?.status)" class="ingest-card completion-card">
+              <div class="ingest-card-heading"><span class="ingest-step">3</span><div><h2>Documentos habilitantes</h2><p>Los tres tipos quedan disponibles. Sube un archivo para añadirlo o reemplazar el que ya está guardado en este período.</p></div></div>
+              <v-chip v-for="item in ingestResult.missing_documents" :key="item" class="missing-chip" size="small" color="warning" variant="tonal">Falta: {{ item }}</v-chip>
+              <div class="ingest-file-grid">
+                <label v-for="item in completionFields" :key="item.field" class="ingest-file-card">
+                  <input type="file" :accept="item.accept" :disabled="ingestProcessing" @change="selectCompletionFile(item.field, $event)" />
+                  <span class="ingest-file-icon"><v-icon :icon="item.icon" size="22"/></span>
+                  <span class="ingest-file-copy"><strong>{{ item.title }}</strong><small>{{ completionFiles[item.field]?.name || currentCompletionFile(item.field)?.original_name || item.detail }}</small><small v-if="currentCompletionFile(item.field) && !completionFiles[item.field]" class="completion-file-status">Actual · selecciona otro archivo para reemplazarlo</small><small v-else-if="completionFiles[item.field] && currentCompletionFile(item.field)" class="completion-file-status">Se reemplazará el documento actual</small></span>
+                  <v-icon :icon="completionFiles[item.field] ? 'mdi-check-circle' : 'mdi-plus-circle-outline'" :color="completionFiles[item.field] ? 'success' : 'grey'" size="20"/>
+                </label>
+              </div>
+              <div class="ingest-submit-row"><span>Los cambios se guardan en el mismo expediente; el ZIP no se vuelve a subir.</span><v-btn color="primary" :loading="ingestProcessing" :disabled="!completionValid || !Object.values(completionFiles).some(Boolean)" prepend-icon="mdi-cloud-upload-outline" @click="addMissingDocuments">{{ Object.entries(completionFiles).some(([field, file]) => file && currentCompletionFile(field)) ? 'Guardar cambios' : 'Añadir documentos' }}</v-btn></div>
+            </div>
           <section v-if="ingestResult" class="ingest-card current-job-card">
               <div class="ingest-card-heading"><span class="ingest-step">{{ ['STAGED','REQUIERE_REVISION'].includes(ingestResult.status) ? '3' : '✓' }}</span><div><h2>{{ ['STAGED','REQUIERE_REVISION'].includes(ingestResult.status) ? 'Lote de planillas recibido' : 'Espacio de trabajo del período' }}</h2><p>{{ ['STAGED','REQUIERE_REVISION'].includes(ingestResult.status) ? 'El ZIP está guardado. Revisa el cruce antes de preparar las carpetas por paciente.' : 'Este espacio se reutiliza para el mismo servicio y período.' }}</p></div></div>
               <div class="ingest-job-id"><span>ID del lote</span><code>{{ ingestResult.job_id }}</code></div>
@@ -1332,19 +1349,6 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
                 <div class="planilla-pagination"><span>Carpetas {{ ingestPreview.carpetas.length ? (ingestPreviewPage - 1) * ingestPreviewPageSize + 1 : 0 }}–{{ Math.min(ingestPreviewPage * ingestPreviewPageSize, ingestPreview.carpetas.length) }} de {{ ingestPreview.carpetas.length }}</span><v-pagination v-if="ingestPreviewPageCount > 1" v-model="ingestPreviewPage" :length="ingestPreviewPageCount" :total-visible="5" density="comfortable"/></div>
               </template>
             </section>
-            <div v-if="ingestResult?.status !== 'STAGED' && ingestResult?.missing_documents?.length" class="ingest-card completion-card">
-              <div class="ingest-card-heading"><span class="ingest-step">3</span><div><h2>Completar documentos</h2><p>Se guardarán en el mismo expediente, sin volver a subir el ZIP de planillas.</p></div></div>
-              <v-chip v-for="item in ingestResult.missing_documents" :key="item" class="missing-chip" size="small" color="warning" variant="tonal">Falta: {{ item }}</v-chip>
-              <div class="ingest-file-grid">
-                <label v-for="item in completionFields" :key="item.field" class="ingest-file-card">
-                  <input type="file" :accept="item.accept" :disabled="ingestProcessing" @change="selectCompletionFile(item.field, $event)" />
-                  <span class="ingest-file-icon"><v-icon :icon="item.icon" size="22"/></span>
-                  <span class="ingest-file-copy"><strong>{{ item.title }}</strong><small>{{ completionFiles[item.field]?.name || item.detail }}</small></span>
-                  <v-icon :icon="completionFiles[item.field] ? 'mdi-check-circle' : 'mdi-plus-circle-outline'" :color="completionFiles[item.field] ? 'success' : 'grey'" size="20"/>
-                </label>
-              </div>
-              <div class="ingest-submit-row"><span>Los documentos enviados se incorporan al espacio permanente de este lote.</span><v-btn color="primary" :loading="ingestProcessing" :disabled="!completionValid || !Object.values(completionFiles).some(Boolean)" prepend-icon="mdi-cloud-upload-outline" @click="addMissingDocuments">Añadir documentos</v-btn></div>
-            </div>
             <section v-if="ingestResult?.output" class="ingest-card review-card">
               <div class="ingest-card-heading"><span class="ingest-step">4</span><div><h2>Revisión de documentos</h2><p>La clasificación se ejecuta al preparar el expediente. Los pendientes requieren revisión documental antes del cierre.</p></div></div>
               <v-alert v-if="ingestResult.clasificacion" type="info" variant="tonal" density="comfortable">{{ ingestResult.clasificacion.clasificados }} PDFs identificados y {{ ingestResult.clasificacion.pendientes }} sin identificar, de {{ ingestResult.clasificacion.total }}. Lectura: {{ ingestResult.clasificacion.texto_vectorial }} con texto PDF, {{ ingestResult.clasificacion.ocr }} por OCR y {{ ingestResult.clasificacion.sin_texto_legible ?? 0 }} sin texto legible.</v-alert>

@@ -637,7 +637,7 @@ func (s *server) processStagedJob(w http.ResponseWriter, r *http.Request) {
 	if len(missingHeaders(job)) > 0 {
 		job.Status = "INCOMPLETE"
 	}
-	job.StatusDetail = fmt.Sprintf("Lote clínico preparado para revisión. %d PDF clasificados y %d pendientes. Los documentos habilitantes pueden añadirse después.", report.Summary.Classified, report.Summary.Pending)
+	job.StatusDetail = fmt.Sprintf("Lote preparado para revisión. %d PDF clasificados y %d pendientes. Los documentos habilitantes pueden añadirse después.", report.Summary.Classified, report.Summary.Pending)
 	if err := s.saveStagedJob(job); err != nil {
 		writeError(w, http.StatusInternalServerError, "Se procesó el lote, pero no se pudo guardar su estado.")
 		return
@@ -728,13 +728,15 @@ func (s *server) completeStagedJob(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "El identificador del lote no es válido.")
 		return
 	}
+	s.ingestMu.Lock()
+	defer s.ingestMu.Unlock()
 	job, err := s.loadStagedJob(id)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "No se encontró el expediente por ese ID.")
 		return
 	}
 	id = job.ID
-	if job.Status != "STAGED" && job.Status != "PROCESSED" && job.Status != "INCOMPLETE" {
+	if job.Status != "STAGED" && job.Status != "PROCESSED" && job.Status != "INCOMPLETE" && job.Status != "REQUIERE_REVISION" {
 		writeError(w, http.StatusConflict, "Este lote no admite documentos adicionales en su estado actual.")
 		return
 	}
@@ -755,12 +757,7 @@ func (s *server) completeStagedJob(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "No se pudo abrir el espacio permanente del lote.")
 		return
 	}
-	present := make(map[string]bool, len(job.Files))
-	for _, file := range job.Files {
-		present[file.Field] = true
-	}
 	added := 0
-	var addedFiles []stagedUpload
 	for _, part := range headerParts {
 		files := r.MultipartForm.File[part.field]
 		if len(files) == 0 {
@@ -770,50 +767,52 @@ func (s *server) completeStagedJob(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, fmt.Sprintf("Adjunta un archivo válido en %s (%s, no vacío).", part.field, part.extension))
 			return
 		}
-		if present[part.field] {
-			writeError(w, http.StatusConflict, fmt.Sprintf("El documento %s ya está guardado en este lote.", part.field))
-			return
-		}
 		part.file = files[0]
-		destination := filepath.Join(s.jobSourcesDir(id), part.storedName)
-		size, err := saveUploadPart(part.file, destination)
+		tempFile, err := os.CreateTemp(s.jobSourcesDir(id), ".habilitante-nuevo-")
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, "No se pudo guardar un documento habilitante.")
+			writeError(w, http.StatusInternalServerError, "No se pudo preparar el reemplazo del documento habilitante.")
 			return
 		}
-		if err := validateStagedFile(destination, part.extension); err != nil {
-			_ = os.Remove(destination)
+		tempPath := tempFile.Name()
+		source, openErr := part.file.Open()
+		var size int64
+		if openErr == nil {
+			size, err = io.Copy(tempFile, source)
+			_ = source.Close()
+		} else {
+			err = openErr
+		}
+		if closeErr := tempFile.Close(); err == nil {
+			err = closeErr
+		}
+		if err != nil {
+			_ = os.Remove(tempPath)
+			writeError(w, http.StatusInternalServerError, "No se pudo guardar el documento habilitante.")
+			return
+		}
+		if err := validateStagedFile(tempPath, part.extension); err != nil {
+			_ = os.Remove(tempPath)
 			writeError(w, http.StatusBadRequest, fmt.Sprintf("El archivo %s no tiene contenido válido.", part.field))
 			return
 		}
 		staged := stagedUpload{Field: part.field, StoredName: part.storedName, OriginalName: safeOriginalFilename(part.file.Filename), Size: size}
-		job.Files = append(job.Files, staged)
-		addedFiles = append(addedFiles, staged)
-		present[part.field] = true
+		if err := s.replaceHeaderFile(&job, staged, tempPath); err != nil {
+			_ = os.Remove(tempPath)
+			writeError(w, http.StatusInternalServerError, "No se pudo reemplazar el documento habilitante.")
+			return
+		}
 		added++
 	}
 	if added == 0 {
 		writeError(w, http.StatusBadRequest, "Selecciona al menos uno de los documentos habilitantes pendientes.")
 		return
 	}
-	if job.Status == "PROCESSED" || job.Status == "INCOMPLETE" {
-		packageRoot := filepath.Join(s.jobRoot(id), "trabajo", packageFolderName(&job))
-		if err := os.MkdirAll(packageRoot, 0700); err != nil {
-			writeError(w, http.StatusInternalServerError, "Los documentos se guardaron, pero no se pudo abrir la carpeta del expediente.")
-			return
-		}
-		for _, file := range addedFiles {
-			name := headerOutputFilename(&job, file.Field)
-			if name == "" || copyPrivateFile(filepath.Join(s.jobSourcesDir(id), file.StoredName), filepath.Join(packageRoot, name)) != nil {
-				writeError(w, http.StatusInternalServerError, "Los documentos se guardaron, pero no se pudieron incorporar a la carpeta de trabajo.")
-				return
-			}
-		}
-	}
 	missing := missingHeaders(job)
-	if len(missing) == 0 && job.Status != "STAGED" {
+	if job.Status == "REQUIERE_REVISION" {
+		job.StatusDetail = "Documentos habilitantes guardados. El lote sigue requiriendo revisión."
+	} else if len(missing) == 0 && job.Status != "STAGED" {
 		job.Status = "PROCESSED"
-		job.StatusDetail = "Lote clínico y documentos habilitantes guardados en el mismo espacio permanente."
+		job.StatusDetail = "Lote y documentos habilitantes guardados en el mismo espacio permanente."
 	} else if job.Status != "STAGED" {
 		job.Status = "INCOMPLETE"
 		job.StatusDetail = "Documentos guardados. Aún faltan documentos habilitantes para completar el lote."
@@ -827,6 +826,123 @@ func (s *server) completeStagedJob(w http.ResponseWriter, r *http.Request) {
 		output = filepath.Join(s.jobRoot(id), "trabajo", packageFolderName(&job))
 	}
 	writeJSON(w, http.StatusOK, jobResponse(s, job, output, nil))
+}
+
+// replaceHeaderFile swaps a validated source and, when the expediente is already
+// prepared, its copy in the work folder. Temporary backups let us restore both
+// copies if the metadata update fails.
+func (s *server) replaceHeaderFile(job *stagedJob, staged stagedUpload, tempSource string) error {
+	sourcePath := filepath.Join(s.jobSourcesDir(job.ID), staged.StoredName)
+	outputPath := ""
+	var tempOutput string
+	if job.Status == "PROCESSED" || job.Status == "INCOMPLETE" {
+		outputPath = filepath.Join(s.jobRoot(job.ID), "trabajo", packageFolderName(job), headerOutputFilename(job, staged.Field))
+		outputDir := filepath.Dir(outputPath)
+		if err := os.MkdirAll(outputDir, 0700); err != nil {
+			return err
+		}
+		file, err := os.CreateTemp(outputDir, ".habilitante-nuevo-")
+		if err != nil {
+			return err
+		}
+		tempOutput = file.Name()
+		input, err := os.Open(tempSource)
+		if err == nil {
+			_, err = io.Copy(file, input)
+			_ = input.Close()
+		}
+		if closeErr := file.Close(); err == nil {
+			err = closeErr
+		}
+		if err != nil {
+			_ = os.Remove(tempOutput)
+			return err
+		}
+	}
+	defer func() {
+		if tempOutput != "" {
+			_ = os.Remove(tempOutput)
+		}
+	}()
+
+	sourceBackup, err := backupAndReplace(sourcePath, tempSource)
+	if err != nil {
+		return err
+	}
+	var outputBackup string
+	if outputPath != "" {
+		outputBackup, err = backupAndReplace(outputPath, tempOutput)
+		if err != nil {
+			if sourceBackup != "" {
+				_ = os.Remove(sourcePath)
+				_ = os.Rename(sourceBackup, sourcePath)
+			}
+			return err
+		}
+	}
+	oldFiles := append([]stagedUpload(nil), job.Files...)
+	found := false
+	for index := range job.Files {
+		if job.Files[index].Field == staged.Field {
+			job.Files[index] = staged
+			found = true
+			break
+		}
+	}
+	if !found {
+		job.Files = append(job.Files, staged)
+	}
+	if err := s.saveStagedJob(*job); err != nil {
+		job.Files = oldFiles
+		_ = os.Remove(sourcePath)
+		if sourceBackup != "" {
+			_ = os.Rename(sourceBackup, sourcePath)
+		}
+		if outputPath != "" {
+			_ = os.Remove(outputPath)
+			if outputBackup != "" {
+				_ = os.Rename(outputBackup, outputPath)
+			}
+		}
+		return err
+	}
+	if sourceBackup != "" {
+		_ = os.Remove(sourceBackup)
+	}
+	if outputBackup != "" {
+		_ = os.Remove(outputBackup)
+	}
+	return nil
+}
+
+func backupAndReplace(destination, replacement string) (string, error) {
+	backup := ""
+	if _, err := os.Stat(destination); err == nil {
+		file, createErr := os.CreateTemp(filepath.Dir(destination), ".habilitante-anterior-")
+		if createErr != nil {
+			return "", createErr
+		}
+		backup = file.Name()
+		if err := file.Close(); err != nil {
+			_ = os.Remove(backup)
+			return "", err
+		}
+		if err := os.Remove(backup); err != nil {
+			return "", err
+		}
+		if err := os.Rename(destination, backup); err != nil {
+			return "", err
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return "", err
+	}
+	if err := os.Rename(replacement, destination); err != nil {
+		if backup != "" {
+			_ = os.Rename(backup, destination)
+		}
+		return "", err
+	}
+	return backup, nil
 }
 
 func (s *server) getStagedJobStatus(w http.ResponseWriter, r *http.Request) {
@@ -1575,7 +1691,7 @@ func (s *server) receiveDualUpload(w http.ResponseWriter, r *http.Request) {
 		ID: jobID, Status: "STAGED", Username: entry.username,
 		Month: month, Year: year, Service: service, ReceivedAt: time.Now().UTC(),
 		Files:        make([]stagedUpload, 0, len(parts)),
-		StatusDetail: "Lote clínico guardado en el espacio permanente. Los documentos habilitantes pueden añadirse después.",
+		StatusDetail: "Lote guardado en el espacio permanente. Los documentos habilitantes pueden añadirse después.",
 	}
 	for _, part := range parts {
 		storedPath := filepath.Join(sourceDir, part.storedName)
