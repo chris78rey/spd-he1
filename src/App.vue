@@ -34,7 +34,7 @@ const showPassword = ref(false)
 const signingIn = ref(false)
 const currentUser = ref('')
 const displayUser = computed(() => currentUser.value.toLocaleUpperCase('es'))
-const activePage = ref('documents')
+const activePage = ref('ingesta')
 const planillaPage = ref(1)
 const planillaData = ref({ columns: [], rows: [], total: 0, totalPages: 1 })
 const planillaLoading = ref(false)
@@ -67,6 +67,9 @@ const ingestResult = ref(null)
 const ingestPreview = ref(null)
 const ingestPreviewLoading = ref(false)
 const ingestPreviewError = ref('')
+const ingestPreviewNotice = ref('')
+const ingestMappingSelections = ref({})
+const ingestMappingSaving = ref('')
 const ingestPreviewPage = ref(1)
 const ingestPreviewPageSize = 10
 const savedWorkspaces = ref([])
@@ -76,6 +79,7 @@ const ingestMode = ref('new')
 const ingestModeTouched = ref(false)
 const openingSavedWorkspace = ref(false)
 const workspacePDFs = ref([])
+const workspacePDFRevision = ref(0)
 const workspacePatients = ref([])
 const selectedWorkspacePDF = ref('')
 const workspaceRename = ref('')
@@ -93,9 +97,16 @@ const deletePDFTarget = ref('')
 const deletePDFDialog = ref(false)
 const mergePDFDialog = ref(false)
 const mergePDFPaths = ref([])
+const mergePreviewPath = ref('')
+const mergeDraggingIndex = ref(-1)
+const mergeDropIndex = ref(-1)
 const mergeSending = ref(false)
+const mergeAllConfirmDialog = ref(false)
+const mergeAllSending = ref(false)
+const mergeAllProgress = ref({ done: 0, total: 0 })
 const deleteWorkspaceDialog = ref(false)
-const workspaceDeleteCode = ref('')
+const workspaceDeleteTargetID = ref('')
+const workspaceDeleteTargetName = ref('')
 const workspaceDeleteInput = ref('')
 const workspaceDeleteError = ref('')
 const workspaceDeleting = ref(false)
@@ -127,7 +138,16 @@ const workspaceFusionGroups = computed(() => {
     return group
   })
 })
-const selectedWorkspaceFusionGroup = computed(() => workspaceFusionGroups.value.find(group => group.paths.includes(selectedWorkspacePDF.value)) || null)
+const workspacePatientFusionGroups = computed(() => {
+  const prefix = workspacePatient.value ? `4. EXPEDIENTES/${workspacePatient.value}/` : ''
+  return prefix ? workspaceFusionGroups.value.filter(group => group.paths.some(path => path.startsWith(prefix))) : []
+})
+const workspaceFusionQueue = computed(() => workspaceFusionGroups.value.map(group => {
+  const patient = group.paths[0]?.split('/')[1] || ''
+  return { ...group, patient, value: group.paths[0], title: `${patient} · ${group.code} · ${group.paths.length} PDFs` }
+}))
+const pendingFusionSelection = ref('')
+const selectedPendingFusionGroup = computed(() => workspaceFusionQueue.value.find(group => group.value === pendingFusionSelection.value) || null)
 const queuedWorkspaceDuplicates = computed(() => {
   const seen = new Set(workspacePatientPDFs.value.map(document => standardCodeForFilename(document.name).toLowerCase()).filter(Boolean))
   let duplicates = 0
@@ -148,7 +168,10 @@ function isPendingWorkspaceDocument(document) {
   return /^PENDIENTE_tmp_/i.test(document?.name || '')
 }
 const workspacePDFURL = computed(() => selectedWorkspacePDF.value && ingestResult.value?.job_id
-  ? `/api/v1/expedientes/documentos/archivo/${encodeURIComponent(ingestResult.value.job_id)}?path=${encodeURIComponent(selectedWorkspacePDF.value)}`
+  ? `/api/v1/expedientes/documentos/archivo/${encodeURIComponent(ingestResult.value.job_id)}?path=${encodeURIComponent(selectedWorkspacePDF.value)}&v=${workspacePDFRevision.value}`
+  : '')
+const mergePreviewURL = computed(() => mergePreviewPath.value && ingestResult.value?.job_id
+  ? `/api/v1/expedientes/documentos/archivo/${encodeURIComponent(ingestResult.value.job_id)}?path=${encodeURIComponent(mergePreviewPath.value)}&v=${workspacePDFRevision.value}`
   : '')
 let dragDepth = 0
 const spaces = computed(() => ['Trabajo','Personal','Mi espacio',...customSpaces.value])
@@ -254,6 +277,7 @@ async function loadWorkspaceDocuments(jobId, preferPath = '') {
     const data = await response.json().catch(() => ({}))
     if (!response.ok) throw new Error(data.error || 'No se pudieron cargar los PDFs del expediente.')
     workspacePDFs.value = data.documents || []
+    workspacePDFRevision.value++
     workspacePatients.value = data.patients || []
     workspaceNotice.value = ''
     workspacePatient.value = workspacePatients.value.includes(workspacePatient.value) ? workspacePatient.value : (workspacePatients.value[0] || '')
@@ -292,10 +316,56 @@ async function renameWorkspacePDF() {
   } catch (error) { workspaceNotice.value = error.message || 'No se pudo cambiar el nombre del PDF.' }
   finally { workspaceBusy.value = false }
 }
-function openWorkspaceFusion() {
-  if (!selectedWorkspaceFusionGroup.value) return
-  mergePDFPaths.value = [...selectedWorkspaceFusionGroup.value.paths]
+function openWorkspaceFusion(group) {
+  if (!group || mergeAllSending.value) return
+  mergePDFPaths.value = [...group.paths]
+  mergePreviewPath.value = group.paths[0] || ''
   mergePDFDialog.value = true
+}
+function reviewPendingFusion() {
+  const group = workspaceFusionQueue.value.find(item => item.value === pendingFusionSelection.value)
+  if (!group) return
+  workspacePatient.value = group.patient
+  selectedWorkspacePDF.value = group.paths[0]
+  workspaceRename.value = standardCodeForFilename(group.code)
+  openWorkspaceFusion(group)
+}
+function requestMergeAllPending() {
+  if (!workspaceFusionQueue.value.length || mergeSending.value || mergeAllSending.value) return
+  mergeAllProgress.value = { done: 0, total: workspaceFusionQueue.value.length }
+  mergeAllConfirmDialog.value = true
+}
+async function confirmMergeAllPending() {
+  const jobId = ingestResult.value?.job_id
+  const groups = workspaceFusionQueue.value.map(group => ({ patient: group.patient, code: group.code, paths: [...group.paths] }))
+  if (!jobId || !groups.length || mergeAllSending.value || mergeSending.value) return
+  mergeAllSending.value = true
+  mergeAllConfirmDialog.value = false
+  mergeAllProgress.value = { done: 0, total: groups.length }
+  let merged = 0
+  let failure = ''
+  for (const group of groups) {
+    try {
+      const response = await fetch(`/api/v1/expedientes/documentos/fusionar/${encodeURIComponent(jobId)}`, {
+        method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rutas: group.paths }),
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(data.error || `Falló la fusión de ${group.patient} · ${group.code}.`)
+      merged++
+      mergeAllProgress.value = { done: merged, total: groups.length }
+    } catch (error) {
+      failure = error.message || `Falló la fusión de ${group.patient} · ${group.code}.`
+      break
+    }
+  }
+  mergeAllSending.value = false
+  await loadWorkspaceDocuments(jobId, selectedWorkspacePDF.value)
+  await loadSavedWorkspaces()
+  if (failure) workspaceNotice.value = merged
+    ? `Se detuvo después de fusionar ${merged} de ${groups.length} grupos. Los demás siguen pendientes. ${failure}`
+    : `No se completó la fusión general. Los grupos siguen pendientes. ${failure}`
+  else workspaceNotice.value = `Se fusionaron ${merged} grupos pendientes en el orden actual de cada lista. Las fuentes originales se conservaron.`
 }
 function moveWorkspaceFusionPDF(index, offset) {
   const target = index + offset
@@ -303,8 +373,36 @@ function moveWorkspaceFusionPDF(index, offset) {
   const [path] = mergePDFPaths.value.splice(index, 1)
   mergePDFPaths.value.splice(target, 0, path)
 }
+function startWorkspaceFusionDrag(event, index) {
+  mergeDraggingIndex.value = index
+  mergeDropIndex.value = index
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('text/plain', String(index))
+  }
+}
+function dragOverWorkspaceFusion(event, index) {
+  event.preventDefault()
+  mergeDropIndex.value = index
+  if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
+}
+function dropWorkspaceFusion(event, index) {
+  event.preventDefault()
+  const from = mergeDraggingIndex.value
+  if (from >= 0 && from !== index) {
+    const ordered = [...mergePDFPaths.value]
+    const [path] = ordered.splice(from, 1)
+    ordered.splice(index, 0, path)
+    mergePDFPaths.value = ordered
+  }
+  finishWorkspaceFusionDrag()
+}
+function finishWorkspaceFusionDrag() {
+  mergeDraggingIndex.value = -1
+  mergeDropIndex.value = -1
+}
 async function confirmWorkspaceFusion() {
-  if (!ingestResult.value?.job_id || mergePDFPaths.value.length < 2 || mergeSending.value) return
+  if (!ingestResult.value?.job_id || mergePDFPaths.value.length < 2 || mergeSending.value || mergeAllSending.value) return
   mergeSending.value = true
   workspaceNotice.value = ''
   try {
@@ -316,6 +414,8 @@ async function confirmWorkspaceFusion() {
     if (!response.ok) throw new Error(data.error || 'No se pudieron fusionar los PDFs.')
     mergePDFDialog.value = false
     mergePDFPaths.value = []
+    mergePreviewPath.value = ''
+    pendingFusionSelection.value = ''
     await loadWorkspaceDocuments(data.job_id, data.fused)
     workspaceNotice.value = `${data.merged_count} PDFs fusionados en ${data.fused.split('/').at(-1)}. Las fuentes originales se conservaron.`
     await loadSavedWorkspaces()
@@ -375,6 +475,7 @@ async function addWorkspacePDFs() {
     })
     workspaceUploadFiles.value = []
     workspacePDFs.value = data.documents || []
+    workspacePDFRevision.value++
     workspacePatients.value = data.patients || []
     const replacedCount = data.replaced_count || 0
     const addedCount = data.added_count ?? (data.added?.length || 0)
@@ -413,6 +514,7 @@ async function confirmReplaceWorkspacePDF() {
       request.send(form)
     })
     workspacePDFs.value = data.documents || []
+    workspacePDFRevision.value++
     replacePDFFile.value = null
     selectedWorkspacePDF.value = current.path
     workspaceNotice.value = 'PDF reemplazado. La versión fuente se conserva en el expediente.'
@@ -425,46 +527,48 @@ function requestDeleteWorkspacePDF(path) {
   deletePDFTarget.value = path
   deletePDFDialog.value = true
 }
-function requestDeleteWorkspace() {
-  const random = new Uint32Array(1)
-  crypto.getRandomValues(random)
-  workspaceDeleteCode.value = String(10000000 + (random[0] % 90000000))
+function requestDeleteWorkspace(jobId = ingestResult.value?.job_id) {
+  if (!jobId || workspaceDeleting.value) return
+  workspaceDeleteTargetID.value = jobId
+  workspaceDeleteTargetName.value = jobId === ingestResult.value?.job_id
+    ? ingestResult.value.workspace?.split('/').at(-1) || jobId
+    : savedWorkspaceItems.value.find(item => item.value === jobId)?.title || jobId
   workspaceDeleteInput.value = ''
   workspaceDeleteError.value = ''
   deleteWorkspaceDialog.value = true
 }
-function preventWorkspaceDeleteClipboard(event) { event.preventDefault() }
-function preventWorkspaceDeletePaste(event) {
-  if (event.inputType === 'insertFromPaste' || event.inputType === 'insertFromDrop') event.preventDefault()
-}
-function blockWorkspaceDeleteClipboardKeys(event) {
-  if (((event.ctrlKey || event.metaKey) && ['v', 'c', 'x'].includes(event.key.toLowerCase())) || (event.shiftKey && event.key === 'Insert')) event.preventDefault()
-}
-function setWorkspaceDeleteInput(value) { workspaceDeleteInput.value = String(value || '').replace(/\D/g, '').slice(0, 8) }
+function setWorkspaceDeleteInput(value) { workspaceDeleteInput.value = String(value || '').trim().toUpperCase() }
 async function deleteWholeWorkspace() {
-  if (!ingestResult.value?.job_id || workspaceDeleteInput.value !== workspaceDeleteCode.value || workspaceDeleting.value) return
+  const jobId = workspaceDeleteTargetID.value
+  if (!jobId || workspaceDeleteInput.value !== jobId || workspaceDeleting.value) return
   workspaceDeleteError.value = ''
   workspaceDeleting.value = true
   try {
-    const response = await fetch(`/api/v1/expedientes/eliminar/${encodeURIComponent(ingestResult.value.job_id)}`, {
+    const response = await fetch(`/api/v1/expedientes/eliminar/${encodeURIComponent(jobId)}`, {
       method: 'DELETE', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ confirmacion: workspaceDeleteInput.value }),
     })
     const data = await response.json().catch(() => ({}))
     if (!response.ok) throw new Error(data.error || 'No se pudo eliminar el espacio completo.')
-    const deletedFolder = ingestResult.value.workspace?.split('/').at(-1) || 'período'
-    ingestResult.value = null
-    ingestPreview.value = null
-    ingestPreviewError.value = ''
-    workspacePDFs.value = []
-    workspacePatients.value = []
-    workspacePatient.value = ''
-    selectedWorkspacePDF.value = ''
-    workspaceUploadFiles.value = []
-    localStorage.removeItem('folio-ingest-result')
+    const deletedFolder = workspaceDeleteTargetName.value
+    if (ingestResult.value?.job_id === jobId) {
+      ingestResult.value = null
+      ingestPreview.value = null
+      ingestPreviewError.value = ''
+      workspacePDFs.value = []
+      workspacePatients.value = []
+      workspacePatient.value = ''
+      selectedWorkspacePDF.value = ''
+      workspaceUploadFiles.value = []
+      localStorage.removeItem('folio-ingest-result')
+    }
     deleteWorkspaceDialog.value = false
+    selectedSavedWorkspace.value = ''
     await loadSavedWorkspaces()
-    snackbar.value = `Se eliminó la carpeta completa ${deletedFolder} y sus fuentes.`
+    workspaceDeleteTargetID.value = ''
+    workspaceDeleteTargetName.value = ''
+    workspaceDeleteInput.value = ''
+    snackbar.value = `Se eliminó ${deletedFolder} y sus archivos.`
   } catch (error) { workspaceDeleteError.value = error.message || 'No se pudo eliminar el espacio completo.' }
   finally { workspaceDeleting.value = false }
 }
@@ -703,12 +807,54 @@ async function loadIngestPreview(jobId) {
     ingestPreviewError.value = error.message || 'No se pudo inspeccionar el contenido del ZIP.'
   } finally { ingestPreviewLoading.value = false }
 }
+async function saveIngestTramiteMapping(folder, target = ingestMappingSelections.value[folder.tramite]) {
+  const jobId = ingestResult.value?.job_id
+  if (!jobId || !target || ingestMappingSaving.value) return
+  ingestMappingSaving.value = folder.tramite
+  ingestPreviewNotice.value = ''
+  try {
+    const response = await fetch(`/api/v1/ingesta/vincular-tramite/${encodeURIComponent(jobId)}`, {
+      method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tramite_zip: folder.tramite, tramite_oracle: target }),
+    })
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok) throw new Error(data.error || 'No se pudo emparejar la carpeta con Oracle.')
+    ingestPreviewNotice.value = data.message || 'Se guardó el vínculo manual.'
+    ingestMappingSelections.value = { ...ingestMappingSelections.value, [folder.tramite]: '' }
+    await loadIngestPreview(jobId)
+  } catch (error) {
+    ingestPreviewNotice.value = error.message || 'No se pudo emparejar la carpeta con Oracle.'
+  } finally { ingestMappingSaving.value = '' }
+}
+async function clearIngestTramiteMapping(folder) {
+  const jobId = ingestResult.value?.job_id
+  if (!jobId || ingestMappingSaving.value) return
+  ingestMappingSaving.value = folder.tramite
+  ingestPreviewNotice.value = ''
+  try {
+    const response = await fetch(`/api/v1/ingesta/vincular-tramite/${encodeURIComponent(jobId)}`, {
+      method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tramite_zip: folder.tramite, tramite_oracle: '' }),
+    })
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok) throw new Error(data.error || 'No se pudo quitar el vínculo manual.')
+    ingestPreviewNotice.value = data.message || 'Se quitó el vínculo manual.'
+    await loadIngestPreview(jobId)
+  } catch (error) {
+    ingestPreviewNotice.value = error.message || 'No se pudo quitar el vínculo manual.'
+  } finally { ingestMappingSaving.value = '' }
+}
 const savedWorkspaceItems = computed(() => savedWorkspaces.value.map(workspace => {
   const monthName = ingestMonths.find(month => month.value === String(workspace.period || '').slice(5, 7))?.title || workspace.mes
   const serviceName = ingestServices.find(service => service.value === workspace.tipo_servicio)?.title || workspace.tipo_servicio
   const state = workspace.status === 'STAGED' ? 'pendiente de preparar' : workspace.status === 'INCOMPLETE' ? 'incompleto' : 'preparado'
   return { title: `${serviceName} · ${monthName} ${workspace.anio} · ${state} · recibido por ${workspace.creado_por || 'usuario anterior'}`, value: workspace.job_id }
 }))
+function billedPeriodLabel(period) {
+  const [monthValue, year] = String(period || '').split('/')
+  const month = ingestMonths.find(item => item.value === monthValue)?.title
+  return month && year ? `${month.toLowerCase()} de ${year}` : period
+}
 async function loadSavedWorkspaces() {
   savedWorkspacesLoading.value = true
   try {
@@ -901,10 +1047,10 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
     <main v-if="authStatus !== 'authenticated'" class="login-page">
       <div class="login-orbit orbit-one"></div><div class="login-orbit orbit-two"></div>
       <section class="login-card" aria-labelledby="login-title">
-        <a class="login-brand" href="#" aria-label="Folio"><span class="brand-mark"><v-icon icon="mdi-book-open-page-variant" size="21" /></span><span>folio<span class="brand-dot">.</span></span></a>
+        <a class="login-brand" href="#" aria-label="SPD MSP"><span class="brand-mark"><v-icon icon="mdi-book-open-page-variant" size="21" /></span><span>SPD MSP</span></a>
         <div v-if="authStatus === 'checking'" class="login-loading"><v-progress-circular indeterminate color="primary"/><p>Comprobando tu sesión…</p></div>
         <template v-else>
-          <div class="login-heading"><span class="login-kicker">TU BIBLIOTECA, EN UN SOLO LUGAR</span><h1 id="login-title">Bienvenido a Folio</h1><p>Inicia sesión con tu usuario de Oracle. Necesitas el rol <strong>SPD_EXTERNOS</strong>.</p></div>
+          <div class="login-heading"><span class="login-kicker">GESTIÓN DE EXPEDIENTES DE FACTURACIÓN</span><h1 id="login-title">Bienvenido a SPD MSP</h1><p>Inicia sesión con tu usuario de Oracle. Necesitas el rol <strong>SPD_EXTERNOS</strong>.</p></div>
           <form class="login-form" @submit.prevent="signIn">
             <v-text-field v-model="oracleUser" label="Usuario de Oracle" placeholder="Tu usuario" prepend-inner-icon="mdi-account-outline" autocomplete="username" name="username" required autofocus />
             <v-text-field v-model="oraclePassword" :type="showPassword ? 'text' : 'password'" label="Contraseña" placeholder="Tu contraseña de Oracle" prepend-inner-icon="mdi-lock-outline" :append-inner-icon="showPassword ? 'mdi-eye-off-outline' : 'mdi-eye-outline'" autocomplete="current-password" name="password" required @click:append-inner="showPassword = !showPassword" />
@@ -918,24 +1064,15 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
     </main>
     <div v-else class="app-shell" @dragenter="onDragEnter" @dragleave="onDragLeave" @dragover.prevent @drop="onDrop">
       <aside class="sidebar">
-        <a class="brand" href="#" @click.prevent="activePage='documents';activeFolder=folders[0]"><span class="brand-mark"><v-icon icon="mdi-book-open-page-variant" size="21" /></span><span>folio<span class="brand-dot">.</span></span></a>
-        <button class="upload-btn" @click="uploadInput?.click()"><v-icon icon="mdi-plus" size="20" /> Subir documento <v-icon class="upload-arrow" icon="mdi-chevron-down" size="17" /></button>
-        <input ref="uploadInput" type="file" multiple hidden @change="upload" />
-        <div class="nav-label">BIBLIOTECA</div>
-        <button v-for="folder in folders" :key="folder" class="nav-item" :class="{selected:activePage==='documents'&&activeFolder===folder}" @click="activePage='documents';activeFolder=folder"><v-icon :icon="folder==='Todos los documentos' ? 'mdi-view-grid-outline' : 'mdi-star-outline'" size="19"/><span>{{ folder }}</span><span v-if="folder==='Todos los documentos'" class="nav-count">{{ docs.length }}</span></button>
-        <div class="sidebar-divider"></div>
-        <div class="nav-label">ESPACIOS</div>
-        <button v-for="(f,i) in spaces" :key="f+'space'" class="nav-item space-item" :class="{selected:activePage==='documents'&&activeFolder===f}" @click="activePage='documents';activeFolder=f"><span class="space-dot" :class="'dot-'+(i%3)"></span><span>{{ f }}</span></button>
-        <div class="sidebar-divider"></div>
+        <a class="brand" href="#" aria-label="SPD MSP" @click.prevent="activePage='ingesta'"><span class="brand-mark"><v-icon icon="mdi-book-open-page-variant" size="21" /></span><span>SPD MSP</span></a>
         <div class="nav-label">DATOS</div>
         <button class="nav-item" :class="{selected:activePage==='planilla'}" @click="openPlanilla"><v-icon icon="mdi-table-large" size="19"/><span>Planilla digital</span></button>
         <div class="nav-label">PROCESOS</div>
         <button class="nav-item" :class="{selected:activePage==='ingesta'}" @click="activePage='ingesta'"><v-icon icon="mdi-cloud-upload-outline" size="19"/><span>Recibir planillas</span></button>
-        <button class="add-space" @click="createSpaceDialog=true"><v-icon icon="mdi-plus" size="17"/> Crear espacio</button>
-          <div class="sidebar-bottom"><div class="storage-row"><span>Guardado en este navegador</span><span>{{ docs.length ? prettySize(docs.reduce((a,d)=>a+(d.bytes||0),0)) : '0 MB' }}</span></div><button class="profile" @click="signOut"><span class="avatar">{{ displayUser.slice(0,1) }}</span><span class="profile-copy"><b>{{ displayUser }}</b><small>Cerrar sesión</small></span><v-icon icon="mdi-logout" size="18"/></button></div>
+        <div class="sidebar-bottom"><button class="profile" @click="signOut"><span class="avatar">{{ displayUser.slice(0,1) }}</span><span class="profile-copy"><b>{{ displayUser }}</b><small>Cerrar sesión</small></span><v-icon icon="mdi-logout" size="18"/></button></div>
       </aside>
       <main class="main-area">
-        <header class="topbar"><div class="breadcrumbs"><span>Espacios</span><v-icon icon="mdi-chevron-right" size="16"/><b>{{ title }}</b></div><div class="top-actions"><span class="avatar top-avatar">{{ displayUser.slice(0,1) }}</span></div></header>
+        <header class="topbar"><div class="breadcrumbs"><span>SPD MSP</span><v-icon icon="mdi-chevron-right" size="16"/><b>{{ title }}</b></div><div class="top-actions"><span class="avatar top-avatar">{{ displayUser.slice(0,1) }}</span></div></header>
         <section v-if="activePage==='documents'" class="content-wrap">
           <div class="welcome-line"><div><div class="eyebrow">BIBLIOTECA PERSONAL</div><h1>{{ title }}<span class="title-period">.</span></h1><p class="subtitle">Busca, organiza y abre tus documentos guardados.</p></div><button class="primary-upload" @click="uploadInput?.click()"><v-icon icon="mdi-upload" size="18"/> Subir documento</button></div>
           <div class="stats-row"><div class="stat-card"><span class="stat-icon green"><v-icon icon="mdi-file-multiple-outline"/></span><div><span class="stat-label">Documentos</span><strong>{{ docs.length }} <small>archivos</small></strong></div></div><div class="stat-card"><span class="stat-icon peach"><v-icon icon="mdi-folder-multiple-outline"/></span><div><span class="stat-label">Espacios</span><strong>{{ spaces.length }} <small>activos</small></strong></div></div></div>
@@ -971,7 +1108,7 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
           <form class="ingest-form" @submit.prevent="submitIngest">
             <section v-if="ingestMode === 'resume' && !ingestResult" class="ingest-card saved-workspaces-card">
               <div class="ingest-card-heading"><span class="ingest-step"><v-icon icon="mdi-folder-clock-outline" size="18"/></span><div><h2>Volver a un período guardado</h2><p>Busca un período compartido para abrirlo y continuar el trabajo, aunque lo haya recibido otra persona.</p></div><v-spacer/><v-btn type="button" icon="mdi-refresh" variant="text" aria-label="Actualizar expedientes guardados" :loading="savedWorkspacesLoading" @click="loadSavedWorkspaces"/></div>
-              <div class="saved-workspaces-row"><v-select v-model="selectedSavedWorkspace" :items="savedWorkspaceItems" label="Servicio y período" :placeholder="savedWorkspacesLoading ? 'Cargando períodos…' : 'No tienes períodos guardados'" prepend-inner-icon="mdi-folder-open-outline" density="comfortable" :disabled="savedWorkspacesLoading || !savedWorkspaceItems.length" hide-details/><v-btn type="button" color="primary" prepend-icon="mdi-folder-open-outline" :loading="openingSavedWorkspace" :disabled="!selectedSavedWorkspace" @click="openSavedWorkspace">Abrir período</v-btn></div>
+              <div class="saved-workspaces-row saved-workspaces-actions"><v-select v-model="selectedSavedWorkspace" :items="savedWorkspaceItems" label="Servicio y período" :placeholder="savedWorkspacesLoading ? 'Cargando períodos…' : 'No tienes períodos guardados'" prepend-inner-icon="mdi-folder-open-outline" density="comfortable" :disabled="savedWorkspacesLoading || !savedWorkspaceItems.length" hide-details/><v-btn type="button" color="primary" prepend-icon="mdi-folder-open-outline" :loading="openingSavedWorkspace" :disabled="!selectedSavedWorkspace" @click="openSavedWorkspace">Abrir período</v-btn><v-btn type="button" color="error" variant="tonal" prepend-icon="mdi-delete-outline" :loading="workspaceDeleting" :disabled="!selectedSavedWorkspace || workspaceDeleting" @click="requestDeleteWorkspace(selectedSavedWorkspace)">Eliminar</v-btn></div>
               <div v-if="!savedWorkspacesLoading && !savedWorkspaceItems.length" class="saved-workspaces-empty"><v-icon icon="mdi-folder-search-outline" size="24"/><span><strong>No hay períodos guardados todavía</strong><small>Crea un período nuevo y aparecerá aquí para que cualquier cuenta autorizada pueda continuarlo.</small></span><v-btn type="button" variant="text" color="primary" @click="switchIngestMode('new')">Crear período nuevo</v-btn></div>
             </section>
             <template v-if="ingestMode === 'new' && !ingestResult">
@@ -1003,18 +1140,27 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
               <v-alert :type="ingestResult.status === 'PROCESSED' ? 'success' : ingestResult.status === 'REQUIERE_REVISION' ? 'warning' : 'info'" variant="tonal" density="comfortable" prepend-icon="mdi-information-outline">
                 <strong>{{ ['STAGED','REQUIERE_REVISION'].includes(ingestResult.status) ? 'Siguiente paso: revisar y preparar expedientes' : ingestResult.status === 'INCOMPLETE' ? 'Expediente preparado; faltan documentos habilitantes.' : 'Expediente preparado para revisión.' }}</strong><div>{{ ingestResult.message }}</div>
               </v-alert>
-              <div v-if="['STAGED','REQUIERE_REVISION'].includes(ingestResult.status)" class="ingest-next-step"><p v-if="!ingestPreview">Revisa la vista previa antes de preparar el expediente.</p><p v-else-if="!ingestPreviewReadyToPrepare">La vista previa encontró {{ ingestPreview.tramites_sin_oracle }} trámite(s) sin coincidencia y {{ ingestPreview.entradas_invalidas }} ruta(s) inválida(s). Puedes corregir el período o cargar un ZIP corregido para este mismo expediente.</p><p v-else>Los {{ ingestPreview.pdfs }} PDFs están dentro de {{ ingestPreview.carpetas_tramite }} carpetas y todos sus trámites se encuentran en Oracle para el período seleccionado.</p><v-btn color="primary" size="large" prepend-icon="mdi-folder-cog-outline" :loading="ingestProcessing" :disabled="!ingestPreviewReadyToPrepare" @click="processIngest">Preparar expedientes</v-btn><input ref="zipReplacementInput" type="file" accept=".zip,application/zip" hidden @change="replaceIngestZIP"/><v-btn v-if="!ingestPreviewReadyToPrepare" type="button" variant="outlined" prepend-icon="mdi-file-replace-outline" :loading="zipReplacementSending" :disabled="ingestProcessing" @click="zipReplacementInput?.click()">Subir ZIP corregido</v-btn></div>
+              <div v-if="['STAGED','REQUIERE_REVISION'].includes(ingestResult.status)" class="ingest-next-step">
+                <p v-if="!ingestPreview">Revisa la vista previa antes de preparar el expediente.</p>
+                <p v-else-if="!ingestPreviewReadyToPrepare">Hay {{ ingestPreview.tramites_sin_oracle }} carpeta(s) del ZIP sin coincidencia en Oracle y {{ ingestPreview.entradas_invalidas }} ruta(s) inválida(s). Corrige estos problemas para continuar.</p>
+                <p v-else>Se prepararán los {{ ingestPreview.pdfs }} PDFs de las {{ ingestPreview.carpetas_tramite }} carpetas incluidas en el ZIP.<span v-if="ingestPreview.tramites_oracle_sin_zip"> Las {{ ingestPreview.tramites_oracle_sin_zip }} planillas que solo aparecen en Oracle se omitirán y no bloquean la preparación.</span></p>
+                <v-btn color="primary" size="large" prepend-icon="mdi-folder-cog-outline" :loading="ingestProcessing" :disabled="!ingestPreviewReadyToPrepare" @click="processIngest">Preparar expedientes</v-btn>
+                <input ref="zipReplacementInput" type="file" accept=".zip,application/zip" hidden @change="replaceIngestZIP"/>
+                <v-btn v-if="!ingestPreviewReadyToPrepare" type="button" variant="outlined" prepend-icon="mdi-file-replace-outline" :loading="zipReplacementSending" :disabled="ingestProcessing" @click="zipReplacementInput?.click()">Subir ZIP corregido</v-btn>
+              </div>
             </section>
             <section v-if="ingestResult && (ingestPreview || ingestPreviewLoading || ingestPreviewError)" class="ingest-card ingest-preview-card">
               <div class="ingest-card-heading"><span class="ingest-step"><v-icon icon="mdi-folder-search-outline" size="19"/></span><div><h2>Vista previa del ZIP y cruce con Oracle</h2><p>Período seleccionado: {{ ingestPreview?.mes || ingestResult.mes }}/{{ ingestPreview?.anio || ingestResult.anio }} · Servicio: {{ ingestPreview?.tipo_servicio || ingestService }}</p></div><v-spacer/><v-btn type="button" icon="mdi-refresh" variant="text" aria-label="Actualizar vista previa del ZIP" :loading="ingestPreviewLoading" @click="loadIngestPreview(ingestResult.job_id)"/></div>
               <div v-if="ingestPreviewLoading" class="planilla-state"><v-progress-circular indeterminate color="primary"/><span>Contando carpetas y PDFs, y cruzando trámites con Oracle…</span></div>
               <v-alert v-else-if="ingestPreviewError" type="warning" variant="tonal" density="comfortable">{{ ingestPreviewError }}<v-btn type="button" size="small" variant="text" @click="loadIngestPreview(ingestResult.job_id)">Reintentar</v-btn></v-alert>
               <template v-else-if="ingestPreview">
+                <v-alert v-if="ingestPreviewNotice" :type="ingestPreviewNotice.includes('no se pudo') || ingestPreviewNotice.includes('No se pudo') ? 'warning' : 'success'" variant="tonal" density="compact" class="ingest-preview-notice">{{ ingestPreviewNotice }}</v-alert>
                 <div class="ingest-preview-stats">
                   <div><strong>{{ ingestPreview.carpetas_tramite }}</strong><span>carpetas de trámites</span></div>
                   <div><strong>{{ ingestPreview.pdfs }}</strong><span>PDFs en el ZIP</span></div>
                   <div><strong>{{ ingestPreview.tramites_en_oracle }}</strong><span>trámites encontrados en Oracle</span></div>
                   <div><strong>{{ ingestPreview.tramites_sin_oracle }}</strong><span>trámites sin coincidencia</span></div>
+                  <div><strong>{{ ingestPreview.tramites_oracle_sin_zip }}</strong><span>trámites Oracle sin carpeta en ZIP</span></div>
                   <div><strong>{{ ingestPreview.entradas_invalidas }}</strong><span>rutas o archivos inválidos</span></div>
                 </div>
                 <v-alert v-if="ingestPreview.tramites_sin_oracle || ingestPreview.entradas_invalidas || ingestPreview.tramites_sin_paciente_oracle" type="warning" variant="tonal" density="comfortable" prepend-icon="mdi-alert-outline">
@@ -1022,9 +1168,13 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
                   <span v-if="ingestPreview.tramites_sin_paciente_oracle"> {{ ingestPreview.tramites_sin_paciente_oracle }} trámites encontrados no tienen nombre de paciente en Oracle.</span>
                   <span v-if="ingestPreview.rutas_invalidas?.length"> Rutas con problemas: {{ ingestPreview.rutas_invalidas.join(', ') }}<span v-if="ingestPreview.entradas_invalidas > ingestPreview.rutas_invalidas.length"> y otras {{ ingestPreview.entradas_invalidas - ingestPreview.rutas_invalidas.length }}.</span></span>
                 </v-alert>
+                <v-alert v-if="ingestPreview.tramites_oracle_sin_zip" type="info" variant="tonal" density="comfortable" prepend-icon="mdi-folder-question-outline">
+                  Oracle tiene {{ ingestPreview.tramites_oracle_sin_zip }} planillas para {{ ingestPreview.mes }}/{{ ingestPreview.anio }} que no aparecen en el ZIP. El ZIP define los expedientes del lote: esas planillas se omiten y no impiden continuar.
+                  <details class="oracle-omitted-details"><summary>Ver trámites omitidos</summary><p><code>{{ ingestPreview.pdi_tramite_oracle_sin_zip.join(', ') }}</code></p></details>
+                </v-alert>
                 <div class="ingest-preview-table-wrap">
-                  <v-table class="planilla-table ingest-preview-table" density="comfortable"><thead><tr><th>Carpeta / PDI_TRAMITE</th><th>PDFs</th><th>Paciente Oracle</th><th>PDI_SERVICIO</th><th>PDI_FECHA_DESDE – HASTA</th><th>Cruce</th></tr></thead>
-                    <tbody><tr v-for="folder in ingestPreviewRows" :key="folder.tramite"><td><code>{{ folder.tramite }}</code></td><td>{{ folder.pdfs }}</td><td>{{ folder.paciente || (folder.coincide_oracle ? 'Sin nombre en Oracle' : '—') }}</td><td>{{ folder.servicio_oracle || '—' }}</td><td>{{ folder.fecha_desde || '—' }} – {{ folder.fecha_hasta || '—' }}</td><td><v-chip size="small" :color="folder.coincide_oracle && !folder.paciente_faltante_oracle ? 'success' : 'warning'" variant="tonal">{{ !folder.coincide_oracle ? 'No encontrado' : folder.paciente_faltante_oracle ? 'Falta paciente' : 'Coincide' }}</v-chip></td></tr></tbody>
+                  <v-table class="planilla-table ingest-preview-table" density="comfortable"><thead><tr><th>Carpeta ZIP / PDI_TRAMITE</th><th>PDFs</th><th>Paciente Oracle</th><th>PDI_SERVICIO</th><th>PDI_FECHA_DESDE – HASTA</th><th>Cruce</th><th>Corrección manual</th></tr></thead>
+                    <tbody><tr v-for="folder in ingestPreviewRows" :key="folder.tramite"><td><code>{{ folder.tramite }}</code><div v-if="folder.vinculo_manual" class="ingest-manual-link">Oracle: <code>{{ folder.pdi_tramite_oracle }}</code></div></td><td>{{ folder.pdfs }}</td><td>{{ folder.paciente || (folder.coincide_oracle ? 'Sin nombre en Oracle' : '—') }}</td><td>{{ folder.servicio_oracle || '—' }}</td><td>{{ folder.fecha_desde || '—' }} – {{ folder.fecha_hasta || '—' }}</td><td><v-chip size="small" :color="folder.conflicto_vinculo ? 'error' : folder.coincide_oracle && !folder.paciente_faltante_oracle ? 'success' : 'warning'" variant="tonal">{{ folder.conflicto_vinculo ? 'Vínculo duplicado' : folder.vinculo_manual ? 'Vinculado a Oracle' : !folder.coincide_oracle ? 'No encontrado' : folder.paciente_faltante_oracle ? 'Falta paciente' : 'Coincide' }}</v-chip></td><td><div v-if="folder.vinculo_manual" class="ingest-manual-map-actions"><span>Usa PDI_TRAMITE {{ folder.pdi_tramite_oracle }}</span><v-btn size="small" variant="text" color="warning" :loading="ingestMappingSaving === folder.tramite" :disabled="Boolean(ingestMappingSaving)" @click="clearIngestTramiteMapping(folder)">Deshacer</v-btn></div><div v-else-if="!folder.coincide_oracle" class="ingest-manual-map-actions"><v-select v-model="ingestMappingSelections[folder.tramite]" :items="ingestPreview.planillas_oracle_disponibles || []" item-title="titulo" item-value="tramite" label="Trámite Oracle" density="compact" variant="outlined" hide-details :disabled="Boolean(ingestMappingSaving) || !(ingestPreview.planillas_oracle_disponibles || []).length"/><v-btn size="small" color="primary" :loading="ingestMappingSaving === folder.tramite" :disabled="Boolean(ingestMappingSaving) || !ingestMappingSelections[folder.tramite]" @click="saveIngestTramiteMapping(folder)">Emparejar</v-btn></div><span v-else>—</span></td></tr></tbody>
                   </v-table>
                 </div>
                 <div class="planilla-pagination"><span>Carpetas {{ ingestPreview.carpetas.length ? (ingestPreviewPage - 1) * ingestPreviewPageSize + 1 : 0 }}–{{ Math.min(ingestPreviewPage * ingestPreviewPageSize, ingestPreview.carpetas.length) }} de {{ ingestPreview.carpetas.length }}</span><v-pagination v-if="ingestPreviewPageCount > 1" v-model="ingestPreviewPage" :length="ingestPreviewPageCount" :total-visible="5" density="comfortable"/></div>
@@ -1047,13 +1197,12 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
               <div class="ingest-card-heading"><span class="ingest-step">4</span><div><h2>Revisión de documentos</h2><p>La clasificación se ejecuta al preparar el expediente. Los pendientes requieren revisión documental antes del cierre.</p></div></div>
               <v-alert v-if="ingestResult.clasificacion" type="info" variant="tonal" density="comfortable">{{ ingestResult.clasificacion.clasificados }} PDFs identificados y {{ ingestResult.clasificacion.pendientes }} sin identificar, de {{ ingestResult.clasificacion.total }}. Lectura: {{ ingestResult.clasificacion.texto_vectorial }} con texto PDF, {{ ingestResult.clasificacion.ocr }} por OCR y {{ ingestResult.clasificacion.sin_texto_legible ?? 0 }} sin texto legible.</v-alert>
               <v-alert v-if="ingestResult.clasificacion?.fusiones_pendientes" type="warning" variant="tonal" density="comfortable">{{ ingestResult.clasificacion.fusiones_pendientes }} PDF(s) adicionales fueron reconocidos y se conservaron con nombre numerado. Revísalos y fusiónalos desde la carpeta del paciente cuando corresponda.</v-alert>
-              <v-alert v-if="ingestResult.clasificacion?.documentos_fecha_fuera_atencion?.length" type="warning" variant="tonal" density="comfortable" prepend-icon="mdi-calendar-alert-outline">
-                <strong>{{ ingestResult.clasificacion.documentos_fecha_fuera_atencion.length }} PDF con fechas fuera del intervalo de atención de Oracle.</strong>
-                <p>Se compara el texto de las primeras páginas con PDI_FECHA_DESDE y PDI_FECHA_HASTA del PDI_TRAMITE correspondiente. Son alertas de revisión: no bloquean ni cambian el expediente.</p>
-                <ul class="period-date-alert-list"><li v-for="alert in ingestResult.clasificacion.documentos_fecha_fuera_atencion" :key="alert.documento"><code>{{ alert.documento }}</code>: {{ alert.fechas_detectadas.join(', ') }}<span v-if="alert.intervalo_oracle"> (atención Oracle: {{ alert.intervalo_oracle }})</span></li></ul>
-                <small>Las fechas se reconocen por texto u OCR; revisa el PDF original antes de decidir.</small>
+              <v-alert v-if="ingestResult.clasificacion?.documentos_fecha_fuera_periodo?.length" type="warning" variant="tonal" density="comfortable" prepend-icon="mdi-calendar-alert-outline">
+                <strong>{{ ingestResult.clasificacion.documentos_fecha_fuera_periodo.length }} PDF contienen fechas fuera del período facturado de {{ billedPeriodLabel(ingestResult.clasificacion.documentos_fecha_fuera_periodo[0].periodo_facturado_oracle) }}.</strong>
+                <p>SPD MSP compara las fechas reconocidas en el PDF con el mes y año del lote en Oracle (`PDI_MES` y `PDI_ANIO`). Revisa estos documentos; la alerta no bloquea ni modifica el expediente.</p>
+                <ul class="period-date-alert-list"><li v-for="alert in ingestResult.clasificacion.documentos_fecha_fuera_periodo" :key="alert.documento"><code>{{ alert.documento }}</code>: {{ alert.fechas_detectadas.join(', ') }}</li></ul>
+                <small>Las fechas se reconocen en el texto PDF o mediante OCR. Confirma el documento original antes de corregirlo.</small>
               </v-alert>
-              <v-alert v-if="ingestResult.clasificacion?.sin_intervalo_oracle" type="info" variant="tonal" density="comfortable" prepend-icon="mdi-calendar-question-outline">No se pudo comparar la fecha de {{ ingestResult.clasificacion.sin_intervalo_oracle }} PDF porque Oracle no tiene PDI_FECHA_DESDE o PDI_FECHA_HASTA para su trámite. Esto no bloquea la preparación.</v-alert>
               <details class="ingest-secondary-action"><summary>Volver a analizar los PDFs</summary><p>Repite la clasificación de los archivos fuente y actualiza la carpeta de trabajo. Puede tardar varios minutos.</p><v-btn variant="outlined" prepend-icon="mdi-text-box-search-outline" :loading="ingestProcessing" @click="classifyIngest">Reanalizar PDFs</v-btn></details>
               <details v-if="ingestResult.workspace || ingestResult.output" class="ingest-secondary-action"><summary>Ver ubicaciones del expediente</summary><p v-if="ingestResult.workspace">Espacio permanente: <code>{{ ingestResult.workspace }}</code></p><p>Carpeta preparada: <code>{{ ingestResult.output }}</code></p></details>
             </section>
@@ -1061,7 +1210,20 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
               <div class="ingest-card-heading"><span class="ingest-step">5</span><div><h2>Documentos del paciente</h2><p>Elige una carpeta para ver, añadir o reemplazar sus PDFs.</p></div><v-spacer/><v-btn type="button" icon="mdi-refresh" variant="text" aria-label="Actualizar lista de PDFs" :loading="workspaceBusy" @click="loadWorkspaceDocuments(ingestResult.job_id, selectedWorkspacePDF)"/></div>
               <v-alert v-if="workspaceNotice" :type="workspaceNotice.includes('Se guardó') || workspaceNotice.includes('añadidos') || workspaceNotice.includes('reemplazado') || workspaceNotice.includes('quitado') || workspaceNotice.includes('descargó') || workspaceNotice.includes('fusionaron') ? 'success' : 'warning'" variant="tonal" density="compact" class="workspace-notice">{{ workspaceNotice }}</v-alert>
               <v-alert v-if="workspaceFusionGroups.length" type="warning" variant="tonal" density="comfortable" prepend-icon="mdi-content-copy">Hay {{ workspaceFusionGroups.length }} grupo(s) de documentos repetidos. Se conservaron con nombres numerados para revisarlos y fusionarlos después. Las fuentes originales se mantienen.</v-alert>
+              <div v-if="workspaceFusionQueue.length" class="workspace-fusion-quick-access">
+                <div class="workspace-fusion-quick-heading"><div class="workspace-fusion-quick-copy"><strong>Grupos pendientes de fusión</strong><span>Busca un paciente para revisar un grupo o fusiona todos en su orden actual.</span></div><v-btn type="button" color="warning" variant="outlined" prepend-icon="mdi-playlist-check" :disabled="mergeSending || mergeAllSending" @click="requestMergeAllPending">Fusionar todos sin revisar</v-btn></div>
+                <div class="workspace-fusion-quick-controls"><v-autocomplete v-model="pendingFusionSelection" :items="workspaceFusionQueue" item-title="title" item-value="value" label="Paciente y tipo de documento" placeholder="Busca un grupo por revisar" prepend-inner-icon="mdi-magnify" density="comfortable" variant="outlined" hide-details clearable :disabled="mergeAllSending"/><v-btn type="button" color="warning" prepend-icon="mdi-file-document-multiple-outline" :disabled="!pendingFusionSelection || mergeSending || mergeAllSending" @click="reviewPendingFusion">Revisar</v-btn></div>
+                <div v-if="selectedPendingFusionGroup" class="workspace-fusion-selected"><v-icon icon="mdi-account-box-outline" size="22"/><div><small>PACIENTE</small><strong>{{ selectedPendingFusionGroup.patient }}</strong></div><div><small>DOCUMENTO REPETIDO</small><strong>{{ selectedPendingFusionGroup.code }} · {{ selectedPendingFusionGroup.paths.length }} PDFs</strong></div></div>
+                <div v-if="mergeAllSending" class="workspace-fusion-bulk-progress"><span>Fusionando grupos: {{ mergeAllProgress.done }} de {{ mergeAllProgress.total }}</span><v-progress-linear :model-value="mergeAllProgress.total ? mergeAllProgress.done / mergeAllProgress.total * 100 : 0" color="warning" rounded/></div>
+              </div>
               <v-select v-model="workspacePatient" :items="workspacePatients" label="Carpeta del paciente" prepend-inner-icon="mdi-folder-account-outline" density="comfortable" class="workspace-patient-select" :disabled="!workspacePatients.length || replacePDFDialog" @update:model-value="selectWorkspacePatient"/>
+              <div v-if="workspacePatientFusionGroups.length" class="workspace-patient-fusions">
+                <div class="workspace-patient-fusions-heading"><strong>PDFs repetidos de este paciente</strong><span>Revisa y fusiona cada tipo por separado.</span></div>
+                <div v-for="group in workspacePatientFusionGroups" :key="group.paths[0]" class="workspace-patient-fusion-item">
+                  <div><strong>{{ group.code }}</strong><small>{{ group.paths.length }} PDFs · {{ group.paths.map(path => path.split('/').at(-1)).join(', ') }}</small></div>
+                  <v-btn type="button" color="warning" variant="tonal" prepend-icon="mdi-file-document-multiple-outline" :disabled="workspaceBusy || mergeSending || mergeAllSending" @click="openWorkspaceFusion(group)">Revisar y fusionar</v-btn>
+                </div>
+              </div>
               <div class="workspace-file-layout">
                 <div class="workspace-file-list">
                   <div class="workspace-file-count">{{ workspacePatientPDFs.length }} PDFs en esta carpeta</div>
@@ -1069,7 +1231,7 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
                     <button type="button" class="workspace-file-row" :class="{ selected: selectedWorkspacePDF === document.path }" @click.prevent="selectWorkspacePDF(document.path)">
                       <v-icon icon="mdi-file-pdf-box" color="error" size="20"/><span><strong>{{ document.name }}</strong><small>{{ document.path }}</small></span><v-chip v-if="isPendingWorkspaceDocument(document)" size="x-small" color="warning" variant="tonal">Sin nombre MSP</v-chip><v-chip v-else-if="workspaceFusionGroups.some(group => group.paths.includes(document.path))" size="x-small" color="warning" variant="tonal">Fusionar después</v-chip><v-icon v-if="selectedWorkspacePDF === document.path" icon="mdi-eye-outline" size="18"/>
                     </button>
-                    <v-btn type="button" icon="mdi-delete-outline" variant="text" size="small" color="error" :aria-label="`Quitar ${document.name}`" title="Quitar PDF de esta carpeta" @click="requestDeleteWorkspacePDF(document.path)"/>
+                    <v-btn type="button" prepend-icon="mdi-delete-outline" variant="tonal" size="small" color="error" class="workspace-delete-pdf-btn" :aria-label="`Quitar ${document.name}`" title="Quitar PDF de esta carpeta" @click="requestDeleteWorkspacePDF(document.path)">Quitar</v-btn>
                   </div>
                   <div v-if="!workspacePatientPDFs.length && !workspaceBusy" class="workspace-empty">Esta carpeta todavía no tiene PDFs.</div>
                 </div>
@@ -1086,7 +1248,6 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
                   </div>
                 </div>
               </div>
-              <div v-if="selectedWorkspaceFusionGroup" class="workspace-fusion-row"><span>{{ selectedWorkspaceFusionGroup.paths.length }} PDFs corresponden a {{ selectedWorkspaceFusionGroup.code }}. Ordénalos y fusiónalos cuando hayas revisado su contenido.</span><v-btn type="button" color="warning" variant="tonal" prepend-icon="mdi-file-document-multiple-outline" :disabled="workspaceBusy || mergeSending" @click="openWorkspaceFusion">Revisar fusión</v-btn></div>
               <p v-if="selectedWorkspaceDocument" class="workspace-hint">Si añades un tipo que ya existe, se conserva como una copia numerada para revisar o fusionar después. Para sustituir una versión, usa “Reemplazar PDF seleccionado”.</p>
               <div class="workspace-add-row">
                 <input ref="workspacePDFInput" type="file" accept=".pdf,application/pdf" multiple hidden @change="selectWorkspacePDFs" />
@@ -1105,14 +1266,24 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
               </div>
               <div v-if="workspaceSending" class="ingest-progress"><div><span>Guardando PDFs en el espacio de trabajo…</span><strong>{{ ingestProgress }}%</strong></div><v-progress-linear :model-value="ingestProgress" color="primary" rounded/></div>
               <div class="workspace-download-row"><span>{{ workspaceFusionGroups.length ? `Fusiona los ${workspaceFusionGroups.length} grupos repetidos antes de descargar el ZIP final.` : 'Descarga la carpeta madre con la estructura y los archivos actuales. Revisa pendientes y documentos obligatorios antes de entregar al MSP.' }}</span><v-btn type="button" color="primary" prepend-icon="mdi-folder-zip-outline" :loading="workspaceBusy" :disabled="workspaceFusionGroups.length > 0" @click="downloadWorkspaceZIP">Descargar expediente ZIP</v-btn></div>
-              <v-dialog v-model="mergePDFDialog" max-width="620">
+              <v-dialog v-model="mergePDFDialog" max-width="1400">
                 <v-card class="action-dialog">
                   <v-card-title>Revisar y fusionar PDFs</v-card-title>
                   <v-card-text>
-                    <p>Los PDFs se unirán en el orden de esta lista y el resultado conservará el nombre estándar. Los archivos fuente originales permanecerán en el historial privado del expediente.</p>
-                    <div class="workspace-fusion-list"><div v-for="(path, index) in mergePDFPaths" :key="path" class="workspace-fusion-item"><span><strong>{{ index + 1 }}.</strong> {{ path.split('/').at(-1) }}</span><div><v-btn type="button" icon="mdi-arrow-up" size="small" variant="text" :disabled="index === 0 || mergeSending" :aria-label="`Mover ${path.split('/').at(-1)} arriba`" @click="moveWorkspaceFusionPDF(index, -1)"/><v-btn type="button" icon="mdi-arrow-down" size="small" variant="text" :disabled="index === mergePDFPaths.length - 1 || mergeSending" :aria-label="`Mover ${path.split('/').at(-1)} abajo`" @click="moveWorkspaceFusionPDF(index, 1)"/></div></div></div>
+                    <p>El orden inicial se conserva si no mueves los PDFs. Usa “Ver PDF” para revisarlos y las flechas para cambiar el orden; las páginas se unirán de arriba hacia abajo. El resultado conservará el nombre estándar y las fuentes originales permanecerán en el historial privado.</p>
+                    <div class="workspace-merge-review">
+                      <div><p class="workspace-fusion-drag-hint"><v-icon icon="mdi-cursor-move" size="18"/> Arrastra las filas desde el asa para ordenar. También puedes usar las flechas.</p><div class="workspace-fusion-list"><div v-for="(path, index) in mergePDFPaths" :key="path" class="workspace-fusion-item" :class="{ 'is-previewing': mergePreviewPath === path, 'is-dragging': mergeDraggingIndex === index, 'is-drop-target': mergeDropIndex === index && mergeDraggingIndex !== index }" @dragover="dragOverWorkspaceFusion($event, index)" @drop="dropWorkspaceFusion($event, index)"><button type="button" class="workspace-fusion-drag-handle" draggable="true" :aria-label="`Arrastrar ${path.split('/').at(-1)} para cambiar el orden`" title="Arrastrar para ordenar" @dragstart="startWorkspaceFusionDrag($event, index)" @dragend="finishWorkspaceFusionDrag"><v-icon icon="mdi-drag" size="21"/></button><span><strong>{{ index + 1 }}.</strong> {{ path.split('/').at(-1) }}</span><div class="workspace-fusion-item-actions"><v-btn type="button" prepend-icon="mdi-eye-outline" size="small" variant="tonal" :aria-pressed="mergePreviewPath === path" @click="mergePreviewPath = path">Ver PDF</v-btn><button type="button" class="workspace-fusion-order-btn" :disabled="index === 0 || mergeSending" :aria-label="`Mover ${path.split('/').at(-1)} arriba`" title="Mover arriba" @click="moveWorkspaceFusionPDF(index, -1)"><span aria-hidden="true">↑</span></button><button type="button" class="workspace-fusion-order-btn" :disabled="index === mergePDFPaths.length - 1 || mergeSending" :aria-label="`Mover ${path.split('/').at(-1)} abajo`" title="Mover abajo" @click="moveWorkspaceFusionPDF(index, 1)"><span aria-hidden="true">↓</span></button></div></div></div></div>
+                      <div class="workspace-fusion-preview"><div class="workspace-fusion-preview-title">{{ mergePreviewPath.split('/').at(-1) || 'Vista previa del PDF' }}</div><iframe v-if="mergePreviewURL" :key="mergePreviewURL" :src="mergePreviewURL" :title="`Vista previa de ${mergePreviewPath.split('/').at(-1)}`"/><div v-else class="workspace-empty">Selecciona “Ver PDF” para revisar un documento.</div></div>
+                    </div>
                   </v-card-text>
-                  <v-card-actions><v-spacer/><v-btn type="button" variant="text" :disabled="mergeSending" @click="mergePDFDialog=false">Cancelar</v-btn><v-btn type="button" color="warning" prepend-icon="mdi-file-document-multiple-outline" :loading="mergeSending" @click="confirmWorkspaceFusion">Fusionar PDFs</v-btn></v-card-actions>
+                  <v-card-actions><v-spacer/><v-btn type="button" variant="text" :disabled="mergeSending || mergeAllSending" @click="mergePDFDialog=false">Cancelar</v-btn><v-btn type="button" color="warning" prepend-icon="mdi-file-document-multiple-outline" :loading="mergeSending" :disabled="mergeAllSending" @click="confirmWorkspaceFusion">Fusionar PDFs</v-btn></v-card-actions>
+                </v-card>
+              </v-dialog>
+              <v-dialog v-model="mergeAllConfirmDialog" max-width="600">
+                <v-card class="action-dialog">
+                  <v-card-title>Fusionar todos los grupos pendientes</v-card-title>
+                  <v-card-text><p>Se fusionarán {{ workspaceFusionQueue.length }} grupos, uno por paciente y tipo de documento, usando el orden actual de cada lista. No tendrás que revisar cada PDF antes. Las fuentes originales se conservarán en el historial privado; si una fusión falla, las siguientes quedarán pendientes.</p></v-card-text>
+                  <v-card-actions><v-spacer/><v-btn type="button" variant="text" @click="mergeAllConfirmDialog=false">Cancelar</v-btn><v-btn type="button" color="warning" prepend-icon="mdi-playlist-check" @click="confirmMergeAllPending">Fusionar {{ workspaceFusionQueue.length }} grupos</v-btn></v-card-actions>
                 </v-card>
               </v-dialog>
               <v-dialog v-model="deletePDFDialog" max-width="440">
@@ -1120,19 +1291,6 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
                   <v-card-title>Quitar PDF de la carpeta</v-card-title>
                   <v-card-text><p>Se quitará <strong>{{ deletePDFTarget.split('/').at(-1) }}</strong> de la carpeta de trabajo. La fuente del lote se conserva y no se volverá a incluir al reclasificar.</p></v-card-text>
                   <v-card-actions><v-spacer/><v-btn type="button" variant="text" @click="deletePDFDialog=false;deletePDFTarget=''">Cancelar</v-btn><v-btn type="button" color="error" :loading="workspaceBusy" @click="deleteWorkspacePDF">Quitar PDF</v-btn></v-card-actions>
-                </v-card>
-              </v-dialog>
-              <v-dialog v-model="deleteWorkspaceDialog" max-width="540" persistent>
-                <v-card class="action-dialog">
-                  <v-card-title>Eliminar carpeta completa</v-card-title>
-                  <v-card-text>
-                    <p>Se eliminará permanentemente <strong>{{ ingestResult?.workspace?.split('/').at(-1) }}</strong>, con el ZIP fuente, los documentos habilitantes, reportes y archivos preparados. Esta acción no se puede deshacer.</p>
-                    <p>Para confirmar, escribe a mano este código de 8 dígitos:</p>
-                    <div class="workspace-delete-code">{{ workspaceDeleteCode }}</div>
-                    <v-text-field :model-value="workspaceDeleteInput" label="Código de confirmación" inputmode="numeric" autocomplete="off" autocorrect="off" spellcheck="false" maxlength="8" counter="8" prepend-inner-icon="mdi-keyboard-outline" @update:model-value="setWorkspaceDeleteInput" @paste.prevent="preventWorkspaceDeleteClipboard" @copy.prevent="preventWorkspaceDeleteClipboard" @cut.prevent="preventWorkspaceDeleteClipboard" @drop.prevent="preventWorkspaceDeleteClipboard" @beforeinput="preventWorkspaceDeletePaste" @keydown="blockWorkspaceDeleteClipboardKeys"/>
-                    <v-alert v-if="workspaceDeleteError" type="error" variant="tonal" density="comfortable">{{ workspaceDeleteError }}</v-alert>
-                  </v-card-text>
-                  <v-card-actions><v-spacer/><v-btn type="button" variant="text" :disabled="workspaceDeleting" @click="deleteWorkspaceDialog=false;workspaceDeleteInput='';workspaceDeleteError=''">Cancelar</v-btn><v-btn type="button" color="error" prepend-icon="mdi-delete-forever-outline" :loading="workspaceDeleting" :disabled="workspaceDeleteInput !== workspaceDeleteCode" @click="deleteWholeWorkspace">Eliminar definitivamente</v-btn></v-card-actions>
                 </v-card>
               </v-dialog>
               <v-dialog v-model="replacePDFDialog" max-width="460">
@@ -1154,6 +1312,19 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
       </main>
     </div>
     <div v-if="dragging" class="drop-overlay"><div class="drop-message"><v-icon icon="mdi-cloud-upload-outline" size="46"/><h2>Suelta tus archivos aquí</h2><p>Se guardarán en {{ activeFolder === folders[0] ? 'Mi espacio' : activeFolder }}</p></div></div>
+    <v-dialog v-model="deleteWorkspaceDialog" max-width="600" persistent>
+      <v-card class="action-dialog">
+        <v-card-title>Eliminar período guardado</v-card-title>
+        <v-card-text>
+          <p>Se eliminará permanentemente <strong>{{ workspaceDeleteTargetName }}</strong>, con el ZIP fuente, los documentos habilitantes, reportes y archivos preparados. También se quitará su asociación en Oracle. Esta acción no se puede deshacer.</p>
+          <p>Para confirmar, escribe o pega el ID completo del período:</p>
+          <div class="workspace-delete-code">{{ workspaceDeleteTargetID }}</div>
+          <v-text-field :model-value="workspaceDeleteInput" label="ID del período" autocomplete="off" autocapitalize="characters" spellcheck="false" prepend-inner-icon="mdi-keyboard-outline" @update:model-value="setWorkspaceDeleteInput"/>
+          <v-alert v-if="workspaceDeleteError" type="error" variant="tonal" density="comfortable">{{ workspaceDeleteError }}</v-alert>
+        </v-card-text>
+        <v-card-actions><v-spacer/><v-btn type="button" variant="text" :disabled="workspaceDeleting" @click="deleteWorkspaceDialog=false;workspaceDeleteInput='';workspaceDeleteError='';workspaceDeleteTargetID='';workspaceDeleteTargetName=''">Cancelar</v-btn><v-btn type="button" color="error" prepend-icon="mdi-delete-forever-outline" :loading="workspaceDeleting" :disabled="workspaceDeleteInput !== workspaceDeleteTargetID" @click="deleteWholeWorkspace">Eliminar período definitivamente</v-btn></v-card-actions>
+      </v-card>
+    </v-dialog>
     <v-dialog v-model="createSpaceDialog" max-width="420"><v-card class="action-dialog"><v-card-title>Crear un espacio</v-card-title><v-card-text><p>Organiza tus archivos en un espacio nuevo.</p><v-text-field v-model="newSpaceName" label="Nombre del espacio" placeholder="Ej. Clientes" prepend-inner-icon="mdi-folder-outline" maxlength="36" autofocus @keyup.enter="createSpace"/></v-card-text><v-card-actions><v-spacer/><v-btn variant="text" @click="createSpaceDialog=false">Cancelar</v-btn><v-btn color="primary" :disabled="!newSpaceName.trim()" @click="createSpace">Crear espacio</v-btn></v-card-actions></v-card></v-dialog>
     <v-dialog v-model="moveDialog" max-width="420"><v-card class="action-dialog"><v-card-title>Mover {{ activeDoc ? 'documento' : `${selectedIds.length} documentos` }}</v-card-title><v-card-text><p>Elige el espacio de destino.</p><v-select v-model="moveTarget" :items="spaces" label="Espacio" prepend-inner-icon="mdi-folder-outline"/></v-card-text><v-card-actions><v-spacer/><v-btn variant="text" @click="moveDialog=false">Cancelar</v-btn><v-btn color="primary" @click="confirmMove">Mover</v-btn></v-card-actions></v-card></v-dialog>
     <v-dialog v-model="preview" max-width="720"><v-card v-if="preview" class="preview-card"><div class="preview-head"><div class="doc-type-icon" :class="'type-'+preview.color"><v-icon :icon="preview.icon" size="20"/></div><div class="preview-name"><b>{{ preview.name }}</b><small>{{ preview.ext }} · {{ preview.size }}</small></div><v-btn icon="mdi-download-outline" variant="text" aria-label="Descargar" @click="download(preview)"/><v-btn icon="mdi-delete-outline" variant="text" aria-label="Eliminar" @click="removeDoc(preview)"/><v-btn icon="mdi-close" variant="text" aria-label="Cerrar" @click="preview=null"/></div><div class="preview-body"><template v-if="preview.mime?.startsWith('image/')"><img :src="previewUrl" :alt="preview.name"/></template><template v-else-if="preview.mime==='application/pdf'"><iframe :src="previewUrl" :title="preview.name"/></template><div v-else class="preview-placeholder"><v-icon :icon="preview.icon" size="48"/><p>Vista previa disponible para imágenes y archivos PDF.</p><button class="primary-upload" @click="download(preview)"><v-icon icon="mdi-download-outline"/> Descargar archivo</button></div></div></v-card></v-dialog>

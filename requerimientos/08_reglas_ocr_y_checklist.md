@@ -18,18 +18,20 @@
 ### Comparación de fechas clínicas con Oracle
 
 - Relacionar cada carpeta numérica con su fila por `PDI_TRAMITE`, usando el conjunto filtrado por `PDI_MES`, `PDI_ANIO`, `PDI_PLANILLADO = 'S'` y `PDI_ASEGURADORA = 'MSP'`.
-- La ventana clínica de referencia de ese trámite es `PDI_FECHA_DESDE` a `PDI_FECHA_HASTA` (ambos inclusive). No comparar todas las fechas del PDF directamente con `PDI_MES/PDI_ANIO`: el período facturado y la fecha clínica cumplen funciones distintas.
-- Durante la clasificación, buscar fechas reconocibles en el texto vectorial de las páginas 1 y 2 o en el texto OCR de la página 1. Se aceptan `DD/MM/YYYY`, `DD-MM-YYYY`, `YYYY-MM-DD` y fechas en español con el nombre del mes.
-- Omitir las fechas identificadas junto a las etiquetas `NACIMIENTO` o `FECHA DE PROCESO`. Las fechas reconocidas fuera de la ventana Oracle se muestran asociadas al PDF como una alerta para revisión humana. No bloquean, renombran ni eliminan el documento.
-- Si no hay límites de atención disponibles en Oracle, indicar que ese PDF no se pudo comparar. Si el texto no permite reconocer fechas, no afirmar que pasó la comprobación.
+- Para la alerta de fechas del PDF, comparar el mes y año reconocidos con el período facturado Oracle `PDI_MES/PDI_ANIO` de la fila del lote. `PDI_FECHA_DESDE/HASTA` describen la atención clínica y se pueden mostrar como referencia, pero no determinan esta alerta.
+- Durante la clasificación, buscar fechas reconocibles junto a campos de fecha del formulario en el texto vectorial de las páginas 1 y 2 o en el texto OCR de la página 1. Se aceptan `DD/MM/YYYY`, `DD-MM-YYYY`, `YYYY-MM-DD` y fechas en español con el nombre del mes. No tomar fechas sueltas de la narrativa clínica como fecha del documento.
+- Omitir fechas de datos personales, generación o vencimiento: `NACIMIENTO`, `FECHA DE PROCESO`, `FECHA PLANILLACIÓN`, `PLANILLAJE AUTOMÁTICO`, `GENERADO AUTOMÁTICAMENTE`, `FECHA MÁXIMA`, `FECHA LÍMITE` y `VENCIMIENTO`. Las fechas de campos del formulario fuera del período facturado se muestran asociadas al PDF como alerta para revisión humana. No bloquean, renombran ni eliminan el documento.
+- Si el texto no permite reconocer fechas, no afirmar que pasó la comprobación. Las fechas que Folio reconoce son indicativas; hay que revisar el PDF original antes de resolver la alerta.
 - La lectura de fechas por OCR es indicativa, no una verificación clínica: revisar el PDF original antes de resolver la alerta. Los documentos añadidos manualmente después de la clasificación no están cubiertos por esta comprobación automática.
 
-**Implementación:** el precargado Oracle de clasificación lee `PDI_FECHA_DESDE/HASTA` por trámite con `TO_CHAR(..., 'YYYY-MM-DD')`; cada resultado de PDF conserva las fechas fuera de intervalo y el reporte persistente incluye alertas y trámites sin intervalo. La UI presenta ambas condiciones sin bloquear la preparación.
+**Implementación:** la consulta Oracle filtra las planillas por `PDI_MES/PDI_ANIO`, `PDI_PLANILLADO = 'S'` y `PDI_ASEGURADORA = 'MSP'`. Las fechas extraídas del texto PDF u OCR se comparan con ese mismo mes/año. La UI lista los documentos y fechas fuera del período como alerta de revisión; no bloquea ni modifica la preparación.
 
 ### Vista previa del lote antes de preparar
 
 - Después de guardar el ZIP en staging y antes de ejecutar OCR/organización, mostrar el total de carpetas de trámites y PDFs.
-- Por carpeta numérica mostrar `PDI_TRAMITE`, cantidad de PDFs, paciente, `PDI_SERVICIO`, `PDI_FECHA_DESDE/HASTA` y si hubo cruce con una planilla de Oracle filtrada por `PDI_MES`, `PDI_ANIO`, `PDI_PLANILLADO = 'S'` y `PDI_ASEGURADORA = 'MSP'`.
+- Por carpeta numérica mostrar `PDI_TRAMITE`, cantidad de PDFs, paciente, `PDI_SERVICIO`, `PDI_FECHA_DESDE/HASTA` y si hubo cruce con una planilla de Oracle filtrada por `PDI_MES`, `PDI_ANIO`, `PDI_PLANILLADO = 'S'` y `PDI_ASEGURADORA = 'MSP'`. El aviso de fechas en los PDFs compara con el período `PDI_MES/PDI_ANIO`, no con la ventana clínica.
+- El ZIP define los trámites incluidos en el lote. Comparar en ambas direcciones: listar carpetas del ZIP sin planilla MSP coincidente en Oracle y planillas MSP del período sin carpeta en el ZIP. La ausencia de una carpeta en el ZIP se informa para revisión y no añade esa planilla al lote.
+- Para una carpeta del ZIP sin coincidencia exacta, permitir asociarla manualmente a un `PDI_TRAMITE` Oracle MSP disponible que no tenga otra carpeta asignada. Guardar la asociación con el lote, conservar intacto el ZIP fuente y mostrar ambos números de trámite. La asociación se aplica al preparar o reanalizar los expedientes.
 - Contabilizar y señalar carpetas no encontradas en Oracle, trámites sin nombre de paciente y rutas/archivos que no siguen `[PDI_TRAMITE]/archivo.pdf`. La tabla se pagina de diez en diez.
 - La vista previa inspecciona el ZIP ya subido y no vuelve a transferirlo ni ejecuta OCR. No descarta registros por servicio o fecha; expone esos campos para revisión. Solo habilita preparar cuando hay PDFs y no hay carpetas/trámites sin correspondencia ni entradas incompatibles con la estructura aceptada.
 

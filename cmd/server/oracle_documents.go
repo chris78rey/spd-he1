@@ -48,18 +48,26 @@ func fileSHA256(filePath string) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
+func canonicalPath(filePath string) (string, error) {
+	abs, err := filepath.Abs(filePath)
+	if err != nil {
+		return "", err
+	}
+	if resolved, resolveErr := filepath.EvalSymlinks(abs); resolveErr == nil {
+		return resolved, nil
+	}
+	return abs, nil
+}
+
 // syncOracleWorkspace records the active PDFs and version history after the
 // workspace and report have been atomically published on disk.
 func (s *server) syncOracleWorkspace(ctx context.Context, job *stagedJob, packageRoot string) error {
 	if s.serviceDB == nil {
 		return errors.New("Oracle no está disponible")
 	}
-	absoluteRoot, err := filepath.Abs(packageRoot)
+	absoluteRoot, err := canonicalPath(packageRoot)
 	if err != nil {
 		return fmt.Errorf("no se pudo resolver la carpeta del expediente: %w", err)
-	}
-	if resolvedRoot, resolveErr := filepath.EvalSymlinks(absoluteRoot); resolveErr == nil {
-		absoluteRoot = resolvedRoot
 	}
 	packageRoot = absoluteRoot
 	var report classificationReport
@@ -170,9 +178,8 @@ func (s *server) syncOracleWorkspace(ctx context.Context, job *stagedJob, packag
 	for _, doc := range active {
 		var existingID int64
 		var existingHash string
-		var version int
-		lookup := "SELECT PDD_ID, NVL(PDD_SHA256, '-'), NVL(PDD_VERSION, 1) FROM (SELECT PDD_ID, PDD_SHA256, PDD_VERSION FROM " + docTable + " WHERE PDI_ID = :pid AND PDD_RUTA = :ruta AND PDD_ESTADO = 'VIGENTE' ORDER BY PDD_VERSION DESC, PDD_ID DESC) WHERE ROWNUM = 1"
-		err := tx.QueryRowContext(ctx, lookup, sql.Named("pid", doc.planillaID), sql.Named("ruta", doc.path)).Scan(&existingID, &existingHash, &version)
+		lookup := "SELECT PDD_ID, NVL(PDD_SHA256, '-') FROM (SELECT PDD_ID, PDD_SHA256 FROM " + docTable + " WHERE PDI_ID = :pid AND PDD_RUTA = :ruta AND PDD_ESTADO = 'VIGENTE' ORDER BY PDD_VERSION DESC, PDD_ID DESC) WHERE ROWNUM = 1"
+		err := tx.QueryRowContext(ctx, lookup, sql.Named("pid", doc.planillaID), sql.Named("ruta", doc.path)).Scan(&existingID, &existingHash)
 		if err == nil && strings.EqualFold(existingHash, doc.hash) {
 			continue
 		}
@@ -183,10 +190,13 @@ func (s *server) syncOracleWorkspace(ctx context.Context, job *stagedJob, packag
 			if _, err := tx.ExecContext(ctx, "UPDATE "+docTable+" SET PDD_ESTADO = 'REEMPLAZADO' WHERE PDD_ID = :id", sql.Named("id", existingID)); err != nil {
 				return err
 			}
-			version++
-		} else {
-			version = 1
 		}
+		var maxVersion int
+		versionQuery := "SELECT NVL(MAX(PDD_VERSION), 0) FROM " + docTable + " WHERE PDI_ID = :pid AND PDD_RUTA = :ruta"
+		if err := tx.QueryRowContext(ctx, versionQuery, sql.Named("pid", doc.planillaID), sql.Named("ruta", doc.path)).Scan(&maxVersion); err != nil {
+			return fmt.Errorf("no se pudo determinar la versión del PDF %s: %w", doc.name, err)
+		}
+		version := maxVersion + 1
 		original := doc.original
 		if original == "" {
 			original = doc.name
@@ -240,6 +250,55 @@ func (s *server) syncOracleWorkspace(ctx context.Context, job *stagedJob, packag
 			if _, err := tx.ExecContext(ctx, "UPDATE "+docTable+" SET PDD_ESTADO = :estado WHERE PDD_ID = :id", sql.Named("estado", status), sql.Named("id", row.id)); err != nil {
 				return fmt.Errorf("no se pudo actualizar el historial Oracle del PDF %s: %w", row.path, err)
 			}
+		}
+	}
+	return tx.Commit()
+}
+
+// clearOracleWorkspaceIndex marks the documents in a workspace as removed and
+// clears only PDI_PATH values that still point inside that workspace.
+func (s *server) clearOracleWorkspaceIndex(ctx context.Context, job stagedJob, packageRoot string) error {
+	if s.serviceDB == nil {
+		return errors.New("Oracle no está disponible")
+	}
+	root, err := filepath.Abs(packageRoot)
+	if err != nil {
+		return fmt.Errorf("no se pudo resolver la carpeta del expediente: %w", err)
+	}
+	expedientesPrefix := filepath.Join(root, "4. EXPEDIENTES") + string(filepath.Separator)
+	docTable := oracleQualified(s.schema, pdiDocumentTable)
+	pdiTable := oracleTableName(s.schema)
+	tx, err := s.serviceDB.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("no se pudo iniciar la transacción Oracle: %w", err)
+	}
+	defer tx.Rollback()
+	rows, err := tx.QueryContext(ctx, "SELECT DISTINCT PDI_ID FROM "+docTable+" WHERE INSTR(PDD_RUTA, :prefix) = 1", sql.Named("prefix", expedientesPrefix))
+	if err != nil {
+		return fmt.Errorf("no se pudo localizar el historial Oracle de este expediente: %w", err)
+	}
+	ids := make([]int64, 0)
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return err
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, "UPDATE "+docTable+" SET PDD_ESTADO = 'ELIMINADO' WHERE INSTR(PDD_RUTA, :prefix) = 1 AND PDD_ESTADO IN ('VIGENTE', 'PENDIENTE')", sql.Named("prefix", expedientesPrefix)); err != nil {
+		return fmt.Errorf("no se pudo marcar como eliminados los PDFs de Oracle: %w", err)
+	}
+	for _, id := range ids {
+		if _, err := tx.ExecContext(ctx, "UPDATE "+pdiTable+" SET PDI_PATH = NULL WHERE PDI_ID = :id AND INSTR(PDI_PATH, :prefix) = 1", sql.Named("id", id), sql.Named("prefix", expedientesPrefix)); err != nil {
+			return fmt.Errorf("no se pudo limpiar PDI_PATH para PDI_ID %d: %w", id, err)
 		}
 	}
 	return tx.Commit()

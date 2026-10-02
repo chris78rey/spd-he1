@@ -102,6 +102,7 @@ func main() {
 	mux.HandleFunc("/api/v1/ingesta/completar/", s.completeStagedJob)
 	mux.HandleFunc("/api/v1/ingesta/estado/", s.getStagedJobStatus)
 	mux.HandleFunc("/api/v1/ingesta/previsualizar/", s.getIngestPreview)
+	mux.HandleFunc("/api/v1/ingesta/vincular-tramite/", s.setIngestTramiteMapping)
 	mux.HandleFunc("/api/v1/expedientes", s.listWorkspaces)
 	mux.HandleFunc("/api/v1/expedientes/eliminar/", s.deleteWorkspace)
 	mux.HandleFunc("/api/v1/expedientes/documentos/renombrar/", s.renameWorkspacePDF)

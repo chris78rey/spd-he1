@@ -58,6 +58,7 @@ type stagedJob struct {
 	MergedDuplicates  map[string][]string `json:"merged_duplicates,omitempty"`
 	DeletedPDFs       map[string]bool     `json:"deleted_pdfs,omitempty"`
 	DocumentPlanillas map[string]int64    `json:"document_planillas,omitempty"`
+	TramiteMappings   map[string]string   `json:"tramite_mappings,omitempty"`
 	StatusDetail      string              `json:"status_detail"`
 }
 
@@ -119,30 +120,41 @@ type planillaIdentity struct {
 }
 
 type ingestFolderPreview struct {
-	Tramite        string `json:"tramite"`
-	PDFs           int    `json:"pdfs"`
-	OracleMatch    bool   `json:"coincide_oracle"`
-	PatientMissing bool   `json:"paciente_faltante_oracle,omitempty"`
-	Patient        string `json:"paciente,omitempty"`
-	Service        string `json:"servicio_oracle,omitempty"`
-	CareFrom       string `json:"fecha_desde,omitempty"`
-	CareUntil      string `json:"fecha_hasta,omitempty"`
+	Tramite         string `json:"tramite"`
+	OracleTramite   string `json:"pdi_tramite_oracle,omitempty"`
+	ManualMapping   bool   `json:"vinculo_manual,omitempty"`
+	MappingConflict bool   `json:"conflicto_vinculo,omitempty"`
+	PDFs            int    `json:"pdfs"`
+	OracleMatch     bool   `json:"coincide_oracle"`
+	PatientMissing  bool   `json:"paciente_faltante_oracle,omitempty"`
+	Patient         string `json:"paciente,omitempty"`
+	Service         string `json:"servicio_oracle,omitempty"`
+	CareFrom        string `json:"fecha_desde,omitempty"`
+	CareUntil       string `json:"fecha_hasta,omitempty"`
+}
+
+type ingestOracleCandidate struct {
+	Tramite string `json:"tramite"`
+	Title   string `json:"titulo"`
 }
 
 type ingestPreview struct {
-	Service               string                `json:"tipo_servicio"`
-	Month                 string                `json:"mes"`
-	Year                  string                `json:"anio"`
-	OraclePlanillas       int                   `json:"planillas_oracle"`
-	TramiteFolders        int                   `json:"carpetas_tramite"`
-	PDFs                  int                   `json:"pdfs"`
-	MatchedFolders        int                   `json:"tramites_en_oracle"`
-	PDFsMatched           int                   `json:"pdfs_con_tramite_oracle"`
-	UnmatchedFolders      int                   `json:"tramites_sin_oracle"`
-	FoldersWithoutPatient int                   `json:"tramites_sin_paciente_oracle"`
-	InvalidEntries        int                   `json:"entradas_invalidas"`
-	InvalidPaths          []string              `json:"rutas_invalidas,omitempty"`
-	Folders               []ingestFolderPreview `json:"carpetas"`
+	Service               string                  `json:"tipo_servicio"`
+	Month                 string                  `json:"mes"`
+	Year                  string                  `json:"anio"`
+	OraclePlanillas       int                     `json:"planillas_oracle"`
+	TramiteFolders        int                     `json:"carpetas_tramite"`
+	PDFs                  int                     `json:"pdfs"`
+	MatchedFolders        int                     `json:"tramites_en_oracle"`
+	PDFsMatched           int                     `json:"pdfs_con_tramite_oracle"`
+	UnmatchedFolders      int                     `json:"tramites_sin_oracle"`
+	OracleWithoutZIP      int                     `json:"tramites_oracle_sin_zip"`
+	OracleMissingTramites []string                `json:"pdi_tramite_oracle_sin_zip,omitempty"`
+	OracleCandidates      []ingestOracleCandidate `json:"planillas_oracle_disponibles,omitempty"`
+	FoldersWithoutPatient int                     `json:"tramites_sin_paciente_oracle"`
+	InvalidEntries        int                     `json:"entradas_invalidas"`
+	InvalidPaths          []string                `json:"rutas_invalidas,omitempty"`
+	Folders               []ingestFolderPreview   `json:"carpetas"`
 }
 
 func (s *server) loadPlanillaIdentities(ctx context.Context, job stagedJob) (map[string]planillaIdentity, error) {
@@ -235,8 +247,22 @@ func (s *server) inspectIngestZIP(ctx context.Context, job stagedJob) (ingestPre
 		}
 	}
 	preview.TramiteFolders = len(folders)
-	for _, folder := range folders {
-		if identity, found := identities[folder.Tramite]; found {
+	usedOracleTramites := make(map[string]string, len(folders))
+	for source, folder := range folders {
+		target := strings.TrimSpace(job.TramiteMappings[source])
+		if target == "" {
+			target = source
+		}
+		folder.OracleTramite = target
+		folder.ManualMapping = target != source
+		if identity, found := identities[target]; found {
+			if usedBy, exists := usedOracleTramites[target]; exists && usedBy != source {
+				folder.MappingConflict = true
+				preview.UnmatchedFolders++
+				preview.Folders = append(preview.Folders, *folder)
+				continue
+			}
+			usedOracleTramites[target] = source
 			folder.OracleMatch = true
 			folder.Patient = identity.Patient
 			folder.PatientMissing = identity.Patient == ""
@@ -257,6 +283,21 @@ func (s *server) inspectIngestZIP(ctx context.Context, job stagedJob) (ingestPre
 		}
 		preview.Folders = append(preview.Folders, *folder)
 	}
+	for tramite, identity := range identities {
+		if _, included := usedOracleTramites[tramite]; included {
+			continue
+		}
+		preview.OracleMissingTramites = append(preview.OracleMissingTramites, tramite)
+		patient := normalizePatientFolder(identity.Patient)
+		title := tramite
+		if patient != "" {
+			title += " · " + patient
+		}
+		preview.OracleCandidates = append(preview.OracleCandidates, ingestOracleCandidate{Tramite: tramite, Title: title})
+	}
+	sort.Strings(preview.OracleMissingTramites)
+	sort.Slice(preview.OracleCandidates, func(i, j int) bool { return preview.OracleCandidates[i].Tramite < preview.OracleCandidates[j].Tramite })
+	preview.OracleWithoutZIP = len(preview.OracleMissingTramites)
 	sort.Slice(preview.Folders, func(i, j int) bool { return preview.Folders[i].Tramite < preview.Folders[j].Tramite })
 	return preview, nil
 }
@@ -293,6 +334,104 @@ func (s *server) getIngestPreview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"vista_previa": preview})
+}
+
+// setIngestTramiteMapping lets an operator associate an unmatched ZIP folder
+// with an Oracle PDI_TRAMITE that has no folder in this ZIP.
+func (s *server) setIngestTramiteMapping(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "Método no permitido.")
+		return
+	}
+	if _, ok := s.getSession(r); !ok {
+		writeError(w, http.StatusUnauthorized, "Inicia sesión para continuar.")
+		return
+	}
+	id := strings.TrimPrefix(r.URL.Path, "/api/v1/ingesta/vincular-tramite/")
+	if !validJobID(id) {
+		writeError(w, http.StatusBadRequest, "El identificador del lote no es válido.")
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 8*1024)
+	var input struct {
+		ZIPTramite    string `json:"tramite_zip"`
+		OracleTramite string `json:"tramite_oracle"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil || !tramitePattern.MatchString(strings.TrimSpace(input.ZIPTramite)) {
+		writeError(w, http.StatusBadRequest, "El trámite de la carpeta ZIP no es válido.")
+		return
+	}
+	input.ZIPTramite = strings.TrimSpace(input.ZIPTramite)
+	input.OracleTramite = strings.TrimSpace(input.OracleTramite)
+	if input.OracleTramite != "" && !tramitePattern.MatchString(input.OracleTramite) {
+		writeError(w, http.StatusBadRequest, "El trámite Oracle seleccionado no es válido.")
+		return
+	}
+	s.ingestMu.Lock()
+	defer s.ingestMu.Unlock()
+	job, err := s.loadStagedJob(id)
+	if err != nil || !s.hasClinicalSource(job) {
+		writeError(w, http.StatusNotFound, "No se encontró el ZIP guardado para este período.")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 45*time.Second)
+	defer cancel()
+	preview, err := s.inspectIngestZIP(ctx, job)
+	if err != nil {
+		writeError(w, http.StatusUnprocessableEntity, err.Error())
+		return
+	}
+	var source *ingestFolderPreview
+	for index := range preview.Folders {
+		if preview.Folders[index].Tramite == input.ZIPTramite {
+			source = &preview.Folders[index]
+			break
+		}
+	}
+	if source == nil {
+		writeError(w, http.StatusNotFound, "La carpeta indicada ya no está dentro del ZIP.")
+		return
+	}
+	if input.OracleTramite == "" {
+		if job.TramiteMappings == nil || job.TramiteMappings[input.ZIPTramite] == "" {
+			writeError(w, http.StatusConflict, "La carpeta no tiene una corrección manual que quitar.")
+			return
+		}
+		delete(job.TramiteMappings, input.ZIPTramite)
+		if len(job.TramiteMappings) == 0 {
+			job.TramiteMappings = nil
+		}
+		if err := s.saveStagedJob(job); err != nil {
+			writeError(w, http.StatusInternalServerError, "No se pudo guardar la corrección del trámite.")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"message": "Se quitó la corrección manual. La carpeta volverá a usar el PDI_TRAMITE de su nombre original."})
+		return
+	}
+	if source.OracleMatch && !source.ManualMapping {
+		writeError(w, http.StatusConflict, "Esta carpeta ya coincide con Oracle. Solo puedes corregir carpetas sin coincidencia o cambiar una corrección manual existente.")
+		return
+	}
+	available := false
+	for _, candidate := range preview.OracleMissingTramites {
+		if candidate == input.OracleTramite {
+			available = true
+			break
+		}
+	}
+	if !available {
+		writeError(w, http.StatusConflict, "El trámite Oracle seleccionado ya tiene otra carpeta asociada o no pertenece a este período MSP.")
+		return
+	}
+	if job.TramiteMappings == nil {
+		job.TramiteMappings = make(map[string]string)
+	}
+	job.TramiteMappings[input.ZIPTramite] = input.OracleTramite
+	if err := s.saveStagedJob(job); err != nil {
+		writeError(w, http.StatusInternalServerError, "No se pudo guardar la corrección del trámite.")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"message": "Se guardó la asociación manual. Revisa la vista previa; si el lote ya estaba preparado, vuelve a analizar los PDFs para aplicar el cambio."})
 }
 
 // replaceStagedZIP lets an operator correct the clinical ZIP after Oracle preview
@@ -439,11 +578,8 @@ func summarizeClassification(files []classificationResult) classificationSummary
 		default:
 			summary.Unreadable++
 		}
-		if len(file.DatesOutsideCare) > 0 {
-			summary.PeriodAlertFiles = append(summary.PeriodAlertFiles, periodDateWarning{Document: file.Output, Dates: file.DatesOutsideCare, Interval: file.CareInterval})
-		}
-		if file.CareInterval == "" {
-			summary.WithoutOracleCareInterval++
+		if len(file.DatesOutsidePeriod) > 0 {
+			summary.PeriodAlertFiles = append(summary.PeriodAlertFiles, periodDateWarning{Document: file.Output, Dates: file.DatesOutsidePeriod, Period: file.BilledPeriod})
 		}
 	}
 	return summary
@@ -829,9 +965,13 @@ func (s *server) buildPatientFolders(ctx context.Context, job *stagedJob, output
 		if len(parts) != 2 || !tramitePattern.MatchString(parts[0]) || !strings.EqualFold(filepath.Ext(parts[1]), ".pdf") || path.Base(parts[1]) != parts[1] {
 			return report, errors.New("El ZIP debe contener solo archivos PDF dentro de carpetas cuyo nombre sea el PDI_TRAMITE numérico.")
 		}
-		identity, found := identities[parts[0]]
+		oracleTramite := strings.TrimSpace(job.TramiteMappings[parts[0]])
+		if oracleTramite == "" {
+			oracleTramite = parts[0]
+		}
+		identity, found := identities[oracleTramite]
 		if !found {
-			return report, fmt.Errorf("El trámite %s del ZIP no aparece como planillado en Oracle para %s/%s.", parts[0], job.Month, job.Year)
+			return report, fmt.Errorf("El trámite %s de la carpeta %s no aparece como planillado en Oracle para %s/%s.", oracleTramite, parts[0], job.Month, job.Year)
 		}
 		patientFolder := normalizePatientFolder(identity.Patient)
 		if patientFolder == "" {
@@ -866,9 +1006,10 @@ func (s *server) buildPatientFolders(ctx context.Context, job *stagedJob, output
 			return report, errors.New("No se pudo guardar un PDF del expediente.")
 		}
 		originalName := filepath.Base(parts[1])
-		classified := classifyPDF(ctx, workFile.Name(), originalName, rules, identity.CareFrom, identity.CareUntil)
+		classified := classifyPDF(ctx, workFile.Name(), originalName, rules, job.Month, job.Year)
 		classified.PlanillaID = identity.PlanillaID
-		classified.Tramite = parts[0]
+		classified.Tramite = oracleTramite
+		classified.ZIPTramite = parts[0]
 		classifiedName := classified.Code
 		if classifiedName == "" {
 			classifiedName = pendingPDFName(originalName)

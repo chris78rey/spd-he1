@@ -26,34 +26,34 @@ type classificationRules struct {
 }
 
 type classificationResult struct {
-	PlanillaID       int64    `json:"pdi_id,omitempty"`
-	Tramite          string   `json:"pdi_tramite,omitempty"`
-	Code             string   `json:"codigo"`
-	Method           string   `json:"metodo"`
-	Reason           string   `json:"motivo,omitempty"`
-	Matches          int      `json:"coincidencias,omitempty"`
-	Original         string   `json:"nombre_original"`
-	Output           string   `json:"salida,omitempty"`
-	DatesOutsideCare []string `json:"fechas_fuera_atencion,omitempty"`
-	CareInterval     string   `json:"intervalo_atencion_oracle,omitempty"`
+	PlanillaID         int64    `json:"pdi_id,omitempty"`
+	Tramite            string   `json:"pdi_tramite,omitempty"`
+	ZIPTramite         string   `json:"tramite_carpeta_zip,omitempty"`
+	Code               string   `json:"codigo"`
+	Method             string   `json:"metodo"`
+	Reason             string   `json:"motivo,omitempty"`
+	Matches            int      `json:"coincidencias,omitempty"`
+	Original           string   `json:"nombre_original"`
+	Output             string   `json:"salida,omitempty"`
+	DatesOutsidePeriod []string `json:"fechas_fuera_periodo,omitempty"`
+	BilledPeriod       string   `json:"periodo_facturado_oracle,omitempty"`
 }
 
 type periodDateWarning struct {
 	Document string   `json:"documento"`
 	Dates    []string `json:"fechas_detectadas"`
-	Interval string   `json:"intervalo_oracle,omitempty"`
+	Period   string   `json:"periodo_facturado_oracle,omitempty"`
 }
 
 type classificationSummary struct {
-	Total                     int                 `json:"total"`
-	Classified                int                 `json:"clasificados"`
-	Pending                   int                 `json:"pendientes"`
-	FusionPending             int                 `json:"fusiones_pendientes"`
-	Vector                    int                 `json:"texto_vectorial"`
-	OCR                       int                 `json:"ocr"`
-	Unreadable                int                 `json:"sin_texto_legible"`
-	PeriodAlertFiles          []periodDateWarning `json:"documentos_fecha_fuera_atencion,omitempty"`
-	WithoutOracleCareInterval int                 `json:"sin_intervalo_oracle"`
+	Total            int                 `json:"total"`
+	Classified       int                 `json:"clasificados"`
+	Pending          int                 `json:"pendientes"`
+	FusionPending    int                 `json:"fusiones_pendientes"`
+	Vector           int                 `json:"texto_vectorial"`
+	OCR              int                 `json:"ocr"`
+	Unreadable       int                 `json:"sin_texto_legible"`
+	PeriodAlertFiles []periodDateWarning `json:"documentos_fecha_fuera_periodo,omitempty"`
 }
 
 func loadClassificationRules(path string) (classificationRules, error) {
@@ -71,8 +71,8 @@ func loadClassificationRules(path string) (classificationRules, error) {
 	return rules, nil
 }
 
-func classifyPDF(ctx context.Context, filePath, originalName string, rules classificationRules, careFrom, careUntil time.Time) classificationResult {
-	result := classificationResult{Original: originalName, CareInterval: formatCareInterval(careFrom, careUntil)}
+func classifyPDF(ctx context.Context, filePath, originalName string, rules classificationRules, periodMonth, periodYear string) classificationResult {
+	result := classificationResult{Original: originalName, BilledPeriod: formatBilledPeriod(periodMonth, periodYear)}
 	text, err := extractPDFText(filePath)
 	if err == nil && strings.TrimSpace(text) != "" {
 		result.Method = "VECTORIAL"
@@ -91,7 +91,7 @@ func classifyPDF(ctx context.Context, filePath, originalName string, rules class
 			return result
 		}
 	}
-	result.DatesOutsideCare = datesOutsideCareInterval(text, careFrom, careUntil)
+	result.DatesOutsidePeriod = datesOutsideBilledPeriod(text, periodMonth, periodYear)
 	if code, matches, tie := matchClassification(text, rules); code != "" && !tie {
 		result.Code, result.Matches = code, matches
 		return result
@@ -101,25 +101,23 @@ func classifyPDF(ctx context.Context, filePath, originalName string, rules class
 	return result
 }
 
-func formatCareInterval(careFrom, careUntil time.Time) string {
-	if careFrom.IsZero() && careUntil.IsZero() {
+func formatBilledPeriod(month, year string) string {
+	monthNumber, err := strconv.Atoi(strings.TrimSpace(month))
+	if err != nil || monthNumber < 1 || monthNumber > 12 || len(strings.TrimSpace(year)) != 4 {
 		return ""
 	}
-	if careFrom.IsZero() {
-		return "hasta " + careUntil.Format("2006-01-02")
-	}
-	if careUntil.IsZero() {
-		return "desde " + careFrom.Format("2006-01-02")
-	}
-	return careFrom.Format("2006-01-02") + " a " + careUntil.Format("2006-01-02")
+	return fmt.Sprintf("%02d/%s", monthNumber, strings.TrimSpace(year))
 }
 
 var numericDatePattern = regexp.MustCompile(`\b(\d{1,2})[/-](\d{1,2})[/-](\d{4})\b`)
 var isoDatePattern = regexp.MustCompile(`\b(\d{4})-(\d{1,2})-(\d{1,2})\b`)
 var spanishDatePattern = regexp.MustCompile(`\b(\d{1,2}) (?:DE )?(ENERO|FEBRERO|MARZO|ABRIL|MAYO|JUNIO|JULIO|AGOSTO|SEPTIEMBRE|OCTUBRE|NOVIEMBRE|DICIEMBRE) (?:DE )?(\d{4})\b`)
+var labelledDateFieldPattern = regexp.MustCompile(`\bFECHA(?:\s+DE)?\s*[:\-]?\s*(?:\d{1,2}\b|ENERO|FEBRERO|MARZO|ABRIL|MAYO|JUNIO|JULIO|AGOSTO|SEPTIEMBRE|OCTUBRE|NOVIEMBRE|DICIEMBRE)`)
 
-func datesOutsideCareInterval(text string, careFrom, careUntil time.Time) []string {
-	if careFrom.IsZero() && careUntil.IsZero() {
+func datesOutsideBilledPeriod(text, periodMonth, periodYear string) []string {
+	monthNumber, err := strconv.Atoi(strings.TrimSpace(periodMonth))
+	yearNumber, yearErr := strconv.Atoi(strings.TrimSpace(periodYear))
+	if err != nil || yearErr != nil || monthNumber < 1 || monthNumber > 12 || yearNumber < 1 {
 		return nil
 	}
 	monthNumbers := map[string]int{"ENERO": 1, "FEBRERO": 2, "MARZO": 3, "ABRIL": 4, "MAYO": 5, "JUNIO": 6, "JULIO": 7, "AGOSTO": 8, "SEPTIEMBRE": 9, "OCTUBRE": 10, "NOVIEMBRE": 11, "DICIEMBRE": 12}
@@ -130,28 +128,30 @@ func datesOutsideCareInterval(text string, careFrom, careUntil time.Time) []stri
 		if index > 0 {
 			contextText = strings.ToUpper(lines[index-1]) + " " + contextText
 		}
-		// Fechas de nacimiento y procesamiento no representan la atención clínica.
-		if strings.Contains(contextText, "NACIMIENTO") || strings.Contains(contextText, "FECHA PROCESO") || strings.Contains(contextText, "FECHA DE PROCESO") {
+		contextText = normalizeOCRText(contextText)
+		// Solo comparar fechas presentadas como campos del formulario. Omitir historia,
+		// límites para realizar exámenes, y fechas de impresión/planillación automática.
+		if !isRelevantDocumentDateContext(contextText) {
 			continue
 		}
 		for _, match := range numericDatePattern.FindAllStringSubmatch(line, -1) {
 			day, _ := strconv.Atoi(match[1])
 			month, _ := strconv.Atoi(match[2])
 			year, _ := strconv.Atoi(match[3])
-			addDateCandidate(unique, year, month, day, careFrom, careUntil)
+			addDateCandidateForPeriod(unique, year, month, day, monthNumber, yearNumber)
 		}
 		for _, match := range isoDatePattern.FindAllStringSubmatch(line, -1) {
 			year, _ := strconv.Atoi(match[1])
 			month, _ := strconv.Atoi(match[2])
 			day, _ := strconv.Atoi(match[3])
-			addDateCandidate(unique, year, month, day, careFrom, careUntil)
+			addDateCandidateForPeriod(unique, year, month, day, monthNumber, yearNumber)
 		}
 		normalizedLine := normalizeOCRText(line)
 		for _, match := range spanishDatePattern.FindAllStringSubmatch(normalizedLine, -1) {
 			day, _ := strconv.Atoi(match[1])
 			month := monthNumbers[match[2]]
 			year, _ := strconv.Atoi(match[3])
-			addDateCandidate(unique, year, month, day, careFrom, careUntil)
+			addDateCandidateForPeriod(unique, year, month, day, monthNumber, yearNumber)
 		}
 	}
 	result := make([]string, 0, len(unique))
@@ -162,7 +162,19 @@ func datesOutsideCareInterval(text string, careFrom, careUntil time.Time) []stri
 	return result
 }
 
-func addDateCandidate(unique map[string]time.Time, year, month, day int, careFrom, careUntil time.Time) {
+func isRelevantDocumentDateContext(context string) bool {
+	if strings.Contains(context, "NACIMIENTO") || strings.Contains(context, "FECHA PROCESO") || strings.Contains(context, "FECHA DE PROCESO") || strings.Contains(context, "FECHA PLANILLACION") || strings.Contains(context, "PLANILLAJE AUTOMATICO") || strings.Contains(context, "GENERADO AUTOMATICAMENTE") || strings.Contains(context, "FECHA MAXIMA") || strings.Contains(context, "FECHA LIMITE") || strings.Contains(context, "VENCIMIENTO") {
+		return false
+	}
+	for _, label := range []string{"FECHA DE ATENCION", "FECHA DE CONSULTA", "FECHA DE SOLICITUD", "FECHA DE TOMA", "FECHA DE PROCEDIMIENTO", "FECHA DE INGRESO", "FECHA DE EGRESO", "FECHA DE EVOLUCION", "FECHA DE INTERCONSULTA", "FECHA DE VISITA"} {
+		if strings.Contains(context, label) {
+			return true
+		}
+	}
+	return labelledDateFieldPattern.MatchString(context)
+}
+
+func addDateCandidateForPeriod(unique map[string]time.Time, year, month, day, billedMonth, billedYear int) {
 	if month < 1 || month > 12 || day < 1 || day > 31 {
 		return
 	}
@@ -170,18 +182,8 @@ func addDateCandidate(unique map[string]time.Time, year, month, day int, careFro
 	if date.Year() != year || int(date.Month()) != month || date.Day() != day {
 		return
 	}
-	if !careFrom.IsZero() {
-		from := time.Date(careFrom.Year(), careFrom.Month(), careFrom.Day(), 0, 0, 0, 0, time.UTC)
-		if date.Before(from) {
-			unique[date.Format("2006-01-02")] = date
-			return
-		}
-	}
-	if !careUntil.IsZero() {
-		until := time.Date(careUntil.Year(), careUntil.Month(), careUntil.Day(), 0, 0, 0, 0, time.UTC)
-		if date.After(until) {
-			unique[date.Format("2006-01-02")] = date
-		}
+	if month != billedMonth || year != billedYear {
+		unique[date.Format("2006-01-02")] = date
 	}
 }
 

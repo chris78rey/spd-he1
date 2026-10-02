@@ -76,9 +76,13 @@ func (s *server) planillaForPatient(ctx context.Context, job stagedJob, patient 
 
 func planillaForPath(job stagedJob, relative string) int64 {
 	relative = filepath.ToSlash(filepath.Clean(filepath.FromSlash(relative)))
-	if id := job.DocumentPlanillas[relative]; id > 0 { return id }
+	if id := job.DocumentPlanillas[relative]; id > 0 {
+		return id
+	}
 	for _, doc := range job.ExternalPDFs {
-		if filepath.ToSlash(filepath.Clean(filepath.FromSlash(doc.RelativePath))) == relative && doc.PlanillaID > 0 { return doc.PlanillaID }
+		if filepath.ToSlash(filepath.Clean(filepath.FromSlash(doc.RelativePath))) == relative && doc.PlanillaID > 0 {
+			return doc.PlanillaID
+		}
 	}
 	return 0
 }
@@ -107,8 +111,6 @@ func nextMSPPDFName(dir, code, ignoredName string) (string, error) {
 	}
 }
 
-var workspaceDeleteCodePattern = regexp.MustCompile(`^[0-9]{8}$`)
-
 func (s *server) deleteWorkspace(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodDelete {
 		writeError(w, http.StatusMethodNotAllowed, "Método no permitido.")
@@ -128,8 +130,8 @@ func (s *server) deleteWorkspace(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		Confirmation string `json:"confirmacion"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil || !workspaceDeleteCodePattern.MatchString(input.Confirmation) {
-		writeError(w, http.StatusBadRequest, "Escribe manualmente el código de confirmación de 8 dígitos.")
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil || strings.TrimSpace(input.Confirmation) != id {
+		writeError(w, http.StatusBadRequest, "Escribe el ID completo del período para confirmar su eliminación.")
 		return
 	}
 	job, err := s.loadStagedJob(id)
@@ -155,11 +157,35 @@ func (s *server) deleteWorkspace(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "La ruta del espacio no es una carpeta válida.")
 		return
 	}
-	if err := os.RemoveAll(root); err != nil {
-		writeError(w, http.StatusInternalServerError, "No se pudo eliminar por completo la carpeta del período.")
+	packageRoot, err := canonicalPath(filepath.Join(root, "trabajo", packageFolderName(&job)))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "No se pudo resolver la carpeta preparada del período.")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"status": "DELETED", "job_id": job.ID, "message": "Se eliminó la carpeta completa del período con sus fuentes, reportes y documentos preparados."})
+	var token [8]byte
+	if _, err := rand.Read(token[:]); err != nil {
+		writeError(w, http.StatusInternalServerError, "No se pudo preparar la eliminación segura del período.")
+		return
+	}
+	backup := filepath.Join(filepath.Dir(root), "."+filepath.Base(root)+".delete-"+fmt.Sprintf("%x", token[:]))
+	if err := os.Rename(root, backup); err != nil {
+		writeError(w, http.StatusInternalServerError, "No se pudo preparar la eliminación segura del período.")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	if err := s.clearOracleWorkspaceIndex(ctx, job, packageRoot); err != nil {
+		if restoreErr := os.Rename(backup, root); restoreErr != nil {
+			log.Printf("expediente %s: Oracle no se actualizó (%v) y no se pudo restaurar la carpeta (%v)", job.ID, err, restoreErr)
+		}
+		log.Printf("expediente %s: no se pudo sincronizar la eliminación con Oracle: %v", job.ID, err)
+		writeError(w, http.StatusInternalServerError, "No se eliminó el período porque no se pudo actualizar Oracle. La carpeta se restauró si Oracle rechazó el cambio.")
+		return
+	}
+	if err := os.RemoveAll(backup); err != nil {
+		log.Printf("expediente %s: Oracle quedó sincronizado, pero la limpieza local quedó pendiente: %v", job.ID, err)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"status": "DELETED", "job_id": job.ID, "message": "Se eliminó el período y se actualizaron sus rutas y estados de documentos en Oracle."})
 }
 
 func (s *server) workspaceDocuments(w http.ResponseWriter, r *http.Request) {
@@ -589,6 +615,7 @@ func (s *server) serveWorkspacePDF(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/pdf")
 	w.Header().Set("Content-Disposition", fmt.Sprintf("inline; filename=%q", filepath.Base(filePath)))
+	w.Header().Set("Cache-Control", "no-store")
 	http.ServeContent(w, r, filepath.Base(filePath), info.ModTime(), file)
 }
 
@@ -887,6 +914,13 @@ func (s *server) mergeWorkspacePDFs(w http.ResponseWriter, r *http.Request) {
 	}
 	job.MergedDuplicates[canonicalRelative] = duplicates
 	canonicalID := job.DocumentPlanillas[canonicalRelative]
+	activeExternal := job.ExternalPDFs[:0]
+	for _, external := range job.ExternalPDFs {
+		if filepath.ToSlash(filepath.Clean(filepath.FromSlash(external.RelativePath))) != canonicalRelative {
+			activeExternal = append(activeExternal, external)
+		}
+	}
+	job.ExternalPDFs = activeExternal
 	job.ExternalPDFs = append(job.ExternalPDFs, workspaceDocument{ID: strings.TrimSuffix(storedName, ".pdf"), StoredName: storedName, OriginalName: group.Code, RelativePath: canonicalRelative, PlanillaID: canonicalID})
 	if err := s.saveStagedJob(job); err != nil {
 		_ = os.Remove(canonical)
@@ -1073,7 +1107,9 @@ func (s *server) addWorkspacePDFs(w http.ResponseWriter, r *http.Request, job st
 		job.Replacements[replaceRelative] = storedName
 		planillaID := planillaForPath(job, replaceRelative)
 		var mapErr error
-		if planillaID == 0 { planillaID, mapErr = s.planillaForPatient(r.Context(), job, patient) }
+		if planillaID == 0 {
+			planillaID, mapErr = s.planillaForPatient(r.Context(), job, patient)
+		}
 		if mapErr != nil {
 			_ = os.Remove(destination)
 			_ = os.Rename(backupPath, destination)
@@ -1179,6 +1215,15 @@ func (s *server) addWorkspacePDFs(w http.ResponseWriter, r *http.Request, job st
 	for _, document := range added {
 		path := filepath.ToSlash(document.RelativePath)
 		delete(job.DeletedPDFs, path)
+		for canonical, duplicates := range job.MergedDuplicates {
+			remaining := duplicates[:0]
+			for _, duplicate := range duplicates {
+				if filepath.ToSlash(filepath.Clean(filepath.FromSlash(duplicate))) != path {
+					remaining = append(remaining, duplicate)
+				}
+			}
+			job.MergedDuplicates[canonical] = remaining
+		}
 	}
 	// Keep only the currently active source in the external-document manifest;
 	// earlier versions remain untouched as private files in fuentes/externos.
