@@ -75,6 +75,10 @@ const ingestPreviewPageSize = 10
 const savedWorkspaces = ref([])
 const selectedSavedWorkspace = ref('')
 const savedWorkspacesLoading = ref(false)
+const savedWorkspacesError = ref('')
+const showWorkspaceDetails = ref(false)
+const savedWorkspaceSearch = ref('')
+const savedWorkspaceStatusFilter = ref('ALL')
 const selectedCoverageWorkspace = ref('')
 const coveragePlanillas = ref([])
 const coverageSelectedIds = ref([])
@@ -89,6 +93,7 @@ const coverageNotice = ref('')
 const ingestMode = ref('new')
 const ingestModeTouched = ref(false)
 const openingSavedWorkspace = ref(false)
+const patientDocumentsDialog = ref(false)
 const workspacePDFs = ref([])
 const workspacePDFRevision = ref(0)
 const workspacePatients = ref([])
@@ -103,6 +108,7 @@ const workspacePDFInput = ref(null)
 const replacePDFInput = ref(null)
 const replacePDFFile = ref(null)
 const replacePDFDialog = ref(false)
+const replacePDFError = ref('')
 const replacePDFTarget = ref('')
 const deletePDFTarget = ref('')
 const deletePDFDialog = ref(false)
@@ -115,6 +121,8 @@ const mergeSending = ref(false)
 const mergeAllConfirmDialog = ref(false)
 const mergeAllSending = ref(false)
 const mergeAllProgress = ref({ done: 0, total: 0 })
+const patientDocumentsLocked = computed(() => workspaceSending.value || workspaceBusy.value || mergeSending.value || mergeAllSending.value || replacePDFDialog.value || deletePDFDialog.value || mergePDFDialog.value || mergeAllConfirmDialog.value)
+watch(() => ingestResult.value?.job_id, () => { patientDocumentsDialog.value = false })
 const deleteWorkspaceDialog = ref(false)
 const workspaceDeleteTargetID = ref('')
 const workspaceDeleteTargetName = ref('')
@@ -577,6 +585,7 @@ function removeQueuedWorkspacePDF(index) {
   workspaceUploadFiles.value.splice(index, 1)
 }
 function selectReplacementPDF(event) {
+  replacePDFError.value = ''
   const file = event.target.files?.[0] || null
   replacePDFFile.value = file && file.size > 0 && file.name.toLowerCase().endsWith('.pdf') ? file : null
   workspaceNotice.value = file && !replacePDFFile.value ? 'Selecciona un archivo PDF que no esté vacío.' : ''
@@ -628,9 +637,10 @@ async function addWorkspacePDFs() {
 async function confirmReplaceWorkspacePDF() {
   const current = workspacePDFs.value.find(document => document.path === replacePDFTarget.value)
   if (!current || !replacePDFFile.value || workspaceSending.value) return
+  replacePDFError.value = ''
   workspaceNotice.value = ''; workspaceSending.value = true; ingestProgress.value = 0
   const form = new FormData()
-  const patient = current.path.split('/')[2]
+  const patient = current.path.split('/')[1]
   form.append('paciente', patient)
   form.append('modo', 'reemplazar')
   form.append('ruta', current.path)
@@ -657,7 +667,7 @@ async function confirmReplaceWorkspacePDF() {
     workspaceNotice.value = 'PDF reemplazado. La versión fuente se conserva en el expediente.'
     ingestProgress.value = 100
     replacePDFDialog.value = false
-  } catch (error) { workspaceNotice.value = error.message || 'No se pudo reemplazar el PDF.' }
+  } catch (error) { replacePDFError.value = error.message || 'No se pudo reemplazar el PDF.' }
   finally { workspaceSending.value = false }
 }
 function requestDeleteWorkspacePDF(path) {
@@ -698,6 +708,13 @@ async function deleteWholeWorkspace() {
       selectedWorkspacePDF.value = ''
       workspaceUploadFiles.value = []
       localStorage.removeItem('folio-ingest-result')
+    }
+    if (selectedCoverageWorkspace.value === jobId) {
+      selectedCoverageWorkspace.value = ''
+      coveragePlanillas.value = []
+      coverageSelectedIds.value = []
+      coverageNotice.value = ''
+      coverageError.value = ''
     }
     deleteWorkspaceDialog.value = false
     selectedSavedWorkspace.value = ''
@@ -987,6 +1004,33 @@ const savedWorkspaceItems = computed(() => savedWorkspaces.value.map(workspace =
   const state = workspace.status === 'STAGED' ? 'pendiente de preparar' : workspace.status === 'INCOMPLETE' ? 'incompleto' : 'preparado'
   return { title: `${serviceName} · ${monthName} ${workspace.anio} · ${state} · recibido por ${workspace.creado_por || 'usuario anterior'}`, value: workspace.job_id }
 }))
+const filteredSavedWorkspaces = computed(() => {
+  const normalizedQuery = String(savedWorkspaceSearch.value || '').trim().toLocaleLowerCase('es').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  return savedWorkspaces.value.filter(workspace => {
+    if (savedWorkspaceStatusFilter.value !== 'ALL' && workspace.status !== savedWorkspaceStatusFilter.value) return false
+    if (!normalizedQuery) return true
+    const haystack = [coverageServiceLabel(workspace.tipo_servicio), workspace.tipo_servicio, coverageMonthLabel(workspace.mes), workspace.mes, workspace.anio, workspace.period, workspace.job_id, workspace.creado_por, workspace.message, workspaceStatusLabel(workspace.status), ...(workspace.missing_documents || [])]
+      .filter(Boolean).join(' ').toLocaleLowerCase('es').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    return haystack.includes(normalizedQuery)
+  })
+})
+const savedWorkspaceStatusFilters = computed(() => [
+  { title: `Todos (${savedWorkspaces.value.length})`, value: 'ALL' },
+  { title: `Incompletos (${savedWorkspaces.value.filter(item => item.status === 'INCOMPLETE').length})`, value: 'INCOMPLETE' },
+  { title: `Preparados (${savedWorkspaces.value.filter(item => item.status === 'PROCESSED').length})`, value: 'PROCESSED' },
+  { title: `Por preparar (${savedWorkspaces.value.filter(item => item.status === 'STAGED').length})`, value: 'STAGED' },
+  { title: `Revisión (${savedWorkspaces.value.filter(item => item.status === 'REQUIERE_REVISION').length})`, value: 'REQUIERE_REVISION' },
+])
+function workspaceStatusLabel(status) {
+  return ({ STAGED: 'Pendiente de preparar', INCOMPLETE: 'Incompleto', PROCESSED: 'Preparado', REQUIERE_REVISION: 'Requiere revisión' })[status] || status || 'Estado desconocido'
+}
+function workspaceStatusColor(status) {
+  return ({ STAGED: 'info', INCOMPLETE: 'warning', PROCESSED: 'success', REQUIERE_REVISION: 'error' })[status] || 'secondary'
+}
+function workspaceReceivedAt(value) {
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? '' : new Intl.DateTimeFormat('es-EC', { dateStyle: 'medium', timeStyle: 'short' }).format(date)
+}
 function billedPeriodLabel(period) {
   const [monthValue, year] = String(period || '').split('/')
   const month = ingestMonths.find(item => item.value === monthValue)?.title
@@ -994,14 +1038,16 @@ function billedPeriodLabel(period) {
 }
 async function loadSavedWorkspaces() {
   savedWorkspacesLoading.value = true
+  savedWorkspacesError.value = ''
   try {
     const response = await fetch('/api/v1/expedientes', { credentials: 'same-origin' })
-    if (!response.ok) return
-    const data = await response.json()
+    if (response.status === 401) { await signOut(); return }
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok) throw new Error(data.error || 'No se pudieron cargar los períodos guardados.')
     savedWorkspaces.value = data.workspaces || []
     if (!ingestModeTouched.value && !ingestResult.value) ingestMode.value = savedWorkspaces.value.length ? 'resume' : 'new'
     if (!savedWorkspaces.value.some(workspace => workspace.job_id === selectedSavedWorkspace.value)) selectedSavedWorkspace.value = savedWorkspaces.value[0]?.job_id || ''
-  } catch { /* Se puede continuar con la carga manual si no responde la lista. */ }
+  } catch (error) { savedWorkspacesError.value = error.message || 'No se pudieron cargar los períodos guardados.' }
   finally { savedWorkspacesLoading.value = false }
 }
 function switchIngestMode(mode) {
@@ -1011,12 +1057,20 @@ function switchIngestMode(mode) {
   ingestMode.value = mode
   if (mode === 'resume') loadSavedWorkspaces()
 }
-async function openSavedWorkspace() {
-  if (!selectedSavedWorkspace.value || openingSavedWorkspace.value) return
+function showSavedWorkspaceList() {
+  ingestModeTouched.value = true
+  if (ingestResult.value) startNewIngest()
+  ingestMode.value = 'resume'
+  loadSavedWorkspaces()
+}
+async function openSavedWorkspace(jobId = selectedSavedWorkspace.value) {
+  if (!jobId || openingSavedWorkspace.value) return
+  selectedSavedWorkspace.value = jobId
+  showWorkspaceDetails.value = false
   openingSavedWorkspace.value = true
   ingestError.value = ''
   try {
-    const response = await fetch(`/api/v1/ingesta/estado/${encodeURIComponent(selectedSavedWorkspace.value)}`, { credentials: 'same-origin' })
+    const response = await fetch(`/api/v1/ingesta/estado/${encodeURIComponent(jobId)}`, { credentials: 'same-origin' })
     const data = await response.json().catch(() => ({}))
     if (!response.ok) throw new Error(data.error || 'No se pudo abrir el espacio guardado.')
     ingestMode.value = 'resume'
@@ -1032,6 +1086,7 @@ async function openSavedWorkspace() {
 function startNewIngest() {
   ingestMode.value = 'new'
   ingestModeTouched.value = true
+  showWorkspaceDetails.value = false
   ingestResult.value = null
   ingestPreview.value = null
   ingestPreviewError.value = ''
@@ -1254,18 +1309,47 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
             <div v-if="coveragePlanillas.length" class="coverage-footnote">Marca la casilla del encabezado para seleccionar todas las pendientes. Se procesan en grupos de 10; las hojas generadas se guardan en cada expediente. El ZIP admite hasta 500 planillas.</div>
           </v-card>
         </section>
-        <section v-else class="content-wrap ingest-content">
-          <div class="welcome-line"><div><div class="eyebrow">RECEPCIÓN DE EXPEDIENTES</div><h1>Recibir lote de planillas<span class="title-period">.</span></h1><p class="subtitle">Carga el ZIP de planillas y añade los documentos habilitantes cuando los tengas.</p></div></div>
-          <v-alert class="ingest-notice" type="info" variant="tonal" density="comfortable" prepend-icon="mdi-information-outline">{{ ingestMode === 'resume' ? 'Abre un período existente para revisar sus documentos o continuar el trabajo en el mismo espacio.' : 'Puedes empezar con el ZIP de planillas. Después añade la matriz, la planilla consolidada y el oficio al mismo expediente.' }}</v-alert>
-          <v-btn-toggle :model-value="ingestMode" class="ingest-mode-switch" color="primary" divided mandatory rounded="lg" @update:model-value="switchIngestMode">
-            <v-btn type="button" value="resume" prepend-icon="mdi-folder-clock-outline">Abrir período guardado <span class="ingest-mode-count">{{ savedWorkspaceItems.length }}</span></v-btn>
+        <section v-else class="content-wrap ingest-content" :class="{'ingest-workspace-active': !!ingestResult?.output}">
+          <div v-if="!ingestResult?.output" class="welcome-line"><div><div class="eyebrow">RECEPCIÓN DE EXPEDIENTES</div><h1>Recibir lote de planillas<span class="title-period">.</span></h1><p class="subtitle">Carga el ZIP de planillas y añade los documentos habilitantes cuando los tengas.</p></div></div>
+          <div v-else class="ingest-workspace-toolbar">
+            <div><small>PERÍODO ABIERTO</small><strong>{{ coverageServiceLabel(ingestResult.tipo_servicio || ingestService) }} · {{ coverageMonthLabel(ingestResult.mes) }} {{ ingestResult.anio }}</strong><v-chip size="small" :color="workspaceStatusColor(ingestResult.status)" variant="tonal">{{ workspaceStatusLabel(ingestResult.status) }}</v-chip></div>
+            <div class="ingest-workspace-actions"><v-btn type="button" variant="tonal" prepend-icon="mdi-information-outline" @click="showWorkspaceDetails = !showWorkspaceDetails">{{ showWorkspaceDetails ? 'Ocultar detalles' : 'Detalles del lote' }}</v-btn><v-btn type="button" color="primary" variant="text" prepend-icon="mdi-folder-clock-outline" @click="showSavedWorkspaceList">Cambiar período</v-btn></div>
+          </div>
+          <v-alert v-if="!ingestResult?.output" class="ingest-notice" type="info" variant="tonal" density="comfortable" prepend-icon="mdi-information-outline">{{ ingestMode === 'resume' ? 'Abre un período existente para revisar sus documentos o continuar el trabajo en el mismo espacio.' : 'Puedes empezar con el ZIP de planillas. Después añade la matriz, la planilla consolidada y el oficio al mismo expediente.' }}</v-alert>
+          <v-btn-toggle v-if="!ingestResult?.output" :model-value="ingestMode" class="ingest-mode-switch" color="primary" divided mandatory rounded="lg" @update:model-value="switchIngestMode">
             <v-btn type="button" value="new" prepend-icon="mdi-plus-circle-outline">Crear período nuevo</v-btn>
+            <v-btn type="button" value="resume" prepend-icon="mdi-folder-clock-outline">Abrir período guardado <span class="ingest-mode-count">{{ savedWorkspaceItems.length }}</span></v-btn>
           </v-btn-toggle>
           <form class="ingest-form" @submit.prevent="submitIngest">
             <section v-if="ingestMode === 'resume' && !ingestResult" class="ingest-card saved-workspaces-card">
               <div class="ingest-card-heading"><span class="ingest-step"><v-icon icon="mdi-folder-clock-outline" size="18"/></span><div><h2>Volver a un período guardado</h2><p>Busca un período compartido para abrirlo y continuar el trabajo, aunque lo haya recibido otra persona.</p></div><v-spacer/><v-btn type="button" icon="mdi-refresh" variant="text" aria-label="Actualizar expedientes guardados" :loading="savedWorkspacesLoading" @click="loadSavedWorkspaces"/></div>
-              <div class="saved-workspaces-row saved-workspaces-actions"><v-select v-model="selectedSavedWorkspace" :items="savedWorkspaceItems" label="Servicio y período" :placeholder="savedWorkspacesLoading ? 'Cargando períodos…' : 'No tienes períodos guardados'" prepend-inner-icon="mdi-folder-open-outline" density="comfortable" :disabled="savedWorkspacesLoading || !savedWorkspaceItems.length" hide-details/><v-btn type="button" color="primary" prepend-icon="mdi-folder-open-outline" :loading="openingSavedWorkspace" :disabled="!selectedSavedWorkspace" @click="openSavedWorkspace">Abrir período</v-btn><v-btn type="button" color="error" variant="tonal" prepend-icon="mdi-delete-outline" :loading="workspaceDeleting" :disabled="!selectedSavedWorkspace || workspaceDeleting" @click="requestDeleteWorkspace(selectedSavedWorkspace)">Eliminar</v-btn></div>
-              <div v-if="!savedWorkspacesLoading && !savedWorkspaceItems.length" class="saved-workspaces-empty"><v-icon icon="mdi-folder-search-outline" size="24"/><span><strong>No hay períodos guardados todavía</strong><small>Crea un período nuevo y aparecerá aquí para que cualquier cuenta autorizada pueda continuarlo.</small></span><v-btn type="button" variant="text" color="primary" @click="switchIngestMode('new')">Crear período nuevo</v-btn></div>
+              <div v-if="savedWorkspacesLoading" class="planilla-state saved-workspaces-loading"><v-progress-circular indeterminate color="primary" size="22"/><span>Cargando períodos guardados…</span></div>
+              <v-alert v-else-if="savedWorkspacesError" type="error" variant="tonal" density="comfortable">{{ savedWorkspacesError }}<v-btn type="button" size="small" variant="text" @click="loadSavedWorkspaces">Reintentar</v-btn></v-alert>
+              <div v-else-if="!savedWorkspaces.length" class="saved-workspaces-empty"><v-icon icon="mdi-folder-search-outline" size="24"/><span><strong>No hay períodos guardados todavía</strong><small>Crea un período nuevo y aparecerá aquí para que cualquier cuenta autorizada pueda continuarlo.</small></span><v-btn type="button" variant="text" color="primary" @click="switchIngestMode('new')">Crear período nuevo</v-btn></div>
+              <template v-else>
+                <div class="saved-workspace-filters">
+                  <v-text-field v-model="savedWorkspaceSearch" label="Buscar período" placeholder="Servicio, mes, ID o usuario" prepend-inner-icon="mdi-magnify" density="comfortable" variant="outlined" hide-details clearable/>
+                  <v-chip-group v-model="savedWorkspaceStatusFilter" selected-class="filter-chip-selected" mandatory color="primary" class="saved-workspace-status-filters">
+                    <v-chip v-for="filter in savedWorkspaceStatusFilters" :key="filter.value" :value="filter.value" size="small" variant="outlined">{{ filter.title }}</v-chip>
+                  </v-chip-group>
+                </div>
+                <div v-if="!filteredSavedWorkspaces.length" class="saved-workspaces-empty saved-workspaces-no-results"><v-icon icon="mdi-filter-remove-outline" size="24"/><span><strong>No hay períodos que coincidan</strong><small>Cambia el texto de búsqueda o el estado seleccionado.</small></span><v-btn type="button" variant="text" @click="savedWorkspaceSearch='';savedWorkspaceStatusFilter='ALL'">Limpiar filtros</v-btn></div>
+                <div v-else class="saved-workspace-list">
+                  <article v-for="workspace in filteredSavedWorkspaces" :key="workspace.job_id" class="saved-workspace-card">
+                    <div class="saved-workspace-card-main">
+                      <span class="saved-workspace-icon"><v-icon icon="mdi-folder-zip-outline" size="22"/></span>
+                      <div class="saved-workspace-card-copy">
+                        <div class="saved-workspace-title-row"><h3>{{ coverageServiceLabel(workspace.tipo_servicio) }} · {{ coverageMonthLabel(workspace.mes) }} {{ workspace.anio }}</h3><v-chip size="small" :color="workspaceStatusColor(workspace.status)" variant="tonal">{{ workspaceStatusLabel(workspace.status) }}</v-chip></div>
+                        <p v-if="workspace.missing_documents?.length" class="saved-workspace-missing"><v-icon icon="mdi-alert-circle-outline" size="16"/> Faltan: {{ workspace.missing_documents.join(', ') }}</p>
+                        <p v-else-if="workspace.message" class="saved-workspace-message">{{ workspace.message }}</p>
+                        <p v-else class="saved-workspace-message">Período listo para continuar.</p>
+                        <div class="saved-workspace-meta"><span v-if="workspaceReceivedAt(workspace.received_at)"><v-icon icon="mdi-clock-outline" size="14"/> {{ workspaceReceivedAt(workspace.received_at) }}</span><span><v-icon icon="mdi-account-outline" size="14"/> {{ workspace.creado_por || 'Usuario anterior' }}</span><code>{{ workspace.job_id }}</code></div>
+                      </div>
+                    </div>
+                    <div class="saved-workspace-card-actions"><v-btn type="button" color="primary" prepend-icon="mdi-folder-open-outline" :loading="openingSavedWorkspace && selectedSavedWorkspace === workspace.job_id" :disabled="openingSavedWorkspace || workspaceDeleting" @click="openSavedWorkspace(workspace.job_id)">Continuar</v-btn><v-btn type="button" icon="mdi-delete-outline" variant="text" color="error" :aria-label="`Eliminar período ${workspace.job_id}`" title="Eliminar período" :disabled="openingSavedWorkspace || workspaceDeleting" @click="requestDeleteWorkspace(workspace.job_id)"/></div>
+                  </article>
+                </div>
+              </template>
             </section>
             <template v-if="ingestMode === 'new' && !ingestResult">
             <section class="ingest-card">
@@ -1302,7 +1386,7 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
               </div>
               <div class="ingest-submit-row"><span>Los cambios se guardan en el mismo expediente; el ZIP no se vuelve a subir.</span><v-btn color="primary" :loading="ingestProcessing" :disabled="!completionValid || !Object.values(completionFiles).some(Boolean)" prepend-icon="mdi-cloud-upload-outline" @click="addMissingDocuments">{{ Object.entries(completionFiles).some(([field, file]) => file && currentCompletionFile(field)) ? 'Guardar cambios' : 'Añadir documentos' }}</v-btn></div>
             </div>
-          <section v-if="ingestResult" class="ingest-card current-job-card">
+          <section v-if="ingestResult && (!ingestResult.output || showWorkspaceDetails)" class="ingest-card current-job-card">
               <div class="ingest-card-heading"><span class="ingest-step">{{ ['STAGED','REQUIERE_REVISION'].includes(ingestResult.status) ? '3' : '✓' }}</span><div><h2>{{ ['STAGED','REQUIERE_REVISION'].includes(ingestResult.status) ? 'Lote de planillas recibido' : 'Espacio de trabajo del período' }}</h2><p>{{ ['STAGED','REQUIERE_REVISION'].includes(ingestResult.status) ? 'El ZIP está guardado. Revisa el cruce antes de preparar las carpetas por paciente.' : 'Este espacio se reutiliza para el mismo servicio y período.' }}</p></div></div>
               <div class="ingest-job-id"><span>ID del lote</span><code>{{ ingestResult.job_id }}</code></div>
               <v-alert v-if="ingestResult.reuse_notice" type="info" variant="tonal" density="comfortable">{{ ingestResult.reuse_notice }}</v-alert>
@@ -1318,7 +1402,7 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
                 <v-btn v-if="!ingestPreviewReadyToPrepare" type="button" variant="outlined" prepend-icon="mdi-file-replace-outline" :loading="zipReplacementSending" :disabled="ingestProcessing" @click="zipReplacementInput?.click()">Subir ZIP corregido</v-btn>
               </div>
             </section>
-            <section v-if="ingestResult && (ingestPreview || ingestPreviewLoading || ingestPreviewError)" class="ingest-card ingest-preview-card">
+            <section v-if="ingestResult && (ingestPreview || ingestPreviewLoading || ingestPreviewError) && (!ingestResult.output || showWorkspaceDetails)" class="ingest-card ingest-preview-card">
               <div class="ingest-card-heading"><span class="ingest-step"><v-icon icon="mdi-folder-search-outline" size="19"/></span><div><h2>Vista previa del ZIP y cruce con Oracle</h2><p>Período seleccionado: {{ ingestPreview?.mes || ingestResult.mes }}/{{ ingestPreview?.anio || ingestResult.anio }} · Servicio: {{ ingestPreview?.tipo_servicio || ingestService }}</p></div><v-spacer/><v-btn type="button" icon="mdi-refresh" variant="text" aria-label="Actualizar vista previa del ZIP" :loading="ingestPreviewLoading" @click="loadIngestPreview(ingestResult.job_id)"/></div>
               <div v-if="ingestPreviewLoading" class="planilla-state"><v-progress-circular indeterminate color="primary"/><span>Contando carpetas y PDFs, y cruzando trámites con Oracle…</span></div>
               <v-alert v-else-if="ingestPreviewError" type="warning" variant="tonal" density="comfortable">{{ ingestPreviewError }}<v-btn type="button" size="small" variant="text" @click="loadIngestPreview(ingestResult.job_id)">Reintentar</v-btn></v-alert>
@@ -1362,8 +1446,27 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
               <details class="ingest-secondary-action"><summary>Volver a analizar los PDFs</summary><p>Repite la clasificación de los archivos fuente y actualiza la carpeta de trabajo. Puede tardar varios minutos.</p><v-btn variant="outlined" prepend-icon="mdi-text-box-search-outline" :loading="ingestProcessing" @click="classifyIngest">Reanalizar PDFs</v-btn></details>
               <details v-if="ingestResult.workspace || ingestResult.output" class="ingest-secondary-action"><summary>Ver ubicaciones del expediente</summary><p v-if="ingestResult.workspace">Espacio permanente: <code>{{ ingestResult.workspace }}</code></p><p>Carpeta preparada: <code>{{ ingestResult.output }}</code></p></details>
             </section>
-            <section v-if="ingestResult?.output" class="ingest-card workspace-files-card">
-              <div class="ingest-card-heading"><span class="ingest-step">5</span><div><h2>Documentos del paciente</h2><p>Elige una carpeta para ver, añadir o reemplazar sus PDFs.</p></div><v-spacer/><v-btn type="button" icon="mdi-refresh" variant="text" aria-label="Actualizar lista de PDFs" :loading="workspaceBusy" @click="loadWorkspaceDocuments(ingestResult.job_id, selectedWorkspacePDF)"/></div>
+            <section v-if="ingestResult?.output" class="ingest-card patient-documents-launch">
+              <div class="ingest-card-heading"><span class="ingest-step"><v-icon icon="mdi-folder-account-outline"/></span><div><h2>Documentos del paciente</h2><p>{{ workspacePatients.length }} carpetas · {{ workspacePDFs.length }} PDFs en el período</p></div></div>
+              <v-btn type="button" color="primary" prepend-icon="mdi-file-eye-outline" @click="patientDocumentsDialog = true">Abrir documentos del paciente</v-btn>
+            </section>
+            <div v-if="ingestResult && !ingestResult.output" class="ingest-submit-row"><span>¿Necesitas recibir planillas de otro período o servicio?</span><v-btn type="button" variant="text" prepend-icon="mdi-plus" @click="startNewIngest">Recibir otro período</v-btn></div>
+            <v-expansion-panels v-if="!ingestResult && ingestMode === 'new'" variant="accordion" class="ingest-resume-panel"><v-expansion-panel><v-expansion-panel-title>¿Tienes el ID de un lote?</v-expansion-panel-title><v-expansion-panel-text><p>Escribe el ID que apareció al recibir el lote.</p><div class="ingest-submit-row"><v-text-field v-model="existingIngestJobId" label="ID del lote" placeholder="JOB-…" density="comfortable" hide-details/><v-btn color="primary" prepend-icon="mdi-folder-cog-outline" :loading="ingestProcessing" :disabled="!existingIngestJobId.trim()" @click="processIngest">Abrir lote por ID</v-btn></div></v-expansion-panel-text></v-expansion-panel></v-expansion-panels>
+            <div v-if="ingestSending || completionSending" class="ingest-progress"><div><span>{{ completionSending ? 'Subiendo documentos habilitantes…' : 'Subiendo lote de planillas…' }}</span><strong>{{ ingestProgress }}%</strong></div><v-progress-linear :model-value="ingestProgress" color="primary" rounded/></div>
+            <div v-if="!ingestResult && ingestMode === 'new'" class="ingest-submit-row"><span>El ZIP se guardará en el espacio privado del servidor.</span><v-btn type="submit" color="primary" size="large" prepend-icon="mdi-cloud-upload-outline" :loading="ingestSending" :disabled="!ingestValid || ingestSending">{{ ingestSending ? 'Subiendo ZIP…' : 'Recibir lote de planillas' }}</v-btn></div>
+          </form>
+          <footer>Hecho con cuidado para tus documentos <span>✳</span></footer>
+        </section>
+      </main>
+    </div>
+    <div v-if="dragging" class="drop-overlay"><div class="drop-message"><v-icon icon="mdi-cloud-upload-outline" size="46"/><h2>Suelta tus archivos aquí</h2><p>Se guardarán en {{ activeFolder === folders[0] ? 'Mi espacio' : activeFolder }}</p></div></div>
+    <v-dialog v-model="patientDocumentsDialog" class="patient-documents-dialog" width="96vw" max-width="1800" :persistent="patientDocumentsLocked" aria-labelledby="patient-documents-title">
+      <v-card class="patient-documents-modal">
+        <div class="patient-documents-header">
+          <div><h2 id="patient-documents-title">Documentos del paciente</h2><p>{{ coverageServiceLabel(ingestResult?.tipo_servicio) }} · {{ coverageMonthLabel(ingestResult?.mes) }} {{ ingestResult?.anio }}</p></div>
+          <div class="patient-documents-header-actions"><v-btn type="button" icon="mdi-refresh" variant="text" aria-label="Actualizar lista de PDFs" :loading="workspaceBusy" :disabled="patientDocumentsLocked" @click="loadWorkspaceDocuments(ingestResult.job_id, selectedWorkspacePDF)"/><v-btn type="button" variant="tonal" prepend-icon="mdi-close" :disabled="patientDocumentsLocked" @click="patientDocumentsDialog = false">Cerrar</v-btn></div>
+        </div>
+        <v-card-text v-if="ingestResult?.output" class="patient-documents-body">
               <v-alert v-if="workspaceNotice" :type="workspaceNotice.includes('Se guardó') || workspaceNotice.includes('añadidos') || workspaceNotice.includes('reemplazado') || workspaceNotice.includes('quitado') || workspaceNotice.includes('descargó') || workspaceNotice.includes('fusionaron') ? 'success' : 'warning'" variant="tonal" density="compact" class="workspace-notice">{{ workspaceNotice }}</v-alert>
               <v-alert v-if="workspaceFusionGroups.length" type="warning" variant="tonal" density="comfortable" prepend-icon="mdi-content-copy">Hay {{ workspaceFusionGroups.length }} grupo(s) de documentos repetidos. Se conservaron con nombres numerados para revisarlos y fusionarlos después. Las fuentes originales se mantienen.</v-alert>
               <div v-if="workspaceFusionQueue.length" class="workspace-fusion-quick-access">
@@ -1384,8 +1487,8 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
                 <div class="workspace-file-list">
                   <div class="workspace-file-count">{{ workspacePatientPDFs.length }} PDFs en esta carpeta</div>
                   <div v-for="document in workspacePatientPDFs" :key="document.path" class="workspace-file-entry">
-                    <button type="button" class="workspace-file-row" :class="{ selected: selectedWorkspacePDF === document.path }" @click.prevent="selectWorkspacePDF(document.path)">
-                      <v-icon icon="mdi-file-pdf-box" color="error" size="20"/><span><strong>{{ document.name }}</strong><small>{{ document.path }}</small></span><v-chip v-if="isPendingWorkspaceDocument(document)" size="x-small" color="warning" variant="tonal">Sin nombre MSP</v-chip><v-chip v-else-if="workspaceFusionGroups.some(group => group.paths.includes(document.path))" size="x-small" color="warning" variant="tonal">Fusionar después</v-chip><v-icon v-if="selectedWorkspacePDF === document.path" icon="mdi-eye-outline" size="18"/>
+                    <button type="button" class="workspace-file-row" :title="document.name" :aria-pressed="selectedWorkspacePDF === document.path" :class="{ selected: selectedWorkspacePDF === document.path }" @click.prevent="selectWorkspacePDF(document.path)">
+                      <v-icon icon="mdi-file-pdf-box" color="error" size="20"/><span><strong>{{ document.name }}</strong><small>{{ prettySize(document.size) }}</small></span><v-chip v-if="isPendingWorkspaceDocument(document)" size="x-small" color="warning" variant="tonal">Sin nombre MSP</v-chip><v-chip v-else-if="workspaceFusionGroups.some(group => group.paths.includes(document.path))" size="x-small" color="warning" variant="tonal">Fusionar después</v-chip><v-icon v-if="selectedWorkspacePDF === document.path" icon="mdi-eye-outline" size="18"/>
                     </button>
                     <v-btn type="button" prepend-icon="mdi-delete-outline" variant="tonal" size="small" color="error" class="workspace-delete-pdf-btn" :aria-label="`Quitar ${document.name}`" title="Quitar PDF de esta carpeta" @click="requestDeleteWorkspacePDF(document.path)">Quitar</v-btn>
                   </div>
@@ -1449,30 +1552,22 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
                   <v-card-actions><v-spacer/><v-btn type="button" variant="text" @click="deletePDFDialog=false;deletePDFTarget=''">Cancelar</v-btn><v-btn type="button" color="error" :loading="workspaceBusy" @click="deleteWorkspacePDF">Quitar PDF</v-btn></v-card-actions>
                 </v-card>
               </v-dialog>
-              <v-dialog v-model="replacePDFDialog" max-width="460">
+              <v-dialog v-model="replacePDFDialog" max-width="460" :persistent="workspaceSending">
                 <v-card class="action-dialog">
                   <v-card-title>Reemplazar PDF</v-card-title>
+                  <v-alert v-if="replacePDFError" type="error" variant="tonal" role="alert" class="mx-6">{{ replacePDFError }}</v-alert>
                   <v-card-text><p>El archivo local <strong>{{ replacePDFFile?.name }}</strong> reemplazará a <strong>{{ selectedWorkspaceDocument?.name }}</strong> dentro de <strong>{{ workspacePatient }}</strong>. El archivo local adoptará automáticamente el nombre del PDF seleccionado; su nombre original se conservará solo como referencia. La versión anterior queda en las fuentes del expediente.</p></v-card-text>
-                  <v-card-actions><v-spacer/><v-btn type="button" variant="text" @click="replacePDFDialog=false;replacePDFFile=null;replacePDFTarget=''">Cancelar</v-btn><v-btn type="button" color="warning" :loading="workspaceSending" @click="confirmReplaceWorkspacePDF">Confirmar reemplazo</v-btn></v-card-actions>
+                  <v-card-actions><v-spacer/><v-btn type="button" variant="text" :disabled="workspaceSending" @click="replacePDFDialog=false;replacePDFFile=null;replacePDFTarget='';replacePDFError=''">Cancelar</v-btn><v-btn type="button" color="warning" :loading="workspaceSending" @click="confirmReplaceWorkspacePDF">Confirmar reemplazo</v-btn></v-card-actions>
                 </v-card>
               </v-dialog>
-            </section>
-            <div v-if="ingestResult" class="ingest-submit-row"><span>¿Necesitas recibir planillas de otro período o servicio?</span><v-btn type="button" variant="text" prepend-icon="mdi-plus" @click="startNewIngest">Recibir otro período</v-btn></div>
-            <div v-if="ingestResult" class="ingest-submit-row workspace-danger-row"><span>Elimina permanentemente toda la carpeta de este período, incluidas fuentes, reportes y PDFs.</span><v-btn type="button" color="error" variant="tonal" prepend-icon="mdi-folder-remove-outline" @click="requestDeleteWorkspace">Eliminar carpeta completa</v-btn></div>
-            <v-expansion-panels v-if="!ingestResult && ingestMode === 'new'" variant="accordion" class="ingest-resume-panel"><v-expansion-panel><v-expansion-panel-title>¿Tienes el ID de un lote?</v-expansion-panel-title><v-expansion-panel-text><p>Escribe el ID que apareció al recibir el lote.</p><div class="ingest-submit-row"><v-text-field v-model="existingIngestJobId" label="ID del lote" placeholder="JOB-…" density="comfortable" hide-details/><v-btn color="primary" prepend-icon="mdi-folder-cog-outline" :loading="ingestProcessing" :disabled="!existingIngestJobId.trim()" @click="processIngest">Abrir lote por ID</v-btn></div></v-expansion-panel-text></v-expansion-panel></v-expansion-panels>
-            <div v-if="ingestSending || completionSending" class="ingest-progress"><div><span>{{ completionSending ? 'Subiendo documentos habilitantes…' : 'Subiendo lote de planillas…' }}</span><strong>{{ ingestProgress }}%</strong></div><v-progress-linear :model-value="ingestProgress" color="primary" rounded/></div>
-            <div v-if="!ingestResult && ingestMode === 'new'" class="ingest-submit-row"><span>El ZIP se guardará en el espacio privado del servidor.</span><v-btn type="submit" color="primary" size="large" prepend-icon="mdi-cloud-upload-outline" :loading="ingestSending" :disabled="!ingestValid || ingestSending">{{ ingestSending ? 'Subiendo ZIP…' : 'Recibir lote de planillas' }}</v-btn></div>
-          </form>
-          <footer>Hecho con cuidado para tus documentos <span>✳</span></footer>
-        </section>
-      </main>
-    </div>
-    <div v-if="dragging" class="drop-overlay"><div class="drop-message"><v-icon icon="mdi-cloud-upload-outline" size="46"/><h2>Suelta tus archivos aquí</h2><p>Se guardarán en {{ activeFolder === folders[0] ? 'Mi espacio' : activeFolder }}</p></div></div>
+        </v-card-text>
+      </v-card>
+    </v-dialog>
     <v-dialog v-model="deleteWorkspaceDialog" max-width="600" persistent>
       <v-card class="action-dialog">
         <v-card-title>Eliminar período guardado</v-card-title>
         <v-card-text>
-          <p>Se eliminará permanentemente <strong>{{ workspaceDeleteTargetName }}</strong>, con el ZIP fuente, los documentos habilitantes, reportes y archivos preparados. También se quitará su asociación en Oracle. Esta acción no se puede deshacer.</p>
+          <p>Se eliminará permanentemente <strong>{{ workspaceDeleteTargetName }}</strong>, con el ZIP fuente, los documentos habilitantes, reportes y archivos preparados. También se quitará su asociación en Oracle y sus coberturas quedarán pendientes para poder generarlas nuevamente al recrear el período. Esta acción no se puede deshacer.</p>
           <p>Para confirmar, escribe o pega el ID completo del período:</p>
           <div class="workspace-delete-code">{{ workspaceDeleteTargetID }}</div>
           <v-text-field :model-value="workspaceDeleteInput" label="ID del período" autocomplete="off" autocapitalize="characters" spellcheck="false" prepend-inner-icon="mdi-keyboard-outline" @update:model-value="setWorkspaceDeleteInput"/>

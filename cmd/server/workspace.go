@@ -185,7 +185,7 @@ func (s *server) deleteWorkspace(w http.ResponseWriter, r *http.Request) {
 	if err := os.RemoveAll(backup); err != nil {
 		log.Printf("expediente %s: Oracle quedó sincronizado, pero la limpieza local quedó pendiente: %v", job.ID, err)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"status": "DELETED", "job_id": job.ID, "message": "Se eliminó el período y se actualizaron sus rutas y estados de documentos en Oracle."})
+	writeJSON(w, http.StatusOK, map[string]any{"status": "DELETED", "job_id": job.ID, "message": "Se eliminó el período. Sus coberturas quedaron pendientes para poder generarlas de nuevo al recrearlo."})
 }
 
 func (s *server) workspaceDocuments(w http.ResponseWriter, r *http.Request) {

@@ -6,9 +6,9 @@
     "semantic_hash": ""
   },
   "src/App.vue": {
-    "mtime": 1790973143.0917275,
-    "seen": 1790973163.4007556,
-    "ast_hash": "03655d608715abbcd8d7ecb6c6af0a43",
+    "mtime": 1790978501.7381864,
+    "seen": 1790978698.2601902,
+    "ast_hash": "d4e8bffb37e61a3713a8f59c8054e01b",
     "semantic_hash": ""
   },
   "src/main.js": {
@@ -30,9 +30,9 @@
     "semantic_hash": ""
   },
   "PRINCIPIOS_DE_PRODUCTO.md": {
-    "mtime": 1790712564.3108733,
-    "seen": 1790712712.9048777,
-    "ast_hash": "a55fc368d0878700c93f40bbf5c27171",
+    "mtime": 1790980180.1615338,
+    "seen": 1790980212.6990602,
+    "ast_hash": "967e66e9a5fcb651007ecf7197cd920e",
     "semantic_hash": ""
   },
   "index.html": {
@@ -66,9 +66,9 @@
     "semantic_hash": "cb8c48aec536d27ddd40572c76127e48"
   },
   "cmd/server/ingesta.go": {
-    "mtime": 1790972499.863853,
-    "seen": 1790972533.6381433,
-    "ast_hash": "011e12efc8fa053113c29aca6623bdf7",
+    "mtime": 1790976229.9272633,
+    "seen": 1790976242.8071446,
+    "ast_hash": "8fe633273ea61736555f065365215137",
     "semantic_hash": ""
   },
   "requerimientos/00req_general.md": {
@@ -114,10 +114,10 @@
     "semantic_hash": ""
   },
   "cmd/demo-lote/main.go": {
-    "mtime": 1790786695.071375,
-    "seen": 1790884281.3117275,
-    "ast_hash": "10a2656d30a9aeba374b69d93f0d6a46",
-    "semantic_hash": "10a2656d30a9aeba374b69d93f0d6a46"
+    "mtime": 1790975281.5715249,
+    "seen": 1790975301.3179057,
+    "ast_hash": "1effa46de34dd4ddbf589fa1c44aa50e",
+    "semantic_hash": ""
   },
   "requerimientos/07_reglas_estructura_acfss.md": {
     "mtime": 1790883037.0519834,
@@ -144,9 +144,9 @@
     "semantic_hash": ""
   },
   "cmd/server/workspace.go": {
-    "mtime": 1790969857.656034,
-    "seen": 1790969938.232263,
-    "ast_hash": "29a5105904763ebb3998b0cc3826b983",
+    "mtime": 1790978501.7371864,
+    "seen": 1790978698.2601485,
+    "ast_hash": "d3843840ada15460f380d36d74e45d77",
     "semantic_hash": ""
   },
   "catalogos/codigos_msp.json": {
@@ -156,9 +156,9 @@
     "semantic_hash": "8a9b180f641ab16e6acade0a6a37eba4"
   },
   "cmd/server/oracle_documents.go": {
-    "mtime": 1790949493.528644,
-    "seen": 1790969481.0024068,
-    "ast_hash": "258566b00fb61597cbd51c9bd5ac0cec",
+    "mtime": 1790980171.3074782,
+    "seen": 1790980212.6990254,
+    "ast_hash": "ae7ce8e234c4caf3154925f333d1a503",
     "semantic_hash": ""
   },
   "graphify-out/memory/query_20261002_142916_923a1475_why_couldn_t_the_user_delete_saved_period_work_amb.md": {
@@ -174,9 +174,9 @@
     "semantic_hash": ""
   },
   "cmd/server/coberturas.go": {
-    "mtime": 1790973070.6392906,
-    "seen": 1790973163.4007049,
-    "ast_hash": "cf5a57760e6d7f1b1d10da1e903f861a",
+    "mtime": 1790980164.6244361,
+    "seen": 1790980212.6990156,
+    "ast_hash": "89dda93c7361d49720f8a815988a6a6e",
     "semantic_hash": ""
   },
   "scripts/cobertura/generate_pdf.cjs": {

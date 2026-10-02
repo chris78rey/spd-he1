@@ -229,7 +229,7 @@ Tramites consultados: %d (solo se leyó PDI_TRAMITE; no se leyeron nombres ni c�
 Servicio de los documentos de ejemplo: %s
 
 Seleccione en Carga dual:
-- lote_pacientes_oracle_demo.zip como lote clínico
+- lote_pacientes_oracle_demo.zip como lote
 - 3. MATRIZ_%s_%s_%s.xlsm como matriz
 - 2. PLANILLA CONSOLIDADA.pdf como planilla consolidada
 - 1. OFICIO DE PAGO.pdf como oficio

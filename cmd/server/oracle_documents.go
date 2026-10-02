@@ -256,7 +256,7 @@ func (s *server) syncOracleWorkspace(ctx context.Context, job *stagedJob, packag
 }
 
 // clearOracleWorkspaceIndex marks the documents in a workspace as removed and
-// clears only PDI_PATH values that still point inside that workspace.
+// resets coverage only for planillas still indexed to this workspace.
 func (s *server) clearOracleWorkspaceIndex(ctx context.Context, job stagedJob, packageRoot string) error {
 	if s.serviceDB == nil {
 		return errors.New("Oracle no está disponible")
@@ -297,8 +297,8 @@ func (s *server) clearOracleWorkspaceIndex(ctx context.Context, job stagedJob, p
 		return fmt.Errorf("no se pudo marcar como eliminados los PDFs de Oracle: %w", err)
 	}
 	for _, id := range ids {
-		if _, err := tx.ExecContext(ctx, "UPDATE "+pdiTable+" SET PDI_PATH = NULL WHERE PDI_ID = :id AND INSTR(PDI_PATH, :prefix) = 1", sql.Named("id", id), sql.Named("prefix", expedientesPrefix)); err != nil {
-			return fmt.Errorf("no se pudo limpiar PDI_PATH para PDI_ID %d: %w", id, err)
+		if _, err := tx.ExecContext(ctx, "UPDATE "+pdiTable+" SET PDI_PATH = NULL, PDI_COBERTURA = 'N' WHERE PDI_ID = :id AND INSTR(PDI_PATH, :prefix) = 1", sql.Named("id", id), sql.Named("prefix", expedientesPrefix)); err != nil {
+			return fmt.Errorf("no se pudo limpiar la ruta y restablecer la cobertura para PDI_ID %d: %w", id, err)
 		}
 	}
 	return tx.Commit()

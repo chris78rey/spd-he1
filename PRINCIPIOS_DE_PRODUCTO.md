@@ -33,3 +33,11 @@ Los archivos de una biblioteca crecen más rápido que la capacidad de recordar 
 - Porcentaje de cargas que sobreviven a una recarga y se abren correctamente.
 - Errores al mover o eliminar documentos y facilidad para recuperarse de ellos.
 - Uso de filtros y acciones en lote frente a abrir documentos uno por uno.
+
+## Evidencia de uso: documentos del paciente
+
+El usuario indicó que ampliar el visor dejaba poco espacio para distinguir los nombres de los PDFs junto al botón «Quitar». El visor y las acciones del paciente se reúnen en un modal amplio: la lista conserva espacio propio, muestra los nombres en varias líneas y sitúa «Quitar» debajo de cada nombre. Cerrar y reabrir el modal conserva la selección del paciente y del PDF dentro del mismo período.
+
+## Evidencia de uso: regenerar coberturas después de eliminar un período
+
+El usuario indicó que, al eliminar un período, debe poder volver a generar y descargar sus hojas de cobertura. El estado de cobertura debe liberarse junto con las rutas de documentos del período eliminado; las planillas que conservan una ruta activa en otro expediente no se deben alterar. Los registros históricos de períodos eliminados deben permitir recuperar las planillas que quedaron marcadas como cubiertas sin un expediente activo.

@@ -655,7 +655,13 @@ func (s *server) coverageRows(ctx context.Context, job stagedJob) ([]coveragePla
 		return []coveragePlanilla{}, nil
 	}
 	table := oracleTableName(s.schema)
-	query := "SELECT PDI_ID, TO_CHAR(PDI_TRAMITE), PDI_PACIENTE, TO_CHAR(PDI_FECHA_HASTA, 'YYYY-MM-DD'), PDI_CEDULA, PDI_MENOR_EDAD, PDI_DEPENDIENTE_01, PDI_DEPENDIENTE_02, PDI_COBERTURA FROM " + table + " WHERE PDI_MES = :mes AND PDI_ANIO = :anio AND PDI_PLANILLADO = 'S' AND PDI_ASEGURADORA = 'MSP'"
+	docTable := oracleQualified(s.schema, pdiDocumentTable)
+	query := "SELECT p.PDI_ID, TO_CHAR(p.PDI_TRAMITE), p.PDI_PACIENTE, TO_CHAR(p.PDI_FECHA_HASTA, 'YYYY-MM-DD'), p.PDI_CEDULA, p.PDI_MENOR_EDAD, p.PDI_DEPENDIENTE_01, p.PDI_DEPENDIENTE_02, " +
+		"CASE WHEN p.PDI_COBERTURA = 'S' AND p.PDI_PATH IS NULL " +
+		"AND EXISTS (SELECT 1 FROM " + docTable + " d WHERE d.PDI_ID = p.PDI_ID AND d.PDD_ESTADO = 'ELIMINADO') " +
+		"AND NOT EXISTS (SELECT 1 FROM " + docTable + " a WHERE a.PDI_ID = p.PDI_ID AND a.PDD_ESTADO IN ('VIGENTE', 'PENDIENTE')) " +
+		"THEN 'N' ELSE p.PDI_COBERTURA END " +
+		"FROM " + table + " p WHERE p.PDI_MES = :mes AND p.PDI_ANIO = :anio AND p.PDI_PLANILLADO = 'S' AND p.PDI_ASEGURADORA = 'MSP'"
 	rows, err := s.serviceDB.QueryContext(ctx, query, sql.Named("mes", job.Month), sql.Named("anio", job.Year))
 	if err != nil {
 		return nil, err
