@@ -35,7 +35,7 @@ El sistema hospitalario emisor del prestador exporta carpetas numéricas asociad
 Este módulo resuelve la **resolución de identidades y la persistencia del estado documental**:
 
 1. Consulta en la tabla `DIGITALIZACION.PLANILLA_DIGITAL` los datos del paciente (`PDI_PACIENTE`, `PDI_CEDULA`, `PDI_HC`), la especialidad (`PDI_SERVICIO` / `PDI_COD_SERVICIO`) y los flags de cobertura.
-2. Resuelve el cuello de botella de rendimiento mediante una **precarga masiva en memoria (`map[int]PlanillaDTO`)** filtrada por mes, año y bandera de planillado activo (`PDI_PLANILLADO = 'S'`). Esto permite al motor en Go consultar datos en tiempo constante \(O(1)\) sin saturar la base de datos con miles de conexiones concurrentes.
+2. Resuelve el cuello de botella de rendimiento mediante una **precarga masiva en memoria (`map[int]PlanillaDTO`)** filtrada por mes, año, bandera de planillado activo (`PDI_PLANILLADO = 'S'`) y aseguradora MSP (`PDI_ASEGURADORA = 'MSP'`). Esto permite al motor en Go consultar datos en tiempo constante \(O(1)\) sin saturar la base de datos con miles de conexiones concurrentes.
 3. Persiste y actualiza las transiciones de estado de digitalización (`PDI_ESTADO_DIGITALIZACION`, `PDI_PROCESADO`, `PDI_FECHA_PROCESO`, `PDI_OBJETADO`) a lo largo del pipeline.
 
 #### **Flujos de Entrada (Inputs):**
@@ -214,7 +214,7 @@ type PlanillaDTO struct {
 SELECT PDI_ID, PDI_TRAMITE, PDI_PACIENTE, PDI_CEDULA, PDI_HC,
        PDI_COD_SERVICIO, PDI_SERVICIO, PDI_MENOR_EDAD, PDI_DEPENDIENTE_01, PDI_OBJETADO
 FROM DIGITALIZACION.PLANILLA_DIGITAL
-WHERE PDI_ANIO = :1 AND PDI_MES = :2 AND PDI_PLANILLADO = 'S'
+WHERE PDI_ANIO = :1 AND PDI_MES = :2 AND PDI_PLANILLADO = 'S' AND PDI_ASEGURADORA = 'MSP'
        │
        ▼
 [Iterar Hileras SQL & Aplicar Sanitización de Nombres en Go]
@@ -245,7 +245,7 @@ WHERE PDI_ID = :2
     - Define los límites del Pool de Conexiones (`SetMaxOpenConns(20)`, `SetMaxIdleConns(5)`, `SetConnMaxLifetime(15 * time.Minute)`).
 2. **Precarga Masiva en Memoria (`cache_service.go`):**
     
-    - Al iniciar el lote de un mes prestacional, ejecuta la consulta SQL filtrada por `PDI_ANIO`, `PDI_MES` y `PDI_PLANILLADO = 'S'`.
+    - Al iniciar el lote de un mes prestacional, ejecuta la consulta SQL filtrada por `PDI_ANIO`, `PDI_MES`, `PDI_PLANILLADO = 'S'` y `PDI_ASEGURADORA = 'MSP'`.
     - Lee secuencialmente las filas y procesa el campo `PDI_PACIENTE` con la función de saneamiento:
         - Convierte a mayúsculas.
         - Elimina puntos o espacios iniciales (ej. `'. PRUEBA PACIENTE JUAN CARLOS'` \(\rightarrow\) `'PRUEBA PACIENTE JUAN CARLOS'`).

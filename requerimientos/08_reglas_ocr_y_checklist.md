@@ -17,7 +17,7 @@
 
 ### Comparación de fechas clínicas con Oracle
 
-- Relacionar cada carpeta numérica con su fila por `PDI_TRAMITE`, usando el conjunto filtrado por `PDI_MES`, `PDI_ANIO` y `PDI_PLANILLADO = 'S'`.
+- Relacionar cada carpeta numérica con su fila por `PDI_TRAMITE`, usando el conjunto filtrado por `PDI_MES`, `PDI_ANIO`, `PDI_PLANILLADO = 'S'` y `PDI_ASEGURADORA = 'MSP'`.
 - La ventana clínica de referencia de ese trámite es `PDI_FECHA_DESDE` a `PDI_FECHA_HASTA` (ambos inclusive). No comparar todas las fechas del PDF directamente con `PDI_MES/PDI_ANIO`: el período facturado y la fecha clínica cumplen funciones distintas.
 - Durante la clasificación, buscar fechas reconocibles en el texto vectorial de las páginas 1 y 2 o en el texto OCR de la página 1. Se aceptan `DD/MM/YYYY`, `DD-MM-YYYY`, `YYYY-MM-DD` y fechas en español con el nombre del mes.
 - Omitir las fechas identificadas junto a las etiquetas `NACIMIENTO` o `FECHA DE PROCESO`. Las fechas reconocidas fuera de la ventana Oracle se muestran asociadas al PDF como una alerta para revisión humana. No bloquean, renombran ni eliminan el documento.
@@ -29,7 +29,7 @@
 ### Vista previa del lote antes de preparar
 
 - Después de guardar el ZIP en staging y antes de ejecutar OCR/organización, mostrar el total de carpetas de trámites y PDFs.
-- Por carpeta numérica mostrar `PDI_TRAMITE`, cantidad de PDFs, paciente, `PDI_SERVICIO`, `PDI_FECHA_DESDE/HASTA` y si hubo cruce con una planilla de Oracle filtrada por `PDI_MES`, `PDI_ANIO` y `PDI_PLANILLADO = 'S'`.
+- Por carpeta numérica mostrar `PDI_TRAMITE`, cantidad de PDFs, paciente, `PDI_SERVICIO`, `PDI_FECHA_DESDE/HASTA` y si hubo cruce con una planilla de Oracle filtrada por `PDI_MES`, `PDI_ANIO`, `PDI_PLANILLADO = 'S'` y `PDI_ASEGURADORA = 'MSP'`.
 - Contabilizar y señalar carpetas no encontradas en Oracle, trámites sin nombre de paciente y rutas/archivos que no siguen `[PDI_TRAMITE]/archivo.pdf`. La tabla se pagina de diez en diez.
 - La vista previa inspecciona el ZIP ya subido y no vuelve a transferirlo ni ejecuta OCR. No descarta registros por servicio o fecha; expone esos campos para revisión. Solo habilita preparar cuando hay PDFs y no hay carpetas/trámites sin correspondencia ni entradas incompatibles con la estructura aceptada.
 

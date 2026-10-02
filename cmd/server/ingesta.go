@@ -39,24 +39,26 @@ type workspaceDocument struct {
 	OriginalName string `json:"original_name"`
 	RelativePath string `json:"relative_path"`
 	Size         int64  `json:"size_bytes"`
+	PlanillaID   int64  `json:"pdi_id,omitempty"`
 }
 
 type stagedJob struct {
-	ID               string              `json:"job_id"`
-	Status           string              `json:"status"`
-	Username         string              `json:"username"`
-	Month            string              `json:"mes"`
-	Year             string              `json:"anio"`
-	Service          string              `json:"tipo_servicio"`
-	ReceivedAt       time.Time           `json:"received_at"`
-	Files            []stagedUpload      `json:"files"`
-	Aliases          []string            `json:"legacy_ids,omitempty"`
-	ExternalPDFs     []workspaceDocument `json:"external_pdfs,omitempty"`
-	Renames          map[string]string   `json:"renames,omitempty"`
-	Replacements     map[string]string   `json:"replacements,omitempty"`
-	MergedDuplicates map[string][]string `json:"merged_duplicates,omitempty"`
-	DeletedPDFs      map[string]bool     `json:"deleted_pdfs,omitempty"`
-	StatusDetail     string              `json:"status_detail"`
+	ID                string              `json:"job_id"`
+	Status            string              `json:"status"`
+	Username          string              `json:"username"`
+	Month             string              `json:"mes"`
+	Year              string              `json:"anio"`
+	Service           string              `json:"tipo_servicio"`
+	ReceivedAt        time.Time           `json:"received_at"`
+	Files             []stagedUpload      `json:"files"`
+	Aliases           []string            `json:"legacy_ids,omitempty"`
+	ExternalPDFs      []workspaceDocument `json:"external_pdfs,omitempty"`
+	Renames           map[string]string   `json:"renames,omitempty"`
+	Replacements      map[string]string   `json:"replacements,omitempty"`
+	MergedDuplicates  map[string][]string `json:"merged_duplicates,omitempty"`
+	DeletedPDFs       map[string]bool     `json:"deleted_pdfs,omitempty"`
+	DocumentPlanillas map[string]int64    `json:"document_planillas,omitempty"`
+	StatusDetail      string              `json:"status_detail"`
 }
 
 var headerParts = []uploadPart{
@@ -109,10 +111,11 @@ func periodWorkspaceID(service, month, year string) string {
 }
 
 type planillaIdentity struct {
-	Patient   string
-	Service   string
-	CareFrom  time.Time
-	CareUntil time.Time
+	PlanillaID int64
+	Patient    string
+	Service    string
+	CareFrom   time.Time
+	CareUntil  time.Time
 }
 
 type ingestFolderPreview struct {
@@ -144,7 +147,7 @@ type ingestPreview struct {
 
 func (s *server) loadPlanillaIdentities(ctx context.Context, job stagedJob) (map[string]planillaIdentity, error) {
 	table := oracleTableName(s.schema)
-	query := "SELECT PDI_TRAMITE, PDI_PACIENTE, TO_CHAR(PDI_FECHA_DESDE, 'YYYY-MM-DD'), TO_CHAR(PDI_FECHA_HASTA, 'YYYY-MM-DD'), PDI_SERVICIO FROM " + table + " WHERE PDI_MES = :mes AND PDI_ANIO = :anio AND PDI_PLANILLADO = 'S'"
+	query := "SELECT TO_CHAR(PDI_ID), PDI_TRAMITE, PDI_PACIENTE, TO_CHAR(PDI_FECHA_DESDE, 'YYYY-MM-DD'), TO_CHAR(PDI_FECHA_HASTA, 'YYYY-MM-DD'), PDI_SERVICIO FROM " + table + " WHERE PDI_MES = :mes AND PDI_ANIO = :anio AND PDI_PLANILLADO = 'S' AND PDI_ASEGURADORA = 'MSP'"
 	rows, err := s.serviceDB.QueryContext(ctx, query, sql.Named("mes", job.Month), sql.Named("anio", job.Year))
 	if err != nil {
 		return nil, fmt.Errorf("No se pudo consultar Oracle para el período %s/%s.", job.Month, job.Year)
@@ -152,15 +155,19 @@ func (s *server) loadPlanillaIdentities(ctx context.Context, job stagedJob) (map
 	defer rows.Close()
 	identities := make(map[string]planillaIdentity)
 	for rows.Next() {
-		var rawID, patient, rawCareFrom, rawCareUntil, service sql.NullString
-		if err := rows.Scan(&rawID, &patient, &rawCareFrom, &rawCareUntil, &service); err != nil {
+		var rawPlanillaID, rawID, patient, rawCareFrom, rawCareUntil, service sql.NullString
+		if err := rows.Scan(&rawPlanillaID, &rawID, &patient, &rawCareFrom, &rawCareUntil, &service); err != nil {
 			return nil, errors.New("No se pudo leer la identidad del paciente desde Oracle.")
 		}
 		tramite := strings.TrimSpace(rawID.String)
 		if !rawID.Valid || !tramitePattern.MatchString(tramite) {
 			continue
 		}
-		identities[tramite] = planillaIdentity{Patient: strings.TrimSpace(patient.String), Service: strings.TrimSpace(service.String), CareFrom: parseOracleDate(rawCareFrom), CareUntil: parseOracleDate(rawCareUntil)}
+		planillaID, parseErr := strconv.ParseInt(strings.TrimSpace(rawPlanillaID.String), 10, 64)
+		if !rawPlanillaID.Valid || parseErr != nil || planillaID <= 0 {
+			return nil, errors.New("Oracle devolvió un PDI_ID inválido para una planilla MSP.")
+		}
+		identities[tramite] = planillaIdentity{PlanillaID: planillaID, Patient: strings.TrimSpace(patient.String), Service: strings.TrimSpace(service.String), CareFrom: parseOracleDate(rawCareFrom), CareUntil: parseOracleDate(rawCareUntil)}
 	}
 	if err := rows.Err(); err != nil {
 		return nil, errors.New("Falló la lectura de pacientes desde Oracle.")
@@ -497,6 +504,14 @@ func (s *server) processStagedJob(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "Se procesó el lote, pero no se pudo guardar su estado.")
 		return
 	}
+	packageRoot := filepath.Join(outputRoot, packageFolderName(&job))
+	if err := s.syncOracleWorkspace(ctx, &job, packageRoot); err != nil {
+		log.Printf("ingesta %s: paquete guardado localmente; falló índice Oracle: %v", job.ID, err)
+		job.StatusDetail = "Los archivos se prepararon en el espacio privado, pero no se pudo terminar el registro en Oracle. Vuelve a preparar el expediente cuando Oracle esté disponible."
+		_ = s.saveStagedJob(job)
+		writeError(w, http.StatusInternalServerError, job.StatusDetail)
+		return
+	}
 	writeJSON(w, http.StatusOK, jobResponse(s, job, filepath.Join(outputRoot, packageFolderName(&job)), report.Summary))
 }
 
@@ -539,6 +554,11 @@ func (s *server) reclassifyStagedJob(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Printf("ingesta %s: falló reclasificación OCR: %v", job.ID, err)
 		writeError(w, http.StatusUnprocessableEntity, err.Error())
+		return
+	}
+	if err := s.syncOracleWorkspace(ctx, &job, filepath.Join(outputRoot, packageFolderName(&job))); err != nil {
+		log.Printf("ingesta %s: falló sincronización Oracle tras reclasificar: %v", job.ID, err)
+		writeError(w, http.StatusInternalServerError, "Los archivos se actualizaron, pero no se pudo sincronizar el registro Oracle.")
 		return
 	}
 	writeJSON(w, http.StatusOK, jobResponse(s, job, filepath.Join(outputRoot, packageFolderName(&job)), report.Summary))
@@ -751,7 +771,7 @@ func (s *server) buildPatientFolders(ctx context.Context, job *stagedJob, output
 		return report, err
 	}
 	if len(identities) == 0 {
-		return report, errors.New("Oracle no devolvió planillas del período seleccionado con PDI_PLANILLADO = 'S'.")
+		return report, errors.New("Oracle no devolvió planillas MSP del período seleccionado con PDI_PLANILLADO = 'S'.")
 	}
 
 	stage := s.jobSourcesDir(job.ID)
@@ -847,6 +867,8 @@ func (s *server) buildPatientFolders(ctx context.Context, job *stagedJob, output
 		}
 		originalName := filepath.Base(parts[1])
 		classified := classifyPDF(ctx, workFile.Name(), originalName, rules, identity.CareFrom, identity.CareUntil)
+		classified.PlanillaID = identity.PlanillaID
+		classified.Tramite = parts[0]
 		classifiedName := classified.Code
 		if classifiedName == "" {
 			classifiedName = pendingPDFName(originalName)
@@ -978,6 +1000,14 @@ func (s *server) buildPatientFolders(ctx context.Context, job *stagedJob, output
 	}
 	report.Files = filtered
 	report.Summary = summarizeClassification(report.Files)
+	if job.DocumentPlanillas == nil {
+		job.DocumentPlanillas = make(map[string]int64)
+	}
+	for _, item := range report.Files {
+		if item.Output != "" && item.PlanillaID > 0 {
+			job.DocumentPlanillas[filepath.ToSlash(item.Output)] = item.PlanillaID
+		}
+	}
 	tempReports, err := os.MkdirTemp(jobRoot, ".reportes-")
 	if err != nil {
 		return report, errors.New("No se pudo preparar el directorio de reportes.")

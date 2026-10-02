@@ -2,6 +2,7 @@ package main
 
 import (
 	"archive/zip"
+	"context"
 	"crypto/rand"
 	"encoding/json"
 	"errors"
@@ -48,6 +49,38 @@ func loadMSPPDFCodeSet() (map[string]struct{}, error) {
 		allowed[code.Value] = struct{}{}
 	}
 	return allowed, nil
+}
+
+func (s *server) planillaForPatient(ctx context.Context, job stagedJob, patient string) (int64, error) {
+	identities, err := s.loadPlanillaIdentities(ctx, job)
+	if err != nil {
+		return 0, err
+	}
+	ids := make(map[int64]bool)
+	for _, identity := range identities {
+		if normalizePatientFolder(identity.Patient) == patient {
+			ids[identity.PlanillaID] = true
+		}
+	}
+	if len(ids) == 0 {
+		return 0, errors.New("No se encontró una planilla MSP de Oracle para esta carpeta de paciente.")
+	}
+	if len(ids) > 1 {
+		return 0, errors.New("Esta carpeta corresponde a más de un PDI_TRAMITE. Para evitar asociar el PDF a una planilla incorrecta, se necesita elegir el trámite antes de añadirlo.")
+	}
+	for id := range ids {
+		return id, nil
+	}
+	return 0, errors.New("No se pudo identificar la planilla Oracle de esta carpeta.")
+}
+
+func planillaForPath(job stagedJob, relative string) int64 {
+	relative = filepath.ToSlash(filepath.Clean(filepath.FromSlash(relative)))
+	if id := job.DocumentPlanillas[relative]; id > 0 { return id }
+	for _, doc := range job.ExternalPDFs {
+		if filepath.ToSlash(filepath.Clean(filepath.FromSlash(doc.RelativePath))) == relative && doc.PlanillaID > 0 { return doc.PlanillaID }
+	}
+	return 0
 }
 
 func nextMSPPDFName(dir, code, ignoredName string) (string, error) {
@@ -235,6 +268,11 @@ func (s *server) deleteWorkspacePDF(w http.ResponseWriter, r *http.Request, job 
 	}
 	if err := os.Remove(backupPath); err != nil {
 		writeError(w, http.StatusInternalServerError, "El PDF se quitó, pero no se pudo limpiar el respaldo temporal.")
+		return
+	}
+	if err := s.syncOracleWorkspace(r.Context(), &job, packageRoot); err != nil {
+		log.Printf("expediente %s: falló sincronización Oracle tras quitar %s: %v", job.ID, cleanRelative, err)
+		writeError(w, http.StatusInternalServerError, "El PDF se quitó del espacio, pero no se pudo sincronizar Oracle.")
 		return
 	}
 	documents, patients, err := listWorkspacePDFs(packageRoot)
@@ -650,6 +688,12 @@ func (s *server) renameWorkspacePDF(w http.ResponseWriter, r *http.Request) {
 	} else {
 		job.Renames[original] = newRelative
 	}
+	if job.DocumentPlanillas != nil {
+		if planillaID, exists := job.DocumentPlanillas[oldRelative]; exists {
+			delete(job.DocumentPlanillas, oldRelative)
+			job.DocumentPlanillas[newRelative] = planillaID
+		}
+	}
 	for index := range job.ExternalPDFs {
 		if filepath.ToSlash(job.ExternalPDFs[index].RelativePath) == oldRelative {
 			job.ExternalPDFs[index].RelativePath = newRelative
@@ -665,6 +709,11 @@ func (s *server) renameWorkspacePDF(w http.ResponseWriter, r *http.Request) {
 	if err := s.saveStagedJob(job); err != nil {
 		_ = os.Rename(newPath, oldPath)
 		writeError(w, http.StatusInternalServerError, "El PDF se renombró, pero no se pudo guardar el cambio.")
+		return
+	}
+	if err := s.syncOracleWorkspace(r.Context(), &job, packageRoot); err != nil {
+		log.Printf("expediente %s: falló sincronización Oracle tras renombrar %s: %v", job.ID, newRelative, err)
+		writeError(w, http.StatusInternalServerError, "El PDF se renombró, pero no se pudo sincronizar Oracle.")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"path": newRelative, "name": newName})
@@ -837,7 +886,8 @@ func (s *server) mergeWorkspacePDFs(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	job.MergedDuplicates[canonicalRelative] = duplicates
-	job.ExternalPDFs = append(job.ExternalPDFs, workspaceDocument{ID: strings.TrimSuffix(storedName, ".pdf"), StoredName: storedName, OriginalName: group.Code, RelativePath: canonicalRelative})
+	canonicalID := job.DocumentPlanillas[canonicalRelative]
+	job.ExternalPDFs = append(job.ExternalPDFs, workspaceDocument{ID: strings.TrimSuffix(storedName, ".pdf"), StoredName: storedName, OriginalName: group.Code, RelativePath: canonicalRelative, PlanillaID: canonicalID})
 	if err := s.saveStagedJob(job); err != nil {
 		_ = os.Remove(canonical)
 		for path, saved := range backupPaths {
@@ -846,6 +896,11 @@ func (s *server) mergeWorkspacePDFs(w http.ResponseWriter, r *http.Request) {
 		job.Replacements, job.ExternalPDFs, job.MergedDuplicates = previousReplacements, previousExternal, previousMerged
 		_ = os.Remove(mergedSource)
 		writeError(w, http.StatusInternalServerError, "No se pudo registrar la fusión; se restauraron los originales.")
+		return
+	}
+	if err := s.syncOracleWorkspace(r.Context(), &job, packageRoot); err != nil {
+		log.Printf("expediente %s: falló sincronización Oracle tras fusionar %s: %v", job.ID, canonicalRelative, err)
+		writeError(w, http.StatusInternalServerError, "Los PDFs se fusionaron en el espacio, pero no se pudo sincronizar Oracle.")
 		return
 	}
 	for _, saved := range backupPaths {
@@ -1016,7 +1071,17 @@ func (s *server) addWorkspacePDFs(w http.ResponseWriter, r *http.Request, job st
 			job.Replacements = make(map[string]string)
 		}
 		job.Replacements[replaceRelative] = storedName
-		job.ExternalPDFs = append(job.ExternalPDFs, workspaceDocument{ID: strings.TrimSuffix(storedName, ".pdf"), StoredName: storedName, OriginalName: safeOriginalFilename(files[0].Filename), RelativePath: replaceRelative, Size: size})
+		planillaID := planillaForPath(job, replaceRelative)
+		var mapErr error
+		if planillaID == 0 { planillaID, mapErr = s.planillaForPatient(r.Context(), job, patient) }
+		if mapErr != nil {
+			_ = os.Remove(destination)
+			_ = os.Rename(backupPath, destination)
+			_ = os.Remove(sourcePath)
+			writeError(w, http.StatusConflict, mapErr.Error())
+			return
+		}
+		job.ExternalPDFs = append(job.ExternalPDFs, workspaceDocument{ID: strings.TrimSuffix(storedName, ".pdf"), StoredName: storedName, OriginalName: safeOriginalFilename(files[0].Filename), RelativePath: replaceRelative, Size: size, PlanillaID: planillaID})
 		if err := s.saveStagedJob(job); err != nil {
 			_ = os.Remove(destination)
 			_ = os.Rename(backupPath, destination)
@@ -1027,6 +1092,11 @@ func (s *server) addWorkspacePDFs(w http.ResponseWriter, r *http.Request, job st
 			return
 		}
 		_ = os.Remove(backupPath)
+		if err := s.syncOracleWorkspace(r.Context(), &job, packageRoot); err != nil {
+			log.Printf("expediente %s: falló sincronización Oracle tras reemplazar %s: %v", job.ID, replaceRelative, err)
+			writeError(w, http.StatusInternalServerError, "El PDF se reemplazó en el espacio, pero no se pudo sincronizar Oracle.")
+			return
+		}
 		documents, patients, err := listWorkspacePDFs(packageRoot)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "El reemplazo se guardó, pero no se pudo actualizar la lista.")
@@ -1073,6 +1143,13 @@ func (s *server) addWorkspacePDFs(w http.ResponseWriter, r *http.Request, job st
 			writeError(w, http.StatusBadRequest, "Uno de los archivos no contiene un PDF válido.")
 			return
 		}
+		planillaID, mapErr := s.planillaForPatient(r.Context(), job, patient)
+		if mapErr != nil {
+			_ = os.Remove(sourcePath)
+			rollback()
+			writeError(w, http.StatusConflict, mapErr.Error())
+			return
+		}
 		// Adding a document never replaces another one. Repeated MSP codes get
 		// the next free suffix; replacement is handled by the explicit replace mode above.
 		filename, err := nextMSPPDFName(patientRoot, codes[index], "")
@@ -1097,7 +1174,7 @@ func (s *server) addWorkspacePDFs(w http.ResponseWriter, r *http.Request, job st
 			return
 		}
 		newTargets[relative] = true
-		added = append(added, workspaceDocument{ID: strings.TrimSuffix(storedName, ".pdf"), StoredName: storedName, OriginalName: safeOriginalFilename(file.Filename), RelativePath: relative, Size: size})
+		added = append(added, workspaceDocument{ID: strings.TrimSuffix(storedName, ".pdf"), StoredName: storedName, OriginalName: safeOriginalFilename(file.Filename), RelativePath: relative, Size: size, PlanillaID: planillaID})
 	}
 	for _, document := range added {
 		path := filepath.ToSlash(document.RelativePath)
@@ -1120,6 +1197,11 @@ func (s *server) addWorkspacePDFs(w http.ResponseWriter, r *http.Request, job st
 	if err := s.saveStagedJob(job); err != nil {
 		rollback()
 		writeError(w, http.StatusInternalServerError, "Se cargaron los PDFs, pero no se pudo guardar su registro.")
+		return
+	}
+	if err := s.syncOracleWorkspace(r.Context(), &job, packageRoot); err != nil {
+		log.Printf("expediente %s: falló sincronización Oracle tras añadir PDFs: %v", job.ID, err)
+		writeError(w, http.StatusInternalServerError, "Los PDFs se añadieron al espacio, pero no se pudo sincronizar Oracle.")
 		return
 	}
 	documents, patients, err := listWorkspacePDFs(packageRoot)

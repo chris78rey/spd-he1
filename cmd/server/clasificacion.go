@@ -26,6 +26,8 @@ type classificationRules struct {
 }
 
 type classificationResult struct {
+	PlanillaID       int64    `json:"pdi_id,omitempty"`
+	Tramite          string   `json:"pdi_tramite,omitempty"`
 	Code             string   `json:"codigo"`
 	Method           string   `json:"metodo"`
 	Reason           string   `json:"motivo,omitempty"`

@@ -227,7 +227,7 @@ func (s *server) listPlanillaDigital(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	tableName := oracleTableName(s.schema)
 	var total int64
-	if err := s.serviceDB.QueryRowContext(ctx, "SELECT COUNT(*) FROM "+tableName).Scan(&total); err != nil {
+	if err := s.serviceDB.QueryRowContext(ctx, "SELECT COUNT(*) FROM "+tableName+" WHERE PDI_ASEGURADORA = 'MSP'").Scan(&total); err != nil {
 		log.Printf("No fue posible contar %s (%T): %v", tableName, err, err)
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("No se pudo consultar %s. Comprueba el esquema y el permiso SELECT de ORACLE_USER.", tableName))
 		return
@@ -244,6 +244,7 @@ func (s *server) listPlanillaDigital(w http.ResponseWriter, r *http.Request) {
 	query := fmt.Sprintf(`SELECT * FROM (
 		SELECT t.*, ROW_NUMBER() OVER (ORDER BY t.ROWID) AS "__FOLIO_PAGE_ROW"
 		FROM %s t
+		WHERE t.PDI_ASEGURADORA = 'MSP'
 	) WHERE "__FOLIO_PAGE_ROW" BETWEEN :first_row AND :last_row
 	ORDER BY "__FOLIO_PAGE_ROW"`, tableName)
 	rows, err := s.serviceDB.QueryContext(ctx, query,
