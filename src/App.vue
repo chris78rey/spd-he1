@@ -94,6 +94,11 @@ const ingestMode = ref('new')
 const ingestModeTouched = ref(false)
 const openingSavedWorkspace = ref(false)
 const patientDocumentsDialog = ref(false)
+const patientDocumentsError = ref('')
+const selectedZipWorkspace = ref('')
+const zipDownloading = ref(false)
+const zipDownloadError = ref('')
+const zipDownloadNotice = ref('')
 const workspacePDFs = ref([])
 const workspacePDFRevision = ref(0)
 const workspacePatients = ref([])
@@ -746,10 +751,12 @@ async function deleteWorkspacePDF() {
   finally { workspaceBusy.value = false }
 }
 async function downloadWorkspaceZIP() {
-  if (!ingestResult.value?.job_id || workspaceBusy.value) return
-  workspaceNotice.value = ''; workspaceBusy.value = true
+  if (!selectedZipWorkspace.value || zipDownloading.value) return
+  zipDownloadError.value = ''
+  zipDownloadNotice.value = ''
+  zipDownloading.value = true
   try {
-    const response = await fetch(`/api/v1/expedientes/descargar/${encodeURIComponent(ingestResult.value.job_id)}`, { credentials: 'same-origin' })
+    const response = await fetch(`/api/v1/expedientes/descargar/${encodeURIComponent(selectedZipWorkspace.value)}`, { credentials: 'same-origin' })
     if (!response.ok) {
       const data = await response.json().catch(() => ({}))
       throw new Error(data.error || `No se pudo descargar el ZIP (HTTP ${response.status}).`)
@@ -758,12 +765,12 @@ async function downloadWorkspaceZIP() {
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
-    link.download = `${ingestResult.value.output.split('/').at(-1)}.zip`
+    link.download = response.headers.get('Content-Disposition')?.match(/filename="?([^";]+)"?/i)?.[1] || `${selectedZipWorkspace.value}.zip`
     link.click()
     URL.revokeObjectURL(url)
-    workspaceNotice.value = 'Se descargó el ZIP con la estructura actual del expediente.'
-  } catch (error) { workspaceNotice.value = error.message || 'No se pudo descargar el ZIP.' }
-  finally { workspaceBusy.value = false }
+    zipDownloadNotice.value = 'Se descargó el ZIP con los archivos actuales del expediente.'
+  } catch (error) { zipDownloadError.value = error.message || 'No se pudo descargar el ZIP.' }
+  finally { zipDownloading.value = false }
 }
 async function submitIngest() {
   if (!ingestValid.value || ingestSending.value) return
@@ -1004,6 +1011,10 @@ const savedWorkspaceItems = computed(() => savedWorkspaces.value.map(workspace =
   const state = workspace.status === 'STAGED' ? 'pendiente de preparar' : workspace.status === 'INCOMPLETE' ? 'incompleto' : 'preparado'
   return { title: `${serviceName} · ${monthName} ${workspace.anio} · ${state} · recibido por ${workspace.creado_por || 'usuario anterior'}`, value: workspace.job_id }
 }))
+const zipDownloadWorkspaceItems = computed(() => {
+  const eligibleIDs = new Set(savedWorkspaces.value.filter(workspace => ['PROCESSED', 'INCOMPLETE'].includes(workspace.status)).map(workspace => workspace.job_id))
+  return savedWorkspaceItems.value.filter(item => eligibleIDs.has(item.value))
+})
 const filteredSavedWorkspaces = computed(() => {
   const normalizedQuery = String(savedWorkspaceSearch.value || '').trim().toLocaleLowerCase('es').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
   return savedWorkspaces.value.filter(workspace => {
@@ -1082,6 +1093,33 @@ async function openSavedWorkspace(jobId = selectedSavedWorkspace.value) {
     await loadIngestPreview(data.job_id)
   } catch (error) { ingestError.value = error.message || 'No se pudo abrir el espacio guardado.' }
   finally { openingSavedWorkspace.value = false }
+}
+async function openPatientDocumentsPage() {
+  activePage.value = 'patient-documents'
+  patientDocumentsDialog.value = false
+  patientDocumentsError.value = ''
+  await loadSavedWorkspaces()
+}
+async function openPatientDocumentsWorkspace(jobId = selectedSavedWorkspace.value) {
+  if (!jobId || openingSavedWorkspace.value) return
+  patientDocumentsError.value = ''
+  await openSavedWorkspace(jobId)
+  if (ingestError.value) {
+    patientDocumentsError.value = ingestError.value
+    return
+  }
+  if (ingestResult.value?.job_id !== jobId || !ingestResult.value?.output) {
+    patientDocumentsError.value = 'El período seleccionado todavía no tiene documentos preparados.'
+    return
+  }
+  patientDocumentsDialog.value = true
+}
+async function openZipDownloadPage() {
+  activePage.value = 'zip-download'
+  zipDownloadError.value = ''
+  zipDownloadNotice.value = ''
+  await loadSavedWorkspaces()
+  if (!zipDownloadWorkspaceItems.value.some(item => item.value === selectedZipWorkspace.value)) selectedZipWorkspace.value = zipDownloadWorkspaceItems.value[0]?.value || ''
 }
 function startNewIngest() {
   ingestMode.value = 'new'
@@ -1187,7 +1225,7 @@ const visibleDocs = computed(() => {
   else items.sort((a,b) => (b.addedAt||0)-(a.addedAt||0))
   return items
 })
-  const title = computed(() => activePage.value === 'planilla' ? 'Planilla digital' : activePage.value === 'coberturas' ? 'Hojas de cobertura' : activePage.value === 'ingesta' ? 'Recepción de planillas' : activeFolder.value === 'Todos los documentos' ? 'Mis documentos' : activeFolder.value)
+  const title = computed(() => activePage.value === 'planilla' ? 'Planilla digital' : activePage.value === 'coberturas' ? 'Hojas de cobertura' : activePage.value === 'patient-documents' ? 'Abrir documentos del paciente' : activePage.value === 'zip-download' ? 'Descargar expediente ZIP' : activePage.value === 'ingesta' ? 'Recepción de planillas' : activeFolder.value === 'Todos los documentos' ? 'Mis documentos' : activeFolder.value)
 function prettySize(n) { return n < 1024*1024 ? `${Math.max(1, Math.round(n/1024))} KB` : `${(n/1024/1024).toFixed(1)} MB` }
 function handleShortcut(event) {
   if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); searchInput.value?.focus() }
@@ -1266,6 +1304,8 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
         <div class="nav-label">PROCESOS</div>
         <button class="nav-item" :class="{selected:activePage==='ingesta'}" @click="activePage='ingesta'"><v-icon icon="mdi-cloud-upload-outline" size="19"/><span>Recibir planillas</span></button>
         <button class="nav-item" :class="{selected:activePage==='coberturas'}" aria-label="Descargar hojas de cobertura" @click="openCoverageDownloads"><v-icon icon="mdi-file-download-outline" size="19"/><span>Descargar hojas de cobertura</span></button>
+        <button class="nav-item" :class="{selected:activePage==='patient-documents'}" @click="openPatientDocumentsPage"><v-icon icon="mdi-folder-account-outline" size="19"/><span>Abrir documentos del paciente</span></button>
+        <button class="nav-item" :class="{selected:activePage==='zip-download'}" @click="openZipDownloadPage"><v-icon icon="mdi-folder-zip-outline" size="19"/><span>Descargar expediente ZIP</span></button>
         <div class="sidebar-bottom"><button class="profile" @click="signOut"><span class="avatar">{{ displayUser.slice(0,1) }}</span><span class="profile-copy"><b>{{ displayUser }}</b><small>Cerrar sesión</small></span><v-icon icon="mdi-logout" size="18"/></button></div>
       </aside>
       <main class="main-area">
@@ -1307,6 +1347,39 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
             <div v-else-if="!coveragePlanillas.length" class="planilla-state"><v-icon icon="mdi-file-search-outline"/><span>No se encontraron planillas MSP de ese período en las carpetas del ZIP.</span></div>
             <div v-else class="planilla-table-wrap"><v-table class="planilla-table" density="comfortable" fixed-header height="min(62vh, 620px)"><thead><tr><th><label title="Seleccionar todas las pendientes"><input type="checkbox" :checked="coverageAllSelected" :disabled="!coverageSelectableRows.length || coverageGenerating" aria-label="Seleccionar todas las planillas pendientes" @change="toggleAllCoveragePlanillas"/> Todas</label></th><th>Trámite del ZIP</th><th>Paciente</th><th>Fecha hasta</th><th>Estado de cobertura</th><th>Acción manual</th></tr></thead><tbody><tr v-for="row in coveragePlanillas" :key="row.pdi_id"><td><input type="checkbox" :checked="coverageSelectedIds.includes(row.pdi_id)" :disabled="(row.pdi_cobertura === 'S' && !row.hoja_generada) || coverageGenerating" :aria-label="`Seleccionar planilla ${row.pdi_tramite}`" @change="toggleCoveragePlanilla(row)"/></td><td>{{ row.pdi_tramite }}</td><td>{{ row.paciente || '—' }}</td><td>{{ row.fecha_hasta || '—' }}</td><td><v-chip size="small" :color="row.pdi_cobertura === 'S' ? 'success' : row.hoja_generada ? 'info' : (row.descarga_manual || row.motivo_manual) ? 'error' : 'warning'" variant="tonal">{{ row.pdi_cobertura === 'S' ? 'Generada' : row.hoja_generada ? 'PDF en expediente · Oracle pendiente' : row.descarga_manual ? 'Descarga manual' : row.motivo_manual ? 'Revisar datos' : 'Pendiente' }}</v-chip><small v-if="row.motivo_manual" class="coverage-failure">{{ row.motivo_manual }}</small></td><td><div v-if="row.descarga_manual" class="coverage-manual"><a href="https://coberturasalud.msp.gob.ec/" target="_blank" rel="noopener noreferrer">Abrir portal MSP</a><small v-if="row.coberturas_manual?.length">Descarga un PDF por cédula: {{ row.coberturas_manual.map(member => member.cedula).join(', ') }}</small><label class="coverage-manual-upload"><input type="file" accept="application/pdf,.pdf" multiple :disabled="coverageManualUploadingId === row.pdi_id" @change="uploadManualCoverageSheets(row,$event)"/>{{ coverageManualUploadingId === row.pdi_id ? 'Adjuntando…' : 'Adjuntar PDFs descargados' }}</label></div><span v-else>—</span></td></tr></tbody></v-table></div>
             <div v-if="coveragePlanillas.length" class="coverage-footnote">Marca la casilla del encabezado para seleccionar todas las pendientes. Se procesan en grupos de 10; las hojas generadas se guardan en cada expediente. El ZIP admite hasta 500 planillas.</div>
+          </v-card>
+        </section>
+        <section v-else-if="activePage==='patient-documents'" class="content-wrap">
+          <div class="welcome-line"><div><div class="eyebrow">DOCUMENTOS DEL PACIENTE</div><h1>Abrir documentos del paciente<span class="title-period">.</span></h1><p class="subtitle">Elige un período guardado para revisar las carpetas de pacientes y sus PDFs.</p></div></div>
+          <v-card class="planilla-card saved-workspaces-card" rounded="xl" elevation="0">
+            <div class="coverage-toolbar">
+              <v-autocomplete v-model="selectedSavedWorkspace" :items="savedWorkspaceItems" label="Período y servicio" placeholder="Busca un período guardado" prepend-inner-icon="mdi-folder-clock-outline" density="comfortable" variant="outlined" hide-details clearable :loading="savedWorkspacesLoading" :disabled="savedWorkspacesLoading || !savedWorkspaceItems.length"/>
+              <v-btn type="button" icon="mdi-refresh" variant="text" aria-label="Actualizar períodos guardados" :loading="savedWorkspacesLoading" :disabled="savedWorkspacesLoading" @click="loadSavedWorkspaces"/>
+            </div>
+            <v-alert v-if="savedWorkspacesError" class="mt-4" type="error" variant="tonal" density="comfortable">{{ savedWorkspacesError }}<v-btn type="button" size="small" variant="text" @click="loadSavedWorkspaces">Reintentar</v-btn></v-alert>
+            <div v-else-if="savedWorkspacesLoading" class="planilla-state"><v-progress-circular indeterminate color="primary" size="22"/><span>Cargando períodos guardados…</span></div>
+            <div v-else-if="!savedWorkspaces.length" class="planilla-state"><v-icon icon="mdi-folder-search-outline" size="25"/><span>No hay períodos guardados todavía.</span><v-btn type="button" variant="text" color="primary" @click="activePage='ingesta'">Recibir planillas</v-btn></div>
+            <template v-else>
+              <v-alert v-if="patientDocumentsError" class="mt-4" type="warning" variant="tonal" density="comfortable">{{ patientDocumentsError }}</v-alert>
+              <div class="coverage-toolbar"><span class="coverage-footnote">Al abrir un período podrás elegir una carpeta de paciente y revisar sus PDFs.</span><v-btn type="button" color="primary" prepend-icon="mdi-file-eye-outline" :loading="openingSavedWorkspace" :disabled="!selectedSavedWorkspace || openingSavedWorkspace" @click="openPatientDocumentsWorkspace()">Abrir documentos</v-btn></div>
+            </template>
+          </v-card>
+        </section>
+        <section v-else-if="activePage==='zip-download'" class="content-wrap">
+          <div class="welcome-line"><div><div class="eyebrow">EXPORTAR EXPEDIENTE</div><h1>Descargar expediente ZIP<span class="title-period">.</span></h1><p class="subtitle">Elige un expediente preparado para descargar su estructura y los archivos actuales.</p></div></div>
+          <v-card class="planilla-card saved-workspaces-card" rounded="xl" elevation="0">
+            <div class="coverage-toolbar">
+              <v-autocomplete v-model="selectedZipWorkspace" :items="zipDownloadWorkspaceItems" label="Expediente y período" placeholder="Busca un expediente preparado" prepend-inner-icon="mdi-folder-zip-outline" density="comfortable" variant="outlined" hide-details clearable :loading="savedWorkspacesLoading" :disabled="savedWorkspacesLoading || !zipDownloadWorkspaceItems.length || zipDownloading"/>
+              <v-btn type="button" icon="mdi-refresh" variant="text" aria-label="Actualizar expedientes preparados" :loading="savedWorkspacesLoading" :disabled="savedWorkspacesLoading || zipDownloading" @click="openZipDownloadPage"/>
+            </div>
+            <v-alert v-if="savedWorkspacesError" class="mt-4" type="error" variant="tonal" density="comfortable">{{ savedWorkspacesError }}<v-btn type="button" size="small" variant="text" @click="openZipDownloadPage">Reintentar</v-btn></v-alert>
+            <div v-else-if="savedWorkspacesLoading" class="planilla-state"><v-progress-circular indeterminate color="primary" size="22"/><span>Cargando expedientes…</span></div>
+            <div v-else-if="!zipDownloadWorkspaceItems.length" class="planilla-state"><v-icon icon="mdi-folder-search-outline" size="25"/><span>No hay expedientes preparados para descargar todavía.</span><v-btn type="button" variant="text" color="primary" @click="activePage='ingesta'">Recibir planillas</v-btn></div>
+            <template v-else>
+              <v-alert v-if="zipDownloadError" class="mt-4" type="warning" variant="tonal" density="comfortable">{{ zipDownloadError }}<v-btn type="button" size="small" variant="text" @click="openPatientDocumentsPage">Abrir documentos del paciente</v-btn></v-alert>
+              <v-alert v-if="zipDownloadNotice" class="mt-4" type="success" variant="tonal" density="comfortable">{{ zipDownloadNotice }}</v-alert>
+              <div class="workspace-download-row"><span>Los grupos de PDFs pendientes de fusionar deben resolverse antes de descargar el ZIP.</span><v-btn type="button" color="primary" prepend-icon="mdi-folder-zip-outline" :loading="zipDownloading" :disabled="!selectedZipWorkspace || zipDownloading" @click="downloadWorkspaceZIP">Descargar expediente ZIP</v-btn></div>
+            </template>
           </v-card>
         </section>
         <section v-else class="content-wrap ingest-content" :class="{'ingest-workspace-active': !!ingestResult?.output}">
@@ -1446,10 +1519,6 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
               <details class="ingest-secondary-action"><summary>Volver a analizar los PDFs</summary><p>Repite la clasificación de los archivos fuente y actualiza la carpeta de trabajo. Puede tardar varios minutos.</p><v-btn variant="outlined" prepend-icon="mdi-text-box-search-outline" :loading="ingestProcessing" @click="classifyIngest">Reanalizar PDFs</v-btn></details>
               <details v-if="ingestResult.workspace || ingestResult.output" class="ingest-secondary-action"><summary>Ver ubicaciones del expediente</summary><p v-if="ingestResult.workspace">Espacio permanente: <code>{{ ingestResult.workspace }}</code></p><p>Carpeta preparada: <code>{{ ingestResult.output }}</code></p></details>
             </section>
-            <section v-if="ingestResult?.output" class="ingest-card patient-documents-launch">
-              <div class="ingest-card-heading"><span class="ingest-step"><v-icon icon="mdi-folder-account-outline"/></span><div><h2>Documentos del paciente</h2><p>{{ workspacePatients.length }} carpetas · {{ workspacePDFs.length }} PDFs en el período</p></div></div>
-              <v-btn type="button" color="primary" prepend-icon="mdi-file-eye-outline" @click="patientDocumentsDialog = true">Abrir documentos del paciente</v-btn>
-            </section>
             <div v-if="ingestResult && !ingestResult.output" class="ingest-submit-row"><span>¿Necesitas recibir planillas de otro período o servicio?</span><v-btn type="button" variant="text" prepend-icon="mdi-plus" @click="startNewIngest">Recibir otro período</v-btn></div>
             <v-expansion-panels v-if="!ingestResult && ingestMode === 'new'" variant="accordion" class="ingest-resume-panel"><v-expansion-panel><v-expansion-panel-title>¿Tienes el ID de un lote?</v-expansion-panel-title><v-expansion-panel-text><p>Escribe el ID que apareció al recibir el lote.</p><div class="ingest-submit-row"><v-text-field v-model="existingIngestJobId" label="ID del lote" placeholder="JOB-…" density="comfortable" hide-details/><v-btn color="primary" prepend-icon="mdi-folder-cog-outline" :loading="ingestProcessing" :disabled="!existingIngestJobId.trim()" @click="processIngest">Abrir lote por ID</v-btn></div></v-expansion-panel-text></v-expansion-panel></v-expansion-panels>
             <div v-if="ingestSending || completionSending" class="ingest-progress"><div><span>{{ completionSending ? 'Subiendo documentos habilitantes…' : 'Subiendo lote de planillas…' }}</span><strong>{{ ingestProgress }}%</strong></div><v-progress-linear :model-value="ingestProgress" color="primary" rounded/></div>
@@ -1524,7 +1593,6 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
                 <div class="workspace-upload-submit"><span>{{ queuedWorkspaceDuplicates ? `${queuedWorkspaceDuplicates} PDF(s) se añadirán con sufijo; el documento actual se conserva. ` : '' }}Para sustituir uno existente, usa “Reemplazar PDF seleccionado”.</span><v-btn type="button" color="primary" prepend-icon="mdi-cloud-upload-outline" :loading="workspaceSending" :disabled="!workspacePatient || workspaceUploadFiles.some(item => !item.code)" @click="addWorkspacePDFs">Añadir PDFs</v-btn></div>
               </div>
               <div v-if="workspaceSending" class="ingest-progress"><div><span>Guardando PDFs en el espacio de trabajo…</span><strong>{{ ingestProgress }}%</strong></div><v-progress-linear :model-value="ingestProgress" color="primary" rounded/></div>
-              <div class="workspace-download-row"><span>{{ workspaceFusionGroups.length ? `Fusiona los ${workspaceFusionGroups.length} grupos repetidos antes de descargar el ZIP final.` : 'Descarga la carpeta madre con la estructura y los archivos actuales. Revisa pendientes y documentos obligatorios antes de entregar al MSP.' }}</span><v-btn type="button" color="primary" prepend-icon="mdi-folder-zip-outline" :loading="workspaceBusy" :disabled="workspaceFusionGroups.length > 0" @click="downloadWorkspaceZIP">Descargar expediente ZIP</v-btn></div>
               <v-dialog v-model="mergePDFDialog" max-width="1400">
                 <v-card class="action-dialog">
                   <v-card-title>Revisar y fusionar PDFs</v-card-title>
