@@ -101,6 +101,7 @@ const openingSavedWorkspace = ref(false)
 const patientDocumentsDialog = ref(false)
 const patientDocumentsError = ref('')
 const selectedZipWorkspace = ref('')
+const zipDownloadType = ref('RECEPCION')
 const zipDownloading = ref(false)
 const zipDownloadError = ref('')
 const zipDownloadNotice = ref('')
@@ -1139,8 +1140,14 @@ const objectionWorkspaceWorkspaces = computed(() => orderedSavedWorkspaces.value
   .filter(workspace => workspace.es_objeciones && ['PROCESSED', 'INCOMPLETE'].includes(workspace.status)))
 const objectionWorkspaceItems = computed(() => objectionWorkspaceWorkspaces.value
   .map(workspaceSavedOption))
-const zipDownloadWorkspaces = computed(() => orderedSavedWorkspaces.value
+const zipDownloadPreparedWorkspaces = computed(() => orderedSavedWorkspaces.value
   .filter(workspace => ['PROCESSED', 'INCOMPLETE'].includes(workspace.status)))
+const zipDownloadWorkspaces = computed(() => zipDownloadPreparedWorkspaces.value
+  .filter(workspace => zipDownloadType.value === 'OBJECIONES' ? workspace.es_objeciones : !workspace.es_objeciones))
+const zipDownloadTypeCounts = computed(() => ({
+  RECEPCION: zipDownloadPreparedWorkspaces.value.filter(workspace => !workspace.es_objeciones).length,
+  OBJECIONES: zipDownloadPreparedWorkspaces.value.filter(workspace => workspace.es_objeciones).length,
+}))
 function workspaceSavedOption(workspace) {
   const monthName = coverageMonthLabel(workspaceMonthValue(workspace))
   const year = workspaceYearLabel(workspace)
@@ -1289,6 +1296,13 @@ async function openZipDownloadPage() {
   zipDownloadNotice.value = ''
   await loadSavedWorkspaces()
   if (!zipDownloadWorkspaceItems.value.some(item => item.value === selectedZipWorkspace.value)) selectedZipWorkspace.value = zipDownloadWorkspaceItems.value[0]?.value || ''
+}
+function selectZipDownloadType(type) {
+  if (!['RECEPCION', 'OBJECIONES'].includes(type) || zipDownloadType.value === type) return
+  zipDownloadType.value = type
+  selectedZipWorkspace.value = zipDownloadWorkspaceItems.value[0]?.value || ''
+  zipDownloadError.value = ''
+  zipDownloadNotice.value = ''
 }
 async function openObjectionsPage() {
   activePage.value = 'objeciones'
@@ -1968,14 +1982,18 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
           </v-card>
         </section>
         <section v-else-if="activePage==='zip-download'" class="content-wrap">
-          <div class="welcome-line"><div><div class="eyebrow">EXPORTAR EXPEDIENTE</div><h1>Descargar expediente ZIP<span class="title-period">.</span></h1><p class="subtitle">Elige un expediente preparado para descargar su estructura y los archivos actuales.</p></div></div>
+          <div class="welcome-line"><div><div class="eyebrow">EXPORTAR EXPEDIENTE</div><h1>Descargar expediente ZIP<span class="title-period">.</span></h1><p class="subtitle">Elige por separado un período de recepción o un espacio de Objeciones. La descarga normal incluye todos los archivos disponibles.</p></div></div>
           <v-card class="planilla-card saved-workspaces-card" rounded="xl" elevation="0">
+            <v-btn-toggle :model-value="zipDownloadType" class="ingest-mode-switch zip-download-kind-switch" color="primary" divided mandatory rounded="lg" aria-label="Tipo de espacio para descargar" @update:model-value="selectZipDownloadType">
+              <v-btn type="button" value="RECEPCION" prepend-icon="mdi-folder-open-outline">Recepción de planillas <span class="ingest-mode-count">{{ zipDownloadTypeCounts.RECEPCION }}</span></v-btn>
+              <v-btn type="button" value="OBJECIONES" prepend-icon="mdi-file-alert-outline">Objeciones <span class="ingest-mode-count">{{ zipDownloadTypeCounts.OBJECIONES }}</span></v-btn>
+            </v-btn-toggle>
             <div class="zip-download-picker-row">
               <WorkspacePicker
                 v-model="selectedZipWorkspace"
                 :workspaces="zipDownloadWorkspaces"
-                label="Expediente para descargar"
-                placeholder="Busca por tipo, servicio, período, estado, usuario o ID"
+                :label="zipDownloadType === 'OBJECIONES' ? 'Espacio de Objeciones para descargar' : 'Período de recepción para descargar'"
+                placeholder="Busca por servicio, período, estado, usuario o ID"
                 icon="mdi-folder-zip-outline"
                 :loading="savedWorkspacesLoading"
                 :disabled="zipDownloading"
@@ -1983,13 +2001,13 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
                 :month-label="coverageMonthLabel"
                 :status-label="workspaceStatusLabel"
                 :received-at="workspaceReceivedAt"
-                empty-message="Solo se pueden descargar espacios preparados o incompletos."
+                :empty-message="zipDownloadType === 'OBJECIONES' ? 'No hay espacios de Objeciones preparados para descargar.' : 'No hay períodos de recepción preparados para descargar.'"
               />
               <v-btn type="button" icon="mdi-refresh" variant="text" aria-label="Actualizar expedientes preparados" :loading="savedWorkspacesLoading" :disabled="savedWorkspacesLoading || zipDownloading" @click="openZipDownloadPage"/>
             </div>
             <v-alert v-if="savedWorkspacesError" class="mt-4" type="error" variant="tonal" density="comfortable">{{ savedWorkspacesError }}<v-btn type="button" size="small" variant="text" @click="openZipDownloadPage">Reintentar</v-btn></v-alert>
             <div v-else-if="savedWorkspacesLoading" class="planilla-state"><v-progress-circular indeterminate color="primary" size="22"/><span>Cargando expedientes…</span></div>
-            <div v-else-if="!zipDownloadWorkspaceItems.length" class="planilla-state"><v-icon icon="mdi-folder-search-outline" size="25"/><span>No hay expedientes preparados para descargar todavía.</span><v-btn type="button" variant="text" color="primary" @click="activePage='ingesta'">Recibir planillas</v-btn></div>
+            <div v-else-if="!zipDownloadWorkspaceItems.length" class="planilla-state"><v-icon icon="mdi-folder-search-outline" size="25"/><span v-if="zipDownloadType === 'OBJECIONES'">No hay espacios de Objeciones preparados para descargar.</span><span v-else>No hay períodos de recepción preparados todavía. Prepara el expediente desde Recepción de planillas; luego aparecerá aquí.</span><v-btn type="button" variant="text" color="primary" @click="activePage='ingesta'">Recibir planillas</v-btn></div>
             <template v-else>
               <v-alert v-if="zipDownloadError" class="mt-4" type="warning" variant="tonal" density="comfortable">{{ zipDownloadError }}<v-btn type="button" size="small" variant="text" @click="openPatientDocumentsPage">Revisar documentos del paciente</v-btn></v-alert>
               <v-alert v-if="zipDownloadNotice" class="mt-4" type="success" variant="tonal" density="comfortable">{{ zipDownloadNotice }}</v-alert>
