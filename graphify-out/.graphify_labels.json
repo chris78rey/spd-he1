@@ -2,7 +2,7 @@
   "0": "App.vue",
   "1": "stagedJob",
   "2": "generate_pdf.cjs",
-  "3": "ingesta.go",
+  "3": "Documento de Requerimientos Generales del Sistema (SRS)",
   "4": "server/main.go",
   "5": "package.json",
   "6": "loadSavedWorkspaces",
@@ -29,7 +29,7 @@
   "27": "Q: Why couldn't the user delete saved period WORK-AMBULATORIO-202609?",
   "28": "Q: Does Oracle-only planilla absence block processing when ZIP is the source of truth?",
   "29": "N031: Coberturas [REQUERIDO; IMPLEMENTADO; NO VERIFICADO]",
-  "30": "demo-lote/main.go",
+  "30": "6. Interfaz de Comunicación (APIs REST)",
   "31": "N011: Previsualización de ingesta [REQUERIDO; IMPLEMENTADO; NO VERIFICADO]",
   "32": "AGENTS.md",
   "33": "R014: Vínculo manual corrige trámite [IMPLEMENTADO]",
@@ -50,13 +50,10 @@
   "48": "N036: Primer ingreso [REQUERIDO; PARCIAL; estructura sí, cierre integral no]",
   "49": "N040: Biblioteca IndexedDB [REQUERIDO de producto; IMPLEMENTADO; NO VERIFICADO; subsistema separado]",
   "50": "N041: Graphify [artefacto implementado; herramienta de análisis]",
-  "51": "server",
   "52": "go_pkg_encoding_xml",
   "53": "objeciones_test.go",
   "54": "clasificacion.go",
   "55": "WorkspacePicker.vue",
-  "56": "6. Interfaz de Comunicación (APIs REST)",
-  "57": "sameObjectionPeriod",
-  "58": "workspaceSavedOption",
-  "59": "workspace_delete_test.go"
+  "56": "ingesta.go",
+  "57": "sameObjectionPeriod"
 }

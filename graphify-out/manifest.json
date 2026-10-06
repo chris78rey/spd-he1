@@ -6,9 +6,9 @@
     "semantic_hash": ""
   },
   "src/App.vue": {
-    "mtime": 1791304019.7546883,
-    "seen": 1791304044.9630158,
-    "ast_hash": "8dc6c8e3ac6ed401bdcc94197a53741f",
+    "mtime": 1791318951.779032,
+    "seen": 1791318988.848986,
+    "ast_hash": "3360fcc0cde73b81d322101ad7c18ead",
     "semantic_hash": ""
   },
   "src/main.js": {
@@ -30,9 +30,9 @@
     "semantic_hash": ""
   },
   "PRINCIPIOS_DE_PRODUCTO.md": {
-    "mtime": 1791303517.5887175,
-    "seen": 1791303598.132296,
-    "ast_hash": "1c4cce3736738f0814e14805732e144c",
+    "mtime": 1791318973.6461647,
+    "seen": 1791318988.8490186,
+    "ast_hash": "52dfa161b55e6fa4a34d9bd8421a2471",
     "semantic_hash": ""
   },
   "index.html": {
@@ -66,9 +66,9 @@
     "semantic_hash": "cb8c48aec536d27ddd40572c76127e48"
   },
   "cmd/server/ingesta.go": {
-    "mtime": 1791298839.6616051,
-    "seen": 1791299050.4671211,
-    "ast_hash": "6348fbb34b7edb64714e0de44039c393",
+    "mtime": 1791305755.4381583,
+    "seen": 1791306005.7449145,
+    "ast_hash": "efa40f11ff334a93f08cc70e2e87d72e",
     "semantic_hash": ""
   },
   "requerimientos/00req_general.md": {
@@ -144,9 +144,9 @@
     "semantic_hash": ""
   },
   "cmd/server/workspace.go": {
-    "mtime": 1791298459.1642404,
-    "seen": 1791299050.4671352,
-    "ast_hash": "aff63925f044f1d267580462619ecd82",
+    "mtime": 1791306420.5441895,
+    "seen": 1791306437.6258667,
+    "ast_hash": "973ecb29c729c9ee2e611d32a2c5f0a9",
     "semantic_hash": ""
   },
   "catalogos/codigos_msp.json": {
@@ -264,9 +264,9 @@
     "semantic_hash": ""
   },
   "cmd/server/objeciones.go": {
-    "mtime": 1791302196.5907094,
-    "seen": 1791302244.1384773,
-    "ast_hash": "be4144e84ca20e8664a89d33afd3428f",
+    "mtime": 1791305755.4401584,
+    "seen": 1791306005.7449257,
+    "ast_hash": "42a250d388d69d506bf62b1cb73f7897",
     "semantic_hash": ""
   },
   "cmd/server/objeciones_test.go": {
@@ -282,15 +282,21 @@
     "semantic_hash": ""
   },
   "src/components/WorkspacePicker.vue": {
-    "mtime": 1791303865.173767,
-    "seen": 1791303954.392906,
-    "ast_hash": "0a94d55ea4d120dd3d42d124cde4cdb7",
+    "mtime": 1791316434.935772,
+    "seen": 1791316459.8947499,
+    "ast_hash": "8a2dce8bf70f76ae8481f7ebd8c5d4db",
     "semantic_hash": ""
   },
   "src/workspace-search.js": {
-    "mtime": 1791303533.3068092,
-    "seen": 1791303598.1322868,
-    "ast_hash": "40996c280a89328ceea492857ae26bbe",
+    "mtime": 1791306173.3416917,
+    "seen": 1791306212.355878,
+    "ast_hash": "ee780ce57bc8cff38c990e8fa1cd72c7",
+    "semantic_hash": ""
+  },
+  "cmd/server/workspace_download_test.go": {
+    "mtime": 1791306269.452274,
+    "seen": 1791306285.1556044,
+    "ast_hash": "1b2229a97daadf35b68dd279e4cdf04a",
     "semantic_hash": ""
   }
 }

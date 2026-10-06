@@ -1,17 +1,17 @@
 # Graph Report - spd_msp  (2026-10-06)
 
 ## Corpus Check
-- 39 files · ~77,760 words
+- 40 files · ~80,709 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 6 file(s) not represented in the graph (top: (none) 2, .example 1, .zip 1)
 
 ## Summary
-- 989 nodes · 1925 edges · 60 communities (42 shown, 18 thin omitted)
-- Extraction: 89% EXTRACTED · 11% INFERRED · 0% AMBIGUOUS · INFERRED: 206 edges (avg confidence: 0.85)
+- 1018 nodes · 1998 edges · 57 communities (39 shown, 18 thin omitted)
+- Extraction: 89% EXTRACTED · 11% INFERRED · 0% AMBIGUOUS · INFERRED: 216 edges (avg confidence: 0.85)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `25536a56`
+- Built from commit: `130914b5`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -19,7 +19,7 @@
 - App.vue
 - stagedJob
 - generate_pdf.cjs
-- ingesta.go
+- Documento de Requerimientos Generales del Sistema (SRS)
 - server/main.go
 - package.json
 - loadSavedWorkspaces
@@ -46,7 +46,7 @@
 - Q: Why couldn't the user delete saved period WORK-AMBULATORIO-202609?
 - Q: Does Oracle-only planilla absence block processing when ZIP is the source of truth?
 - N031: Coberturas [REQUERIDO; IMPLEMENTADO; NO VERIFICADO]
-- demo-lote/main.go
+- 6. Interfaz de Comunicación (APIs REST)
 - N011: Previsualización de ingesta [REQUERIDO; IMPLEMENTADO; NO VERIFICADO]
 - AGENTS.md
 - R014: Vínculo manual corrige trámite [IMPLEMENTADO]
@@ -67,19 +67,16 @@
 - N036: Primer ingreso [REQUERIDO; PARCIAL; estructura sí, cierre integral no]
 - N040: Biblioteca IndexedDB [REQUERIDO de producto; IMPLEMENTADO; NO VERIFICADO; subsistema separado]
 - N041: Graphify [artefacto implementado; herramienta de análisis]
-- server
 - go_pkg_encoding_xml
 - objeciones_test.go
 - clasificacion.go
 - WorkspacePicker.vue
-- 6. Interfaz de Comunicación (APIs REST)
+- ingesta.go
 - sameObjectionPeriod
-- workspaceSavedOption
-- workspace_delete_test.go
 
 ## God Nodes (most connected - your core abstractions)
-1. `stagedJob` - 49 edges
-2. `packageFolderName()` - 35 edges
+1. `stagedJob` - 51 edges
+2. `packageFolderName()` - 39 edges
 3. `writeError()` - 35 edges
 4. `writeJSON()` - 31 edges
 5. `validJobID()` - 22 edges
@@ -94,37 +91,37 @@
   cmd/server/clasificacion.go → cmd/server/ingesta.go
 - `validateCoveragePDF()` --calls--> `validateStagedFile()`  [INFERRED]
   cmd/server/coberturas.go → cmd/server/ingesta.go
-- `saveObjectionVersion()` --calls--> `atomicWritePrivateFile()`  [INFERRED]
-  cmd/server/objeciones.go → cmd/server/ingesta.go
 - `TestAppendObjectionRowsPreservesWorkAndInvalidatesExistingMatrix()` --calls--> `packageFolderName()`  [INFERRED]
   cmd/server/objeciones_test.go → cmd/server/ingesta.go
 - `TestDownloadObjectionZIPIncludesOnlyMarkedClinicalPDFs()` --calls--> `packageFolderName()`  [INFERRED]
+  cmd/server/objeciones_test.go → cmd/server/ingesta.go
+- `TestInstallObjectionWorkspaceCopiesOnlyObjectedPlanillaFiles()` --calls--> `packageFolderName()`  [INFERRED]
   cmd/server/objeciones_test.go → cmd/server/ingesta.go
 
 ## Import Cycles
 - None detected.
 
-## Communities (60 total, 18 thin omitted)
+## Communities (57 total, 18 thin omitted)
 
 ### Community 0 - "App.vue"
 Cohesion: 0.01
-Nodes (183): catalogos_codigos_msp, activeDoc, activeFolder, activePage, authError, authStatus, completionFields, completionFiles (+175 more)
+Nodes (198): catalogos_codigos_msp, activeDoc, activeFolder, activePage, authError, authStatus, completionFields, completionFiles (+190 more)
 
 ### Community 1 - "stagedJob"
-Cohesion: 0.08
-Nodes (59): coverageMembers(), server, atomicWritePrivateFile(), copyPrivateFile(), server, server, headerOutputFilename(), jobResponse() (+51 more)
+Cohesion: 0.07
+Nodes (66): server, atomicWritePrivateFile(), backupAndReplace(), copyPrivateFile(), server, server, headerOutputFilename(), jobResponse() (+58 more)
 
 ### Community 2 - "generate_pdf.cjs"
 Cohesion: 0.05
 Nodes (70): ref_crypto, ref_fs, ref_https, ref_path, applyChromeToAllPages(), buildFooterImages(), buildSvgPage(), drawFooter() (+62 more)
 
-### Community 3 - "ingesta.go"
-Cohesion: 0.20
-Nodes (10): backupAndReplace(), periodWorkspaceID(), validServiceCode(), go_pkg_crypto_sha256, go_pkg_encoding_hex, go_pkg_mime_multipart, go_pkg_path, ingestFolderPreview (+2 more)
+### Community 3 - "Documento de Requerimientos Generales del Sistema (SRS)"
+Cohesion: 0.33
+Nodes (5): 1. Visión General y Objetivo del Sistema, 2. Arquitectura y Stack Tecnológico Aprobado, 4. Requisitos No Funcionales (RNF), 5. Resumen de Módulos Técnicos para el Equipo de Desarrollo, Documento de Requerimientos Generales del Sistema (SRS)
 
 ### Community 4 - "server/main.go"
-Cohesion: 0.12
-Nodes (29): containsInt64(), go_pkg_archive_zip, go_pkg_context, go_pkg_crypto_rand, go_pkg_database_sql, go_pkg_encoding_base64, go_pkg_encoding_json, go_pkg_errors (+21 more)
+Cohesion: 0.10
+Nodes (28): buildJPEGImagePDF(), buildPDF(), demoPDF(), escapePDF(), generate(), main(), rasterOCRDemoPDF(), writeDemoPackage() (+20 more)
 
 ### Community 5 - "package.json"
 Cohesion: 0.06
@@ -132,7 +129,7 @@ Nodes (31): dependencies, crypto-js, idb, @mdi/font, pdfkit, svg-to-pdfkit, vue,
 
 ### Community 6 - "loadSavedWorkspaces"
 Cohesion: 0.13
-Nodes (26): addMissingDocuments(), checkSession(), classifyIngest(), clearIngestTramiteMapping(), confirmMergeAllPending(), confirmWorkspaceFusion(), deleteWholeWorkspace(), forgetUnavailableIngest() (+18 more)
+Nodes (27): addMissingDocuments(), checkSession(), classifyIngest(), clearIngestTramiteMapping(), confirmMergeAllPending(), confirmWorkspaceFusion(), deleteWholeWorkspace(), fetchWorkspaceJSON() (+19 more)
 
 ### Community 7 - "N038: Guardián de cierre [REQUERIDO; NO IMPLEMENTADO; no integrado]"
 Cohesion: 0.09
@@ -147,7 +144,7 @@ Cohesion: 0.10
 Nodes (19): **1. Obtener Expedientes Pendientes de Subsanación**, 1. Stack Tecnológico y Dependencias, **2. Clasificación Manual de PDF No Identificado**, 2. Contexto y Flujo de Datos, 3. Estructura de Directorios Sugerida, **3. Inyección Puntual de Documento Faltante**, 4. Modelos de Datos y Entidades, 5. Lógica de Negocio y Algoritmos (+11 more)
 
 ### Community 10 - "Documento de Diseño Técnico"
-Cohesion: 0.15
+Cohesion: 0.17
 Nodes (12): 1. Stack Tecnológico y Dependencias, 2. Contexto y Flujo de Datos, 3. Estructura de Directorios Sugerida, 4. Modelos de Datos y Entidades, 5. Lógica de Negocio y Algoritmos, **A. Estructuras de Datos en Go (`domain/empaquetado.go`)**, Decisiones Pendientes, Documento de Diseño Técnico (+4 more)
 
 ### Community 11 - "Documento de Diseño Técnico"
@@ -159,8 +156,8 @@ Cohesion: 0.10
 Nodes (19): 1. Stack Tecnológico y Dependencias, 2. Contexto y Flujo de Datos, 3. Estructura de Directorios Sugerida, 4. Modelos de Datos y Entidades, 5. Lógica de Negocio y Algoritmos, 6. Interfaz de Comunicación (APIs / Métodos Go), **A. Definición DDL de la Tabla (`DIGITALIZACION.PLANILLA_DIGITAL`)**, **A. Firma de la Interfaz Go (`repository/oracle_repository.go`)** (+11 more)
 
 ### Community 13 - "3. Requisitos Funcionales Generales (RF)"
-Cohesion: 0.17
-Nodes (12): 1. Visión General y Objetivo del Sistema, 2. Arquitectura y Stack Tecnológico Aprobado, 3. Requisitos Funcionales Generales (RF), 4. Requisitos No Funcionales (RNF), 5. Resumen de Módulos Técnicos para el Equipo de Desarrollo, Documento de Requerimientos Generales del Sistema (SRS), **RF-01: Ingesta Dual de Información**, **RF-02: Resolución de Identidades y Normalización de Nombres** (+4 more)
+Cohesion: 0.29
+Nodes (7): 3. Requisitos Funcionales Generales (RF), **RF-01: Ingesta Dual de Información**, **RF-02: Resolución de Identidades y Normalización de Nombres**, **RF-03: Pipeline de Clasificación Híbrida y Fusión PDF**, **RF-04: Subsanación Manual y Control de Faltantes**, **RF-05: Módulo de Gestión de Objeciones**, **RF-06: Guardián de Cierre y Empaquetado Normativo**
 
 ### Community 14 - "Find and recover documents"
 Cohesion: 0.24
@@ -175,8 +172,8 @@ Cohesion: 0.12
 Nodes (16): 1. Stack Tecnológico y Dependencias, 2. Contexto y Flujo de Datos, 3. Estructura de Directorios Sugerida, 4. Modelos de Datos y Entidades, 5. Lógica de Negocio y Algoritmos, 6. Interfaz de Comunicación (APIs / Eventos Internos), **A. Archivo de Reglas YAML (`reglas_clasificacion.yaml`)**, **A. Interfaz Go para Invocación del Pipeline (`pipeline/processor.go`)** (+8 more)
 
 ### Community 17 - "signOut"
-Cohesion: 0.13
-Nodes (21): addObjectionPatients(), chooseObjectionWorkspace(), createObjectionWorkspace(), downloadSelectedCoverageSheets(), generateCoverageSheets(), loadCoveragePlanillas(), loadObjectionPDFSelection(), loadObjectionWorkspace() (+13 more)
+Cohesion: 0.12
+Nodes (22): addObjectionPatients(), chooseObjectionWorkspace(), coverageServiceLabel(), createObjectionWorkspace(), downloadSelectedCoverageSheets(), generateCoverageSheets(), loadCoveragePlanillas(), loadObjectionPDFSelection() (+14 more)
 
 ### Community 18 - "Reglas OCR, clasificación y checklist ACFSS"
 Cohesion: 0.18
@@ -191,8 +188,8 @@ Cohesion: 0.22
 Nodes (9): N001: SPD MSP / Folio [REQUERIDO; IMPLEMENTADO; VERIFICADO básica], N002: ACFSS [REQUERIDO; dominio del sistema], N003: Frontend Vue/Vuetify [REQUERIDO; IMPLEMENTADO; VERIFICADO build], N004: Backend Go [REQUERIDO; IMPLEMENTADO; VERIFICADO build + HTTP 200], N005: PLANILLA_DIGITAL [REQUERIDO; IMPLEMENTADO; NO VERIFICADO], R001: Folio automatiza ACFSS [REQUERIDO/IMPLEMENTADO; finalidad general parcial], R002: Folio usa Vue/Vuetify [IMPLEMENTADO], R003: Folio usa Go [IMPLEMENTADO] (+1 more)
 
 ### Community 21 - "standardCodeForFilename"
-Cohesion: 0.18
-Nodes (11): addWorkspacePDFs(), deleteWorkspacePDF(), openObjectionPatientDocuments(), openPatientDocumentsWorkspace(), openWorkspaceFusion(), queuedWorkspaceDuplicates, reviewPendingFusion(), selectWorkspacePatient() (+3 more)
+Cohesion: 0.17
+Nodes (12): addWorkspacePDFs(), deleteWorkspacePDF(), openObjectionPatientDocuments(), openPatientDocumentsWorkspace(), openSavedWorkspace(), openWorkspaceFusion(), queuedWorkspaceDuplicates, reviewPendingFusion() (+4 more)
 
 ### Community 22 - "Reglas funcionales de estructura ACFSS"
 Cohesion: 0.25
@@ -207,8 +204,8 @@ Cohesion: 0.28
 Nodes (3): Desarrollo local, Inicio automático en Linux, SPD MSP
 
 ### Community 25 - "objeciones.go"
-Cohesion: 0.18
-Nodes (20): copyObjectionPDFTree(), nextSafeAnnexName(), normalizeAnnexFilename(), normalizedWorkspaceRelativePath(), objectionAnnexBase(), objectionMatrixFilename(), objectionPDFIncluded(), objectionPDFRecord() (+12 more)
+Cohesion: 0.14
+Nodes (22): nextSafeAnnexName(), normalizeAnnexFilename(), normalizeCedulaValue(), normalizedWorkspaceRelativePath(), objectionAnnexBase(), objectionCloseoutMissing(), objectionHeaderName(), objectionPDFIncluded() (+14 more)
 
 ### Community 26 - "R028: Workspace sincroniza documentos Oracle [IMPLEMENTADO parcialmente]"
 Cohesion: 0.33
@@ -226,9 +223,9 @@ Nodes (4): Answer, Outcome, Q: Does Oracle-only planilla absence block processin
 Cohesion: 0.40
 Nodes (5): N031: Coberturas [REQUERIDO; IMPLEMENTADO; NO VERIFICADO], N033: C_COBERTURA.pdf [REQUERIDO; IMPLEMENTADO; NO VERIFICADO], N034: PDI_COBERTURA [REQUERIDO; IMPLEMENTADO; NO VERIFICADO; escritura Oracle programada], R033: Cobertura genera C_COBERTURA [IMPLEMENTADO], R035: Cobertura actualiza PDI_COBERTURA [IMPLEMENTADO]
 
-### Community 30 - "demo-lote/main.go"
-Cohesion: 0.19
-Nodes (15): buildJPEGImagePDF(), buildPDF(), demoPDF(), escapePDF(), generate(), main(), rasterOCRDemoPDF(), writeDemoPackage() (+7 more)
+### Community 30 - "6. Interfaz de Comunicación (APIs REST)"
+Cohesion: 0.50
+Nodes (4): **1. Solicitar Auditoría Pre-Cierre (Pre-flight Check)**, **2. Compilar Paquete Final ISO / ZIP**, **3. Obtener Metadatos para Rotulado Físico de CD/DVD**, 6. Interfaz de Comunicación (APIs REST)
 
 ### Community 31 - "N011: Previsualización de ingesta [REQUERIDO; IMPLEMENTADO; NO VERIFICADO]"
 Cohesion: 0.50
@@ -242,57 +239,45 @@ Nodes (3): N012: PDI_TRAMITE [REQUERIDO; IMPLEMENTADO; NO VERIFICADO], N014: Vin
 Cohesion: 0.67
 Nodes (3): onDrop(), prettySize(), upload()
 
-### Community 51 - "server"
-Cohesion: 0.13
-Nodes (16): parseOracleDate(), envInt64(), envOr(), server, main(), newSessionID(), oracleCredentialError(), oracleHasRole() (+8 more)
-
 ### Community 53 - "objeciones_test.go"
-Cohesion: 0.20
-Nodes (20): objectionPatientFolder(), server, persistTestObjectionJob(), TestAppendObjectionRowsPreservesWorkAndInvalidatesExistingMatrix(), TestBuildSelectedObjectionRowsIncludesOnlyChosenCandidates(), TestCreateObjectionWorkspaceReportsExistingDuplicatesWithoutCreatingAnother(), TestDownloadObjectionZIPIncludesOnlyMarkedClinicalPDFs(), TestInstallObjectionRowsAppendsForgottenTransactionWithoutChangingExistingRows() (+12 more)
+Cohesion: 0.19
+Nodes (23): objectionMatrixFilename(), objectionPatientFolder(), server, persistTestObjectionJob(), TestAppendObjectionRowsPreservesWorkAndInvalidatesExistingMatrix(), TestBuildSelectedObjectionRowsIncludesOnlyChosenCandidates(), TestCreateObjectionWorkspaceReportsExistingDuplicatesWithoutCreatingAnother(), TestDownloadObjectionZIPIncludesOnlyMarkedClinicalPDFs() (+15 more)
 
 ### Community 54 - "clasificacion.go"
-Cohesion: 0.10
-Nodes (31): addDateCandidateForPeriod(), classifyPDF(), copyWithLimit(), datesOutsideBilledPeriod(), extractPDFText(), formatBilledPeriod(), isRelevantDocumentDateContext(), loadClassificationRules() (+23 more)
+Cohesion: 0.11
+Nodes (29): addDateCandidateForPeriod(), classifyPDF(), copyWithLimit(), datesOutsideBilledPeriod(), extractPDFText(), formatBilledPeriod(), isRelevantDocumentDateContext(), loadClassificationRules() (+21 more)
 
 ### Community 55 - "WorkspacePicker.vue"
-Cohesion: 0.11
-Nodes (27): orderedSavedWorkspaces, savedWorkspaceYearFilters, displayedModelValue, emit, filteredWorkspaces, hasFilters, orderedWorkspaces, pickerItems (+19 more)
+Cohesion: 0.08
+Nodes (40): coverageMonthLabel(), filteredObjectionPatients, filteredSavedWorkspaces, objectionSourceItems, objectionWorkspaceItems, orderedSavedWorkspaces, savedWorkspaceItems, savedWorkspaceStatusFilters (+32 more)
 
-### Community 56 - "6. Interfaz de Comunicación (APIs REST)"
-Cohesion: 0.50
-Nodes (4): **1. Solicitar Auditoría Pre-Cierre (Pre-flight Check)**, **2. Compilar Paquete Final ISO / ZIP**, **3. Obtener Metadatos para Rotulado Físico de CD/DVD**, 6. Interfaz de Comunicación (APIs REST)
+### Community 56 - "ingesta.go"
+Cohesion: 0.09
+Nodes (42): containsInt64(), coverageMembers(), newUploadJobID(), periodWorkspaceID(), validServiceCode(), TestDeleteObjectionWorkspaceLeavesSourceUntouched(), TestListWorkspacesSkipsHiddenDeletionRecoveryDirectories(), go_pkg_archive_zip (+34 more)
 
 ### Community 57 - "sameObjectionPeriod"
 Cohesion: 0.67
 Nodes (3): objectionPeriodSpaces, objectionSourcePeriodSpaces, sameObjectionPeriod()
 
-### Community 58 - "workspaceSavedOption"
-Cohesion: 0.20
-Nodes (12): coverageMonthLabel(), coverageServiceLabel(), filteredSavedWorkspaces, objectionSourceItems, objectionWorkspaceItems, savedWorkspaceItems, savedWorkspaceServiceFilters, savedWorkspaceStatusFilters (+4 more)
-
-### Community 59 - "workspace_delete_test.go"
-Cohesion: 0.33
-Nodes (5): go_pkg_bytes, go_pkg_net_http, go_pkg_net_http_httptest, go_pkg_testing, go_pkg_time
-
 ## Knowledge Gaps
-- **404 isolated node(s):** `coverageFailureItem`, `coverageGenerateRequest`, `loginRequest`, `objectionPackagePDF`, `oracleDocument` (+399 more)
-  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 473 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
+- **418 isolated node(s):** `coverageFailureItem`, `coverageGenerateRequest`, `loginRequest`, `objectionPackagePDF`, `oracleDocument` (+413 more)
+  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 490 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
 - **18 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `vue` connect `package.json` to `App.vue`, `WorkspacePicker.vue`?**
-  _High betweenness centrality (0.038) - this node is a cross-community bridge._
+  _High betweenness centrality (0.029) - this node is a cross-community bridge._
 - **Why does `idb` connect `package.json` to `App.vue`?**
-  _High betweenness centrality (0.033) - this node is a cross-community bridge._
-- **Why does `crypto-js` connect `package.json` to `generate_pdf.cjs`?**
-  _High betweenness centrality (0.019) - this node is a cross-community bridge._
-- **Are the 24 inferred relationships involving `packageFolderName()` (e.g. with `objectionHeaderStatuses()` and `TestAppendObjectionRowsPreservesWorkAndInvalidatesExistingMatrix()`) actually correct?**
-  _`packageFolderName()` has 24 INFERRED edges - model-reasoned connections that need verification._
+  _High betweenness centrality (0.025) - this node is a cross-community bridge._
+- **Why does `pdfkit` connect `package.json` to `generate_pdf.cjs`?**
+  _High betweenness centrality (0.016) - this node is a cross-community bridge._
+- **Are the 28 inferred relationships involving `packageFolderName()` (e.g. with `objectionHeaderStatuses()` and `TestAppendObjectionRowsPreservesWorkAndInvalidatesExistingMatrix()`) actually correct?**
+  _`packageFolderName()` has 28 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 28 inferred relationships involving `writeError()` (e.g. with `.addObjectionPatients()` and `.addWorkspacePDFs()`) actually correct?**
   _`writeError()` has 28 INFERRED edges - model-reasoned connections that need verification._
 - **What connects `coverageFailureItem`, `coverageGenerateRequest`, `loginRequest` to the rest of the system?**
-  _404 weakly-connected nodes found - possible documentation gaps or missing edges._
+  _418 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `App.vue` be split into smaller, more focused modules?**
-  _Cohesion score 0.008928571428571428 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.008264462809917356 - nodes in this community are weakly interconnected._

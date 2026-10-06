@@ -1,0 +1,134 @@
+{
+  "generated_at": "2026-10-05T19:44:31.344724+00:00",
+  "nodes": {
+    "cmd_server_ingesta_periodworkspaceid": {
+      "code_fingerprint": "e7317777ab693f1c7fb406bc80104cdcb00df1bd665720336124a807f36685ae",
+      "label": "periodWorkspaceID()",
+      "last": "2026-10-02T14:29:16.157928+00:00",
+      "provenance": [
+        {
+          "date": "2026-10-02T14:29:16.157928+00:00",
+          "outcome": "useful",
+          "q": "Why couldn't the user delete saved period WORK-AMBULATORIO-202609?"
+        }
+      ],
+      "score": 0.928325385,
+      "source_file": "cmd/server/ingesta.go",
+      "status": "tentative",
+      "uses": 1
+    },
+    "readme_spd_msp": {
+      "code_fingerprint": "7399ecb1ef538696fe10be7a9d9e597760a3a7b68025feba21b6651135b2fae2",
+      "label": "SPD MSP",
+      "last": "2026-10-05T19:31:47.443625+00:00",
+      "provenance": [
+        {
+          "date": "2026-10-05T19:31:47.443625+00:00",
+          "outcome": "useful",
+          "q": "¿Cuál es el estado real de implementación y verificación de SPD MSP / Folio?"
+        }
+      ],
+      "score": 0.99979574,
+      "source_file": "README.md",
+      "status": "tentative",
+      "uses": 1
+    },
+    "requerimientos_07_reglas_estructura_acfss_5_guardián_de_cierre": {
+      "code_fingerprint": "75cd1849b9b5a0abf276103795a9626e6918ecd5809ec1e0213182367c7dafac",
+      "label": "5. Guardián de cierre",
+      "last": "2026-10-05T19:31:47.443625+00:00",
+      "provenance": [
+        {
+          "date": "2026-10-05T19:31:47.443625+00:00",
+          "outcome": "useful",
+          "q": "¿Cuál es el estado real de implementación y verificación de SPD MSP / Folio?"
+        }
+      ],
+      "score": 0.99979574,
+      "source_file": "requerimientos/07_reglas_estructura_acfss.md",
+      "status": "tentative",
+      "uses": 1
+    },
+    "server_server_buildpatientfolders": {
+      "code_fingerprint": "e7317777ab693f1c7fb406bc80104cdcb00df1bd665720336124a807f36685ae",
+      "label": ".buildPatientFolders()",
+      "last": "2026-10-02T14:43:32.193731+00:00",
+      "provenance": [
+        {
+          "date": "2026-10-02T14:43:32.193731+00:00",
+          "outcome": "useful",
+          "q": "Does Oracle-only planilla absence block processing when ZIP is the source of truth?"
+        }
+      ],
+      "score": 0.928537921,
+      "source_file": "cmd/server/ingesta.go",
+      "status": "tentative",
+      "uses": 1
+    },
+    "server_server_inspectingestzip": {
+      "code_fingerprint": "e7317777ab693f1c7fb406bc80104cdcb00df1bd665720336124a807f36685ae",
+      "label": ".inspectIngestZIP()",
+      "last": "2026-10-02T14:43:32.193731+00:00",
+      "provenance": [
+        {
+          "date": "2026-10-02T14:43:32.193731+00:00",
+          "outcome": "useful",
+          "q": "Does Oracle-only planilla absence block processing when ZIP is the source of truth?"
+        }
+      ],
+      "score": 0.928537921,
+      "source_file": "cmd/server/ingesta.go",
+      "status": "tentative",
+      "uses": 1
+    },
+    "server_server_mergeworkspacepdfs": {
+      "code_fingerprint": "c91cde4a730214c11d3bcda8918d1a2c29c7b239ad350af6dc9268b772f3050f",
+      "label": ".mergeWorkspacePDFs()",
+      "last": "2026-10-05T19:31:47.443625+00:00",
+      "provenance": [
+        {
+          "date": "2026-10-05T19:31:47.443625+00:00",
+          "outcome": "useful",
+          "q": "¿Cuál es el estado real de implementación y verificación de SPD MSP / Folio?"
+        }
+      ],
+      "score": 0.99979574,
+      "source_file": "cmd/server/workspace.go",
+      "status": "tentative",
+      "uses": 1
+    },
+    "src_app_deleteworkspacedialog": {
+      "code_fingerprint": "bc139c370eeeb7624842ebd9bbdc7f61697e19df944d3d29bc05ec4380b5cca9",
+      "label": "deleteWorkspaceDialog",
+      "last": "2026-10-02T14:29:16.157928+00:00",
+      "provenance": [
+        {
+          "date": "2026-10-02T14:29:16.157928+00:00",
+          "outcome": "useful",
+          "q": "Why couldn't the user delete saved period WORK-AMBULATORIO-202609?"
+        }
+      ],
+      "score": 0.928325385,
+      "source_file": "src/App.vue",
+      "status": "tentative",
+      "uses": 1
+    },
+    "src_app_ingestpreviewreadytoprepare": {
+      "code_fingerprint": "bc139c370eeeb7624842ebd9bbdc7f61697e19df944d3d29bc05ec4380b5cca9",
+      "label": "ingestPreviewReadyToPrepare",
+      "last": "2026-10-02T14:43:32.193731+00:00",
+      "provenance": [
+        {
+          "date": "2026-10-02T14:43:32.193731+00:00",
+          "outcome": "useful",
+          "q": "Does Oracle-only planilla absence block processing when ZIP is the source of truth?"
+        }
+      ],
+      "score": 0.928537921,
+      "source_file": "src/App.vue",
+      "status": "tentative",
+      "uses": 1
+    }
+  },
+  "version": 1
+}
