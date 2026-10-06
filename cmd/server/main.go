@@ -119,6 +119,8 @@ func main() {
 	mux.HandleFunc("/api/v1/objeciones/agregar/", s.addObjectionPatients)
 	mux.HandleFunc("/api/v1/objeciones/cabeceras/", s.uploadObjectionHeader)
 	mux.HandleFunc("/api/v1/objeciones/documentos/", s.uploadObjectionDocument)
+	mux.HandleFunc("/api/v1/objeciones/pdfs/seleccion/", s.objectionPDFSelection)
+	mux.HandleFunc("/api/v1/objeciones/postura/", s.setObjectionPosture)
 	mux.Handle("/", http.FileServer(http.Dir("dist")))
 
 	addr := net.JoinHostPort(envOr("FOLIO_LISTEN_HOST", "127.0.0.1"), envOr("API_PORT", "8080"))

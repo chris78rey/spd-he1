@@ -3,7 +3,7 @@
   "1": "stagedJob",
   "2": "generate_pdf.cjs",
   "3": "ingesta.go",
-  "4": "coberturas.go",
+  "4": "workspace_delete_test.go",
   "5": "package.json",
   "6": "loadSavedWorkspaces",
   "7": "N038: Guardián de cierre [REQUERIDO; NO IMPLEMENTADO; no integrado]",
@@ -29,7 +29,7 @@
   "27": "Q: Why couldn't the user delete saved period WORK-AMBULATORIO-202609?",
   "28": "Q: Does Oracle-only planilla absence block processing when ZIP is the source of truth?",
   "29": "N031: Coberturas [REQUERIDO; IMPLEMENTADO; NO VERIFICADO]",
-  "30": "server",
+  "30": "server/main.go",
   "31": "N011: Previsualización de ingesta [REQUERIDO; IMPLEMENTADO; NO VERIFICADO]",
   "32": "AGENTS.md",
   "33": "R014: Vínculo manual corrige trámite [IMPLEMENTADO]",
@@ -50,11 +50,11 @@
   "48": "N036: Primer ingreso [REQUERIDO; PARCIAL; estructura sí, cierre integral no]",
   "49": "N040: Biblioteca IndexedDB [REQUERIDO de producto; IMPLEMENTADO; NO VERIFICADO; subsistema separado]",
   "50": "N041: Graphify [artefacto implementado; herramienta de análisis]",
-  "51": "server/main.go",
+  "51": "server",
   "52": "go_pkg_encoding_xml",
   "53": "objeciones_test.go",
   "54": "clasificacion.go",
-  "55": "workspace.go",
-  "56": "Documento de Requerimientos Generales del Sistema (SRS)",
-  "57": "4. Modelos de Datos y Entidades"
+  "55": "filteredSavedWorkspaces",
+  "56": "6. Interfaz de Comunicación (APIs REST)",
+  "57": "sameObjectionPeriod"
 }

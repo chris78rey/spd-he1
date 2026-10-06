@@ -44,27 +44,28 @@ type workspaceDocument struct {
 }
 
 type stagedJob struct {
-	ID                string                    `json:"job_id"`
-	Status            string                    `json:"status"`
-	Username          string                    `json:"username"`
-	Month             string                    `json:"mes"`
-	Year              string                    `json:"anio"`
-	Service           string                    `json:"tipo_servicio"`
-	ReceivedAt        time.Time                 `json:"received_at"`
-	Files             []stagedUpload            `json:"files"`
-	Aliases           []string                  `json:"legacy_ids,omitempty"`
-	ExternalPDFs      []workspaceDocument       `json:"external_pdfs,omitempty"`
-	Renames           map[string]string         `json:"renames,omitempty"`
-	Replacements      map[string]string         `json:"replacements,omitempty"`
-	MergedDuplicates  map[string][]string       `json:"merged_duplicates,omitempty"`
-	DeletedPDFs       map[string]bool           `json:"deleted_pdfs,omitempty"`
-	DocumentPlanillas map[string]int64          `json:"document_planillas,omitempty"`
-	TramiteMappings   map[string]string         `json:"tramite_mappings,omitempty"`
-	CoverageFailures  map[int64]coverageFailure `json:"coverage_failures,omitempty"`
-	IsObjections      bool                      `json:"es_objeciones,omitempty"`
-	ObjectionSourceID string                    `json:"expediente_origen,omitempty"`
-	ObjectionRows     []objectionRecord         `json:"objeciones,omitempty"`
-	StatusDetail      string                    `json:"status_detail"`
+	ID                    string                    `json:"job_id"`
+	Status                string                    `json:"status"`
+	Username              string                    `json:"username"`
+	Month                 string                    `json:"mes"`
+	Year                  string                    `json:"anio"`
+	Service               string                    `json:"tipo_servicio"`
+	ReceivedAt            time.Time                 `json:"received_at"`
+	Files                 []stagedUpload            `json:"files"`
+	Aliases               []string                  `json:"legacy_ids,omitempty"`
+	ExternalPDFs          []workspaceDocument       `json:"external_pdfs,omitempty"`
+	Renames               map[string]string         `json:"renames,omitempty"`
+	Replacements          map[string]string         `json:"replacements,omitempty"`
+	MergedDuplicates      map[string][]string       `json:"merged_duplicates,omitempty"`
+	DeletedPDFs           map[string]bool           `json:"deleted_pdfs,omitempty"`
+	DocumentPlanillas     map[string]int64          `json:"document_planillas,omitempty"`
+	TramiteMappings       map[string]string         `json:"tramite_mappings,omitempty"`
+	CoverageFailures      map[int64]coverageFailure `json:"coverage_failures,omitempty"`
+	IsObjections          bool                      `json:"es_objeciones,omitempty"`
+	ObjectionSourceID     string                    `json:"expediente_origen,omitempty"`
+	ObjectionRows         []objectionRecord         `json:"objeciones,omitempty"`
+	ObjectionPDFSelection map[string]bool           `json:"objecion_pdf_selection,omitempty"`
+	StatusDetail          string                    `json:"status_detail"`
 }
 
 var headerParts = []uploadPart{

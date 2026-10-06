@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -36,6 +37,233 @@ type objectionRecord struct {
 	Matched             bool   `json:"coincide_expediente"`
 	Posture             string `json:"postura,omitempty"`
 	CoverageAttached    bool   `json:"cobertura_adjunta"`
+}
+
+func editableObjectionWorkspace(job stagedJob) bool {
+	return job.IsObjections && (job.Status == "PROCESSED" || job.Status == "INCOMPLETE")
+}
+
+type objectionPackagePDF struct {
+	Path     string `json:"path"`
+	Name     string `json:"name"`
+	Size     int64  `json:"size_bytes"`
+	Included bool   `json:"incluido_en_zip"`
+	Required bool   `json:"obligatorio"`
+}
+
+func normalizedWorkspaceRelativePath(path string) string {
+	return filepath.ToSlash(filepath.Clean(filepath.FromSlash(path)))
+}
+
+func requiredObjectionPDF(path string) bool {
+	name := strings.ToUpper(filepath.Base(filepath.FromSlash(path)))
+	return name == "P_INDIVIDUAL.PDF" || name == "C_COBERTURA.PDF"
+}
+
+func objectionPDFIncluded(job stagedJob, path string) bool {
+	if !job.IsObjections {
+		return true
+	}
+	path = normalizedWorkspaceRelativePath(path)
+	if requiredObjectionPDF(path) {
+		return true
+	}
+	return job.ObjectionPDFSelection[path]
+}
+
+func objectionZIPIncludesFile(job stagedJob, relative string) bool {
+	relative = normalizedWorkspaceRelativePath(relative)
+	if !job.IsObjections {
+		return true
+	}
+	if relative == "3. MATRIZ_RESPUESTA.xlsx" {
+		return false
+	}
+	if strings.HasPrefix(relative, "4. EXPEDIENTES/") && strings.EqualFold(filepath.Ext(relative), ".pdf") {
+		return objectionPDFIncluded(job, relative)
+	}
+	return true
+}
+
+func objectionPDFRecord(job stagedJob, path string) (*objectionRecord, bool) {
+	path = normalizedWorkspaceRelativePath(path)
+	if !strings.HasPrefix(path, "4. EXPEDIENTES/") || !strings.EqualFold(filepath.Ext(path), ".pdf") {
+		return nil, false
+	}
+	parts := strings.Split(path, "/")
+	if len(parts) < 3 {
+		return nil, false
+	}
+	planillaID := planillaForPath(job, path)
+	for index := range job.ObjectionRows {
+		row := &job.ObjectionRows[index]
+		if row.PatientFolder == parts[1] && row.Matched && row.PlanillaID > 0 && row.PlanillaID == planillaID {
+			return row, true
+		}
+	}
+	return nil, false
+}
+
+func cloneBoolMap(source map[string]bool) map[string]bool {
+	copy := make(map[string]bool, len(source))
+	for key, value := range source {
+		copy[key] = value
+	}
+	return copy
+}
+
+func (s *server) objectionPDFSelection(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "Método no permitido.")
+		return
+	}
+	if _, ok := s.getSession(r); !ok {
+		writeError(w, http.StatusUnauthorized, "Inicia sesión para continuar.")
+		return
+	}
+	id := strings.TrimPrefix(r.URL.Path, "/api/v1/objeciones/pdfs/seleccion/")
+	if !validJobID(id) {
+		writeError(w, http.StatusBadRequest, "El identificador del espacio no es válido.")
+		return
+	}
+	if r.Method == http.MethodPost {
+		s.ingestMu.Lock()
+		defer s.ingestMu.Unlock()
+	}
+	job, err := s.loadStagedJob(id)
+	if err != nil || !editableObjectionWorkspace(job) {
+		writeError(w, http.StatusNotFound, "No se encontró el espacio preparado de objeciones.")
+		return
+	}
+	packageRoot := filepath.Join(s.jobRoot(job.ID), "trabajo", packageFolderName(&job))
+	if r.Method == http.MethodPost {
+		var input struct {
+			Path     string `json:"path"`
+			Included *bool  `json:"incluir"`
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, 16*1024)
+		if err := json.NewDecoder(r.Body).Decode(&input); err != nil || input.Included == nil {
+			writeError(w, http.StatusBadRequest, "Indica el PDF y si debe incluirse en el ZIP.")
+			return
+		}
+		path := normalizedWorkspaceRelativePath(input.Path)
+		_, allowed := objectionPDFRecord(job, path)
+		if !allowed {
+			writeError(w, http.StatusBadRequest, "Selecciona un PDF asociado a un trámite objetado.")
+			return
+		}
+		if !*input.Included && requiredObjectionPDF(path) {
+			writeError(w, http.StatusConflict, "P_INDIVIDUAL.pdf y C_COBERTURA.pdf son obligatorios para cada trámite.")
+			return
+		}
+		filePath, err := safeWorkspacePath(packageRoot, path)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "La ruta del PDF no es válida.")
+			return
+		}
+		info, err := os.Stat(filePath)
+		if err != nil || !info.Mode().IsRegular() {
+			writeError(w, http.StatusNotFound, "No se encontró el PDF seleccionado.")
+			return
+		}
+		previousSelection := cloneBoolMap(job.ObjectionPDFSelection)
+		if *input.Included {
+			if job.ObjectionPDFSelection == nil {
+				job.ObjectionPDFSelection = make(map[string]bool)
+			}
+			job.ObjectionPDFSelection[path] = true
+		} else {
+			delete(job.ObjectionPDFSelection, path)
+		}
+		if err := s.saveStagedJob(job); err != nil {
+			job.ObjectionPDFSelection = previousSelection
+			writeError(w, http.StatusInternalServerError, "No se pudo guardar la selección de PDFs.")
+			return
+		}
+	}
+	documents := make([]workspacePDF, 0)
+	if _, statErr := os.Stat(packageRoot); statErr == nil {
+		documents, _, err = listWorkspacePDFs(packageRoot)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "No se pudieron listar los PDFs de objeciones.")
+			return
+		}
+	} else if !errors.Is(statErr, os.ErrNotExist) {
+		writeError(w, http.StatusInternalServerError, "No se pudieron listar los PDFs de objeciones.")
+		return
+	}
+	result := make([]objectionPackagePDF, 0, len(documents))
+	for _, document := range documents {
+		if _, allowed := objectionPDFRecord(job, document.Path); !allowed {
+			continue
+		}
+		result = append(result, objectionPackagePDF{
+			Path: document.Path, Name: document.Name, Size: document.Size,
+			Included: objectionPDFIncluded(job, document.Path), Required: requiredObjectionPDF(document.Path),
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"job_id": job.ID, "documents": result})
+}
+
+func (s *server) setObjectionPosture(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "Método no permitido.")
+		return
+	}
+	if _, ok := s.getSession(r); !ok {
+		writeError(w, http.StatusUnauthorized, "Inicia sesión para continuar.")
+		return
+	}
+	id := strings.TrimPrefix(r.URL.Path, "/api/v1/objeciones/postura/")
+	if !validJobID(id) {
+		writeError(w, http.StatusBadRequest, "El identificador del espacio no es válido.")
+		return
+	}
+	var input struct {
+		Tramite string `json:"pdi_tramite"`
+		Posture string `json:"postura"`
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 16*1024)
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "Indica el trámite y su postura.")
+		return
+	}
+	tramite, err := normalizeTramiteValue(input.Tramite)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "Selecciona un trámite objetado.")
+		return
+	}
+	posture := strings.ToUpper(strings.TrimSpace(input.Posture))
+	if posture != "ACEPTA" && posture != "RECHAZA" {
+		writeError(w, http.StatusBadRequest, "Selecciona ACEPTA o RECHAZA como postura.")
+		return
+	}
+	s.ingestMu.Lock()
+	defer s.ingestMu.Unlock()
+	job, err := s.loadStagedJob(id)
+	if err != nil || !editableObjectionWorkspace(job) {
+		writeError(w, http.StatusNotFound, "No se encontró el espacio de objeciones.")
+		return
+	}
+	var record *objectionRecord
+	for index := range job.ObjectionRows {
+		if job.ObjectionRows[index].Tramite == tramite {
+			record = &job.ObjectionRows[index]
+			break
+		}
+	}
+	if record == nil {
+		writeError(w, http.StatusNotFound, "El trámite no pertenece a este espacio de objeciones.")
+		return
+	}
+	previous := record.Posture
+	record.Posture = posture
+	if err := s.saveStagedJob(job); err != nil {
+		record.Posture = previous
+		writeError(w, http.StatusInternalServerError, "No se pudo guardar la postura.")
+		return
+	}
+	writeJSON(w, http.StatusOK, jobResponse(s, job, "", nil))
 }
 
 func (s *server) previewObjections(w http.ResponseWriter, r *http.Request) {
@@ -73,6 +301,7 @@ func (s *server) previewObjections(w http.ResponseWriter, r *http.Request) {
 
 type objectionRequest struct {
 	sourceID         string
+	reuseID          string
 	selectedTramites []string
 }
 
@@ -91,6 +320,10 @@ func (s *server) readObjectionRequest(w http.ResponseWriter, r *http.Request) (o
 		}
 	}()
 	request.sourceID = strings.TrimSpace(r.FormValue("expediente_origen"))
+	request.reuseID = strings.TrimSpace(r.FormValue("reutilizar_espacio"))
+	if request.reuseID != "" && !validJobID(request.reuseID) {
+		return request, errors.New("El identificador del espacio de objeciones que quieres reutilizar no es válido.")
+	}
 	var selectionErr error
 	request.selectedTramites, selectionErr = parseSelectedObjectionTramites(r.MultipartForm.Value["tramites_objetados"])
 	if selectionErr != nil {
@@ -277,7 +510,12 @@ func buildSelectedObjectionRows(selected []string, candidates []objectionRecord)
 		candidatesByTramite[candidate.Tramite] = candidate
 	}
 	result := make([]objectionRecord, 0, len(selected))
+	seen := make(map[string]bool, len(selected))
 	for _, tramite := range selected {
+		if seen[tramite] {
+			continue
+		}
+		seen[tramite] = true
 		candidate, ok := candidatesByTramite[tramite]
 		if !ok || !candidate.Matched {
 			return nil, fmt.Errorf("El trámite %s no tiene un expediente disponible para seleccionar.", tramite)
@@ -291,6 +529,123 @@ func buildSelectedObjectionRows(selected []string, candidates []objectionRecord)
 		return nil, errors.New("La selección supera el límite de 10.000 filas de respuesta.")
 	}
 	return result, nil
+}
+
+func (s *server) objectionWorkspacesForPeriod(service, month, year string) ([]stagedJob, error) {
+	directories, err := os.ReadDir(s.workspacesDir)
+	if errors.Is(err, os.ErrNotExist) {
+		return []stagedJob{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	workspaces := make([]stagedJob, 0)
+	for _, directory := range directories {
+		if !directory.IsDir() || strings.HasPrefix(directory.Name(), ".") {
+			continue
+		}
+		job, loadErr := s.loadStagedJob(directory.Name())
+		if loadErr != nil || !job.IsObjections || !sameObjectionPeriod(job.Service, job.Month, job.Year, service, month, year) {
+			continue
+		}
+		workspaces = append(workspaces, job)
+	}
+	sort.Slice(workspaces, func(i, j int) bool {
+		if workspaces[i].ReceivedAt.Equal(workspaces[j].ReceivedAt) {
+			return workspaces[i].ID < workspaces[j].ID
+		}
+		return workspaces[i].ReceivedAt.Before(workspaces[j].ReceivedAt)
+	})
+	return workspaces, nil
+}
+
+func sameObjectionPeriod(serviceA, monthA, yearA, serviceB, monthB, yearB string) bool {
+	parsedMonthA, errA := strconv.Atoi(strings.TrimSpace(monthA))
+	parsedMonthB, errB := strconv.Atoi(strings.TrimSpace(monthB))
+	monthsMatch := strings.EqualFold(strings.TrimSpace(monthA), strings.TrimSpace(monthB))
+	if errA == nil && errB == nil {
+		monthsMatch = parsedMonthA == parsedMonthB
+	}
+	return strings.EqualFold(strings.TrimSpace(serviceA), strings.TrimSpace(serviceB)) &&
+		monthsMatch && strings.EqualFold(strings.TrimSpace(yearA), strings.TrimSpace(yearB))
+}
+
+func objectionWorkspaceSummaries(workspaces []stagedJob) []map[string]any {
+	result := make([]map[string]any, 0, len(workspaces))
+	for _, job := range workspaces {
+		result = append(result, map[string]any{
+			"job_id": job.ID, "status": job.Status, "received_at": job.ReceivedAt,
+			"creado_por": job.Username, "tipo_servicio": job.Service, "mes": job.Month, "anio": job.Year,
+		})
+	}
+	return result
+}
+
+func (s *server) appendObjectionRows(job *stagedJob, source stagedJob, rows []objectionRecord) (int, bool, error) {
+	existing := make(map[string]bool, len(job.ObjectionRows))
+	for _, row := range job.ObjectionRows {
+		existing[row.Tramite] = true
+	}
+	newRows := make([]objectionRecord, 0, len(rows))
+	for _, row := range rows {
+		if existing[row.Tramite] {
+			continue
+		}
+		existing[row.Tramite] = true
+		newRows = append(newRows, row)
+	}
+	if len(newRows) == 0 {
+		return 0, false, nil
+	}
+
+	packageRoot := filepath.Join(s.jobRoot(job.ID), "trabajo", packageFolderName(job))
+	patientRoot := filepath.Join(s.jobRoot(source.ID), "trabajo", packageFolderName(&source), "4. EXPEDIENTES")
+	previousRows := append([]objectionRecord(nil), job.ObjectionRows...)
+	previousFiles := append([]stagedUpload(nil), job.Files...)
+	previousStatusDetail := job.StatusDetail
+	previousMappings := make(map[string]int64, len(job.DocumentPlanillas))
+	for path, planillaID := range job.DocumentPlanillas {
+		previousMappings[path] = planillaID
+	}
+	matrixName := objectionMatrixFilename(*job)
+	matrixPath := filepath.Join(packageRoot, matrixName)
+	previousMatrix, matrixErr := os.ReadFile(matrixPath)
+	matrixExisted := matrixErr == nil
+	if matrixErr != nil && !errors.Is(matrixErr, os.ErrNotExist) {
+		return 0, false, errors.New("No se pudo revisar la matriz anterior.")
+	}
+	if err := installObjectionRows(packageRoot, patientRoot, source, newRows, job); err != nil {
+		job.DocumentPlanillas = previousMappings
+		return 0, false, err
+	}
+	job.ObjectionRows = append(job.ObjectionRows, newRows...)
+	if matrixExisted {
+		if err := saveObjectionVersion(s.jobRoot(job.ID), matrixName, previousMatrix); err != nil {
+			cleanupObjectionRows(packageRoot, newRows)
+			job.ObjectionRows, job.Files, job.DocumentPlanillas = previousRows, previousFiles, previousMappings
+			return 0, false, errors.New("No se pudo conservar la matriz anterior antes de agregar los trámites.")
+		}
+		if err := os.Remove(matrixPath); err != nil {
+			cleanupObjectionRows(packageRoot, newRows)
+			job.ObjectionRows, job.Files, job.DocumentPlanillas = previousRows, previousFiles, previousMappings
+			return 0, false, errors.New("No se pudo invalidar la matriz anterior.")
+		}
+	}
+	job.Files = removeObjectionFile(job.Files, "objection_matriz")
+	job.StatusDetail = fmt.Sprintf("Se agregaron %d trámites al espacio de objeciones. Los documentos y posturas existentes se conservaron.", len(newRows))
+	if matrixExisted {
+		job.StatusDetail += " La matriz anterior quedó archivada e invalidada; vuelve a cargarla antes de preparar la descarga final."
+	}
+	job.StatusDetail += " Los documentos de cabecera se solicitan al preparar el ZIP. Oracle permanece sin cambios."
+	if err := s.saveStagedJob(*job); err != nil {
+		cleanupObjectionRows(packageRoot, newRows)
+		job.ObjectionRows, job.Files, job.DocumentPlanillas, job.StatusDetail = previousRows, previousFiles, previousMappings, previousStatusDetail
+		if matrixExisted {
+			_ = atomicWritePrivateFile(matrixPath, previousMatrix)
+		}
+		return 0, false, errors.New("No se pudo registrar la selección; se restauraron la matriz y el contenido anterior.")
+	}
+	return len(newRows), matrixExisted, nil
 }
 
 func (s *server) createObjectionWorkspace(w http.ResponseWriter, r *http.Request) {
@@ -311,8 +666,47 @@ func (s *server) createObjectionWorkspace(w http.ResponseWriter, r *http.Request
 		return
 	}
 	defer r.MultipartForm.RemoveAll()
+	if len(input.selectedTramites) == 0 {
+		writeError(w, http.StatusBadRequest, "Selecciona al menos un paciente objetado.")
+		return
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
 	defer cancel()
+	source, err := s.loadStagedJob(input.sourceID)
+	if err != nil || source.IsObjections || (source.Status != "PROCESSED" && source.Status != "INCOMPLETE") || !s.hasClinicalSource(source) {
+		writeError(w, http.StatusUnprocessableEntity, "El expediente de origen debe ser un primer ingreso preparado que conserve su ZIP.")
+		return
+	}
+	existing, err := s.objectionWorkspacesForPeriod(source.Service, source.Month, source.Year)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "No se pudieron revisar los espacios de objeciones existentes.")
+		return
+	}
+	var reuse *stagedJob
+	if len(existing) > 1 {
+		for index := range existing {
+			if existing[index].ID == input.reuseID {
+				reuse = &existing[index]
+				break
+			}
+		}
+		if reuse == nil {
+			writeJSON(w, http.StatusConflict, map[string]any{
+				"error":               "Ya existen varios espacios de objeciones para este servicio y período. Elige uno para continuar; no se crearán, borrarán ni fusionarán espacios automáticamente.",
+				"espacios_existentes": objectionWorkspaceSummaries(existing),
+			})
+			return
+		}
+	} else if len(existing) == 1 {
+		reuse = &existing[0]
+		if input.reuseID != "" && input.reuseID != reuse.ID {
+			writeError(w, http.StatusConflict, "El espacio elegido no corresponde al período seleccionado.")
+			return
+		}
+	} else if input.reuseID != "" {
+		writeError(w, http.StatusConflict, "El espacio de objeciones elegido ya no existe para este período. Actualiza la lista e inténtalo de nuevo.")
+		return
+	}
 	candidates, source, err := s.objectionCandidates(ctx, input.sourceID)
 	if err != nil {
 		writeError(w, http.StatusUnprocessableEntity, err.Error())
@@ -321,6 +715,33 @@ func (s *server) createObjectionWorkspace(w http.ResponseWriter, r *http.Request
 	rows, err := buildSelectedObjectionRows(input.selectedTramites, candidates)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if reuse != nil {
+		if !editableObjectionWorkspace(*reuse) {
+			writeError(w, http.StatusConflict, "El espacio de objeciones existente no está disponible para continuar.")
+			return
+		}
+		added, invalidatedMatrix, appendErr := s.appendObjectionRows(reuse, source, rows)
+		if appendErr != nil {
+			writeError(w, http.StatusUnprocessableEntity, appendErr.Error())
+			return
+		}
+		message := fmt.Sprintf("Se reutilizó el espacio %s para %s · %s/%s.", reuse.ID, reuse.Service, reuse.Month, reuse.Year)
+		if added == 0 {
+			message += " Los trámites seleccionados ya estaban incluidos; no se duplicaron y no se creó otro ID."
+		} else {
+			message += fmt.Sprintf(" Se agregaron %d trámites nuevos; los documentos y posturas existentes se conservaron.", added)
+			if invalidatedMatrix {
+				message += " La matriz anterior quedó archivada e invalidada; vuelve a cargarla antes de preparar la descarga final."
+			}
+		}
+		message += " Los documentos de cabecera se solicitan al preparar el ZIP. Oracle permanece sin cambios."
+		result := jobResponse(s, *reuse, filepath.Join(s.jobRoot(reuse.ID), "trabajo", packageFolderName(reuse)), nil)
+		result["message"] = message
+		result["reutilizado"] = true
+		result["tramites_agregados"] = added
+		writeJSON(w, http.StatusOK, result)
 		return
 	}
 	id, err := newUploadJobID()
@@ -332,7 +753,7 @@ func (s *server) createObjectionWorkspace(w http.ResponseWriter, r *http.Request
 		ID: id, Status: "PROCESSED", Username: session.username,
 		Month: source.Month, Year: source.Year, Service: source.Service, ReceivedAt: time.Now().UTC(),
 		IsObjections: true, ObjectionSourceID: source.ID, ObjectionRows: rows,
-		StatusDetail: fmt.Sprintf("Espacio de objeciones separado con %d trámites seleccionados. Completa los documentos de cabecera antes de descargar el ZIP. Oracle permanece sin cambios.", len(rows)),
+		StatusDetail: fmt.Sprintf("Espacio de objeciones separado con %d trámites seleccionados. Los documentos de cabecera se solicitan al preparar la descarga final del ZIP. Oracle permanece sin cambios.", len(rows)),
 	}
 	if err := s.installObjectionWorkspace(&job, source, rows); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -383,7 +804,7 @@ func (s *server) uploadObjectionHeader(w http.ResponseWriter, r *http.Request) {
 	s.ingestMu.Lock()
 	defer s.ingestMu.Unlock()
 	job, err := s.loadStagedJob(id)
-	if err != nil || !job.IsObjections || job.Status != "PROCESSED" {
+	if err != nil || !editableObjectionWorkspace(job) {
 		writeError(w, http.StatusNotFound, "No se encontró el espacio de objeciones.")
 		return
 	}
@@ -536,7 +957,7 @@ func (s *server) addObjectionPatients(w http.ResponseWriter, r *http.Request) {
 	s.ingestMu.Lock()
 	defer s.ingestMu.Unlock()
 	job, err := s.loadStagedJob(id)
-	if err != nil || !job.IsObjections || job.Status != "PROCESSED" {
+	if err != nil || !editableObjectionWorkspace(job) {
 		writeError(w, http.StatusNotFound, "No se encontró el espacio de objeciones.")
 		return
 	}
@@ -552,66 +973,18 @@ func (s *server) addObjectionPatients(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	existing := make(map[string]bool, len(job.ObjectionRows))
-	for _, row := range job.ObjectionRows {
-		existing[row.Tramite] = true
-	}
-	for _, row := range rows {
-		if existing[row.Tramite] {
-			writeError(w, http.StatusConflict, fmt.Sprintf("El trámite %s ya está en este espacio de objeciones.", row.Tramite))
-			return
-		}
-	}
-	packageRoot := filepath.Join(s.jobRoot(job.ID), "trabajo", packageFolderName(&job))
-	patientRoot := filepath.Join(s.jobRoot(source.ID), "trabajo", packageFolderName(&source), "4. EXPEDIENTES")
-	previousRows := append([]objectionRecord(nil), job.ObjectionRows...)
-	previousFiles := append([]stagedUpload(nil), job.Files...)
-	previousMappings := make(map[string]int64, len(job.DocumentPlanillas))
-	for path, planillaID := range job.DocumentPlanillas {
-		previousMappings[path] = planillaID
-	}
-	if err := installObjectionRows(packageRoot, patientRoot, source, rows, &job); err != nil {
-		job.DocumentPlanillas = previousMappings
+	added, invalidatedMatrix, err := s.appendObjectionRows(&job, source, rows)
+	if err != nil {
 		writeError(w, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
-	job.ObjectionRows = append(job.ObjectionRows, rows...)
-	matrixName := objectionMatrixFilename(job)
-	matrixPath := filepath.Join(packageRoot, matrixName)
-	previousMatrix, matrixErr := os.ReadFile(matrixPath)
-	matrixExisted := matrixErr == nil
-	if matrixErr != nil && !errors.Is(matrixErr, os.ErrNotExist) {
-		cleanupObjectionRows(packageRoot, rows)
-		job.ObjectionRows, job.Files, job.DocumentPlanillas = previousRows, previousFiles, previousMappings
-		writeError(w, http.StatusInternalServerError, "No se pudo revisar la matriz anterior.")
-		return
+	result := jobResponse(s, job, filepath.Join(s.jobRoot(job.ID), "trabajo", packageFolderName(&job)), nil)
+	if added == 0 {
+		result["message"] = "Los trámites seleccionados ya estaban en este espacio; no se duplicaron ni se modificaron sus documentos, posturas o matriz."
+	} else if invalidatedMatrix {
+		result["message"] = job.StatusDetail
 	}
-	if matrixExisted {
-		if err := saveObjectionVersion(s.jobRoot(job.ID), matrixName, previousMatrix); err != nil {
-			cleanupObjectionRows(packageRoot, rows)
-			job.ObjectionRows, job.Files, job.DocumentPlanillas = previousRows, previousFiles, previousMappings
-			writeError(w, http.StatusInternalServerError, "No se pudo conservar la matriz anterior antes de agregar los trámites.")
-			return
-		}
-		if err := os.Remove(matrixPath); err != nil {
-			cleanupObjectionRows(packageRoot, rows)
-			job.ObjectionRows, job.Files, job.DocumentPlanillas = previousRows, previousFiles, previousMappings
-			writeError(w, http.StatusInternalServerError, "No se pudo invalidar la matriz anterior.")
-			return
-		}
-	}
-	job.Files = removeObjectionFile(job.Files, "objection_matriz")
-	job.StatusDetail = fmt.Sprintf("Espacio separado con %d trámites objetados. Puedes seguir agregando pacientes; vuelve a cargar la matriz oficial después de cada cambio. Oracle permanece sin cambios.", len(job.ObjectionRows))
-	if err := s.saveStagedJob(job); err != nil {
-		cleanupObjectionRows(packageRoot, rows)
-		job.ObjectionRows, job.Files, job.DocumentPlanillas = previousRows, previousFiles, previousMappings
-		if matrixExisted {
-			_ = atomicWritePrivateFile(matrixPath, previousMatrix)
-		}
-		writeError(w, http.StatusInternalServerError, "No se pudo registrar la selección; se restauró la matriz anterior.")
-		return
-	}
-	writeJSON(w, http.StatusOK, jobResponse(s, job, filepath.Join(s.jobRoot(job.ID), "trabajo", packageFolderName(&job)), nil))
+	writeJSON(w, http.StatusOK, result)
 }
 
 func removeObjectionFile(files []stagedUpload, field string) []stagedUpload {
@@ -803,7 +1176,7 @@ func (s *server) uploadObjectionDocument(w http.ResponseWriter, r *http.Request)
 	s.ingestMu.Lock()
 	defer s.ingestMu.Unlock()
 	job, err := s.loadStagedJob(id)
-	if err != nil || !job.IsObjections || job.Status != "PROCESSED" {
+	if err != nil || !editableObjectionWorkspace(job) {
 		writeError(w, http.StatusNotFound, "No se encontró el espacio de objeciones.")
 		return
 	}
@@ -814,6 +1187,10 @@ func (s *server) uploadObjectionDocument(w http.ResponseWriter, r *http.Request)
 	}
 	defer r.MultipartForm.RemoveAll()
 	kind := strings.TrimSpace(r.FormValue("tipo"))
+	if kind != "anexo" {
+		writeError(w, http.StatusBadRequest, "En Objeciones solo se cargan anexos nuevos. Revisa o reemplaza los demás PDFs en Abrir documentos del paciente.")
+		return
+	}
 	tramite, err := normalizeTramiteValue(r.FormValue("pdi_tramite"))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "Selecciona un trámite objetado.")
@@ -841,121 +1218,26 @@ func (s *server) uploadObjectionDocument(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	packageRoot := filepath.Join(s.jobRoot(job.ID), "trabajo", packageFolderName(&job))
-	savedFilename := ""
-	switch kind {
-	case "respuesta":
-		posture := strings.ToUpper(strings.TrimSpace(r.FormValue("postura")))
-		if posture != "ACEPTA" && posture != "RECHAZA" {
-			writeError(w, http.StatusBadRequest, "Selecciona ACEPTA o RECHAZA como postura.")
-			return
-		}
-		responsePath := filepath.Join(packageRoot, "4. EXPEDIENTES", record.PatientFolder, "P_INDIVIDUAL.pdf")
-		previous, readErr := os.ReadFile(responsePath)
-		existed := readErr == nil
-		if readErr != nil && !errors.Is(readErr, os.ErrNotExist) {
-			writeError(w, http.StatusInternalServerError, "No se pudo leer la versión anterior de P_INDIVIDUAL.pdf.")
-			return
-		}
-		if existed {
-			if err := saveObjectionVersion(s.jobRoot(job.ID), "P_INDIVIDUAL_"+record.Tramite, previous); err != nil {
-				writeError(w, http.StatusInternalServerError, "No se pudo conservar la versión anterior de P_INDIVIDUAL.pdf.")
-				return
-			}
-		}
-		previousRows := append([]objectionRecord(nil), job.ObjectionRows...)
-		previousMappings := make(map[string]int64, len(job.DocumentPlanillas))
-		for path, planillaID := range job.DocumentPlanillas {
-			previousMappings[path] = planillaID
-		}
-		if job.DocumentPlanillas == nil {
-			job.DocumentPlanillas = make(map[string]int64)
-		}
-		relative := filepath.ToSlash(filepath.Join("4. EXPEDIENTES", record.PatientFolder, "P_INDIVIDUAL.pdf"))
-		job.DocumentPlanillas[relative] = record.PlanillaID
-		record.Posture = posture
-		if err := atomicWritePrivateFile(responsePath, data); err != nil {
-			job.ObjectionRows = previousRows
-			job.DocumentPlanillas = previousMappings
-			writeError(w, http.StatusInternalServerError, "No se pudo guardar P_INDIVIDUAL.pdf.")
-			return
-		}
-		if err := s.saveStagedJob(job); err != nil {
-			job.ObjectionRows = previousRows
-			job.DocumentPlanillas = previousMappings
-			if existed {
-				_ = atomicWritePrivateFile(responsePath, previous)
-			} else {
-				_ = os.Remove(responsePath)
-			}
-			writeError(w, http.StatusInternalServerError, "No se pudo registrar la postura; se restauró la versión anterior de P_INDIVIDUAL.pdf.")
-			return
-		}
-		savedFilename = "P_INDIVIDUAL.pdf"
-	case "cobertura":
-		coveragePath := filepath.Join(packageRoot, "4. EXPEDIENTES", record.PatientFolder, "C_COBERTURA.pdf")
-		previous, readErr := os.ReadFile(coveragePath)
-		existed := readErr == nil
-		if readErr != nil && !errors.Is(readErr, os.ErrNotExist) {
-			writeError(w, http.StatusInternalServerError, "No se pudo leer la cobertura anterior.")
-			return
-		}
-		if existed {
-			if err := saveObjectionVersion(s.jobRoot(job.ID), "C_COBERTURA_"+record.Tramite, previous); err != nil {
-				writeError(w, http.StatusInternalServerError, "No se pudo conservar la cobertura anterior.")
-				return
-			}
-		}
-		previousMappings := make(map[string]int64, len(job.DocumentPlanillas))
-		for path, planillaID := range job.DocumentPlanillas {
-			previousMappings[path] = planillaID
-		}
-		if job.DocumentPlanillas == nil {
-			job.DocumentPlanillas = make(map[string]int64)
-		}
-		relative := filepath.ToSlash(filepath.Join("4. EXPEDIENTES", record.PatientFolder, "C_COBERTURA.pdf"))
-		job.DocumentPlanillas[relative] = record.PlanillaID
-		if err := atomicWritePrivateFile(coveragePath, data); err != nil {
-			job.DocumentPlanillas = previousMappings
-			writeError(w, http.StatusInternalServerError, "No se pudo guardar C_COBERTURA.pdf.")
-			return
-		}
-		if err := s.saveStagedJob(job); err != nil {
-			job.DocumentPlanillas = previousMappings
-			if existed {
-				_ = atomicWritePrivateFile(coveragePath, previous)
-			} else {
-				_ = os.Remove(coveragePath)
-			}
-			writeError(w, http.StatusInternalServerError, "No se pudo registrar la cobertura; se restauró el archivo anterior.")
-			return
-		}
-		savedFilename = "C_COBERTURA.pdf"
-	case "anexo":
-		directory := filepath.Join(packageRoot, "5. ANEXOS", record.PatientFolder)
-		if err := os.MkdirAll(directory, 0700); err != nil {
-			writeError(w, http.StatusInternalServerError, "No se pudo preparar la carpeta de anexos.")
-			return
-		}
-		name, err := objectionAnnexBase(r.FormValue("tipo_anexo"), r.FormValue("nombre_anexo"))
-		if err != nil {
-			writeError(w, http.StatusBadRequest, err.Error())
-			return
-		}
-		name, err = nextSafeAnnexName(directory, name)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "No se pudo preparar un nombre seguro para el anexo.")
-			return
-		}
-		if err := atomicWritePrivateFile(filepath.Join(directory, name), data); err != nil {
-			writeError(w, http.StatusInternalServerError, "No se pudo guardar el anexo.")
-			return
-		}
-		savedFilename = name
-	default:
-		writeError(w, http.StatusBadRequest, "El tipo debe ser respuesta, cobertura o anexo.")
+	directory := filepath.Join(packageRoot, "5. ANEXOS", record.PatientFolder)
+	if err := os.MkdirAll(directory, 0700); err != nil {
+		writeError(w, http.StatusInternalServerError, "No se pudo preparar la carpeta de anexos.")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"job_id": job.ID, "pdi_tramite": tramite, "tipo": kind, "nombre_archivo": savedFilename, "postura": record.Posture, "message": "Documento guardado en el espacio aislado de objeciones. Oracle no fue modificado."})
+	name, err := objectionAnnexBase(r.FormValue("tipo_anexo"), r.FormValue("nombre_anexo"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	name, err = nextSafeAnnexName(directory, name)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "No se pudo preparar un nombre seguro para el anexo.")
+		return
+	}
+	if err := atomicWritePrivateFile(filepath.Join(directory, name), data); err != nil {
+		writeError(w, http.StatusInternalServerError, "No se pudo guardar el anexo.")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"job_id": job.ID, "pdi_tramite": tramite, "tipo": kind, "nombre_archivo": name, "postura": record.Posture, "message": "Anexo guardado en el espacio aislado de objeciones. Oracle no fue modificado."})
 }
 
 func saveObjectionVersion(root, tramite string, contents []byte) error {
@@ -1066,9 +1348,17 @@ func validateObjectionCloseout(job stagedJob, packageRoot string) error {
 		if !validPDFFile(path) {
 			return fmt.Errorf("Falta P_INDIVIDUAL.pdf válido para el trámite %s de %s.", tramite, row.Patient)
 		}
+		relativeResponse := filepath.ToSlash(filepath.Join("4. EXPEDIENTES", row.PatientFolder, "P_INDIVIDUAL.pdf"))
+		if !objectionPDFIncluded(job, relativeResponse) {
+			return fmt.Errorf("P_INDIVIDUAL.pdf del trámite %s debe incluirse en el ZIP.", tramite)
+		}
 		coverage := filepath.Join(packageRoot, "4. EXPEDIENTES", row.PatientFolder, "C_COBERTURA.pdf")
 		if !validPDFFile(coverage) {
 			return fmt.Errorf("Falta C_COBERTURA.pdf válido para el trámite %s de %s.", tramite, row.Patient)
+		}
+		relativeCoverage := filepath.ToSlash(filepath.Join("4. EXPEDIENTES", row.PatientFolder, "C_COBERTURA.pdf"))
+		if !objectionPDFIncluded(job, relativeCoverage) {
+			return fmt.Errorf("C_COBERTURA.pdf del trámite %s debe incluirse en el ZIP.", tramite)
 		}
 	}
 	return nil

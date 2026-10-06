@@ -306,12 +306,15 @@ func (s *server) deleteWorkspacePDF(w http.ResponseWriter, r *http.Request, job 
 	for path, deleted := range job.DeletedPDFs {
 		previousDeleted[path] = deleted
 	}
+	previousObjectionSelection := cloneBoolMap(job.ObjectionPDFSelection)
 	if job.DeletedPDFs == nil {
 		job.DeletedPDFs = make(map[string]bool)
 	}
 	job.DeletedPDFs[cleanRelative] = true
+	delete(job.ObjectionPDFSelection, cleanRelative)
 	if err := s.saveStagedJob(job); err != nil {
 		job.DeletedPDFs = previousDeleted
+		job.ObjectionPDFSelection = previousObjectionSelection
 		_ = os.Rename(backupPath, filePath)
 		writeError(w, http.StatusInternalServerError, "No se pudo registrar el cambio; el PDF fue restaurado.")
 		return
@@ -414,10 +417,10 @@ func (s *server) downloadWorkspaceZIP(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			return err
 		}
-		archivePath := filepath.ToSlash(filepath.Join(packageFolderName(&job), relative))
-		if job.IsObjections && filepath.ToSlash(relative) == "3. MATRIZ_RESPUESTA.xlsx" {
+		if !file.IsDir() && !objectionZIPIncludesFile(job, relative) {
 			return nil
 		}
+		archivePath := filepath.ToSlash(filepath.Join(packageFolderName(&job), relative))
 		if file.IsDir() {
 			info, err := file.Info()
 			if err != nil {
@@ -733,6 +736,14 @@ func (s *server) renameWorkspacePDF(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	oldRelative := filepath.ToSlash(filepath.Clean(filepath.FromSlash(input.Path)))
+	previousObjectionSelection := cloneBoolMap(job.ObjectionPDFSelection)
+	if included, exists := job.ObjectionPDFSelection[oldRelative]; exists {
+		delete(job.ObjectionPDFSelection, oldRelative)
+		if job.ObjectionPDFSelection == nil {
+			job.ObjectionPDFSelection = make(map[string]bool)
+		}
+		job.ObjectionPDFSelection[newRelative] = included
+	}
 	if job.Renames == nil {
 		job.Renames = make(map[string]string)
 	}
@@ -767,6 +778,7 @@ func (s *server) renameWorkspacePDF(w http.ResponseWriter, r *http.Request) {
 		job.Replacements[newRelative] = storedName
 	}
 	if err := s.saveStagedJob(job); err != nil {
+		job.ObjectionPDFSelection = previousObjectionSelection
 		_ = os.Rename(newPath, oldPath)
 		writeError(w, http.StatusInternalServerError, "El PDF se renombró, pero no se pudo guardar el cambio.")
 		return

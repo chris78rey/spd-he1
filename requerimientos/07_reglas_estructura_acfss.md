@@ -90,6 +90,9 @@ La carpeta madre se nombra `[TIPO_DE_SERVICIO]_[MES]_[AÑO]_OBJECIONES/`.
 
 - `4. EXPEDIENTES/` y `5. ANEXOS/` incluyen únicamente pacientes objetados.
 - `P_INDIVIDUAL.pdf` indica expresamente si se acepta o rechaza cada objeción.
+- Los PDFs de `4. EXPEDIENTES/` se copian desde los trámites seleccionados del primer ingreso. No se vuelven a cargar `P_INDIVIDUAL.pdf` ni `C_COBERTURA.pdf` en la pantalla de Objeciones; se pueden revisar, reemplazar o renombrar en la copia del espacio derivado desde Abrir documentos del paciente.
+- En Objeciones, el operador marca qué PDFs clínicos de cada trámite se incluirán en el ZIP; los demás quedan fuera. `P_INDIVIDUAL.pdf` y `C_COBERTURA.pdf` son obligatorios y siempre se incluyen. Los PDFs de `5. ANEXOS/` se cargan en el flujo de Objeciones y se incluyen si existen.
+- La selección de PDFs se aplica solo al ZIP de Objeciones. El flujo y la descarga ZIP del primer ingreso conservan su comportamiento actual.
 - La consolidada de respuesta usa código `P_CONSOLIDADA.pdf`; el nombre externo de posición sigue siendo `2. PLANILLA CONSOLIDADA.pdf`.
 - `5. ANEXOS/` contiene sustentos como facturas, fichas técnicas y protocolos.
 - No incluir pacientes aprobados ni sus anexos en este paquete.

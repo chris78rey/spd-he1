@@ -6,9 +6,9 @@
     "semantic_hash": ""
   },
   "src/App.vue": {
-    "mtime": 1791296015.7258983,
-    "seen": 1791296030.967404,
-    "ast_hash": "505c40e507c2dd50c2c00554892595f8",
+    "mtime": 1791302372.7727747,
+    "seen": 1791302392.7108634,
+    "ast_hash": "098badb5e89b10b79ada663549a5123d",
     "semantic_hash": ""
   },
   "src/main.js": {
@@ -30,9 +30,9 @@
     "semantic_hash": ""
   },
   "PRINCIPIOS_DE_PRODUCTO.md": {
-    "mtime": 1791293897.6283355,
-    "seen": 1791294389.7233028,
-    "ast_hash": "3dccaede6a7cab27c561c3eae8ee4ee6",
+    "mtime": 1791302190.735674,
+    "seen": 1791302244.1385434,
+    "ast_hash": "c07cf60f769ba518fd05c6e377ddade0",
     "semantic_hash": ""
   },
   "index.html": {
@@ -42,9 +42,9 @@
     "semantic_hash": ""
   },
   "cmd/server/main.go": {
-    "mtime": 1791293308.8257835,
-    "seen": 1791294389.7232172,
-    "ast_hash": "2bd2d6ec0b74f78fc9549453016392fd",
+    "mtime": 1791298429.409056,
+    "seen": 1791299050.4671247,
+    "ast_hash": "c764a1d0c96a5f40cdb19d49a3e334ed",
     "semantic_hash": ""
   },
   "go.mod": {
@@ -66,9 +66,9 @@
     "semantic_hash": "cb8c48aec536d27ddd40572c76127e48"
   },
   "cmd/server/ingesta.go": {
-    "mtime": 1791293318.872844,
-    "seen": 1791294389.7232108,
-    "ast_hash": "5b4f7b16d368c1eeb18feb2bb5d46341",
+    "mtime": 1791298839.6616051,
+    "seen": 1791299050.4671211,
+    "ast_hash": "6348fbb34b7edb64714e0de44039c393",
     "semantic_hash": ""
   },
   "requerimientos/00req_general.md": {
@@ -120,9 +120,9 @@
     "semantic_hash": ""
   },
   "requerimientos/07_reglas_estructura_acfss.md": {
-    "mtime": 1790883037.0519834,
-    "seen": 1790883049.6221924,
-    "ast_hash": "c481d1fa53506ef538c7b7617502d41e",
+    "mtime": 1791298762.6671262,
+    "seen": 1791299050.4672105,
+    "ast_hash": "8eab3d529606a5530bba3a3d53bf5a17",
     "semantic_hash": ""
   },
   "reglas_clasificacion.yaml": {
@@ -144,9 +144,9 @@
     "semantic_hash": ""
   },
   "cmd/server/workspace.go": {
-    "mtime": 1791294343.4400253,
-    "seen": 1791294389.723236,
-    "ast_hash": "12c71145c068df3e925ae82db325382d",
+    "mtime": 1791298459.1642404,
+    "seen": 1791299050.4671352,
+    "ast_hash": "aff63925f044f1d267580462619ecd82",
     "semantic_hash": ""
   },
   "catalogos/codigos_msp.json": {
@@ -258,21 +258,21 @@
     "semantic_hash": ""
   },
   "requerimientos/09_estado_real_implementacion.md": {
-    "mtime": 1791297303.0961661,
-    "seen": 1791297310.7182438,
-    "ast_hash": "47e2c613324a7151f9eaed65f7fafad8",
+    "mtime": 1791299188.84478,
+    "seen": 1791299206.9783134,
+    "ast_hash": "51e39d234afb4b8fe54c46b77af250ff",
     "semantic_hash": ""
   },
   "cmd/server/objeciones.go": {
-    "mtime": 1791294353.4210856,
-    "seen": 1791294389.723222,
-    "ast_hash": "3f8b212f2ddd28ea6acd5f0741783caf",
+    "mtime": 1791302196.5907094,
+    "seen": 1791302244.1384773,
+    "ast_hash": "be4144e84ca20e8664a89d33afd3428f",
     "semantic_hash": ""
   },
   "cmd/server/objeciones_test.go": {
-    "mtime": 1791294881.9322743,
-    "seen": 1791294902.477168,
-    "ast_hash": "16451e3ffb7c632b05e88cbc9988d578",
+    "mtime": 1791302699.1267524,
+    "seen": 1791302725.9111104,
+    "ast_hash": "10aa66c30f52f3b68c57ed73df6933a2",
     "semantic_hash": ""
   },
   "cmd/server/workspace_delete_test.go": {

@@ -79,6 +79,9 @@ const savedWorkspacesError = ref('')
 const showWorkspaceDetails = ref(false)
 const savedWorkspaceSearch = ref('')
 const savedWorkspaceStatusFilter = ref('ALL')
+const savedWorkspaceTypeFilter = ref('ALL')
+const savedWorkspaceServiceFilter = ref('ALL')
+const savedWorkspaceYearFilter = ref('ALL')
 const selectedCoverageWorkspace = ref('')
 const coveragePlanillas = ref([])
 const coverageSelectedIds = ref([])
@@ -109,9 +112,16 @@ const objectionCurrentWorkspace = ref(null)
 const objectionSelectedWorkspace = ref('')
 const objectionBusy = ref(false)
 const objectionError = ref('')
+const objectionConflictMessage = ref('')
+const objectionConflictSpaces = ref([])
 const objectionNotice = ref('')
 const objectionUploadFiles = ref({})
 const objectionPostures = ref({})
+const objectionPackagePDFs = ref([])
+const objectionPDFLoading = ref(false)
+const objectionPDFError = ref('')
+const objectionPDFSavingPath = ref('')
+const objectionPostureSaving = ref('')
 const objectionAnnexTypeByPatient = ref({})
 const objectionAnnexNameByPatient = ref({})
 const objectionAnnexTypes = [
@@ -130,7 +140,36 @@ const objectionComboItems = computed(() => objectionSelectionCandidates.value.ma
   value: row.pdi_tramite,
 })))
 const objectionSelectedCandidates = computed(() => objectionSelectionCandidates.value.filter(row => objectionSelectedTramites.value.includes(row.pdi_tramite)))
-const objectionCanCreate = computed(() => objectionSelectedTramites.value.length > 0 && Boolean(objectionSourceWorkspace.value && objectionPreview.value))
+function sameObjectionPeriod(source, workspace) {
+  if (!source || !workspace) return false
+  const sourceMonth = Number(source.mes)
+  const workspaceMonth = Number(workspace.mes)
+  const monthsMatch = Number.isFinite(sourceMonth) && Number.isFinite(workspaceMonth)
+    ? sourceMonth === workspaceMonth
+    : String(source.mes || '').trim() === String(workspace.mes || '').trim()
+  return String(source.tipo_servicio || '').trim().toLowerCase() === String(workspace.tipo_servicio || '').trim().toLowerCase()
+    && monthsMatch
+    && String(source.anio || '').trim() === String(workspace.anio || '').trim()
+}
+const selectedObjectionSource = computed(() => savedWorkspaces.value.find(workspace => workspace.job_id === objectionSourceWorkspace.value) || null)
+const objectionSourcePeriodSpaces = computed(() => savedWorkspaces.value
+  .filter(workspace => workspace.es_objeciones && sameObjectionPeriod(selectedObjectionSource.value, workspace))
+  .sort((a, b) => String(a.received_at || '').localeCompare(String(b.received_at || '')) || String(a.job_id).localeCompare(String(b.job_id))))
+const objectionPeriodSpaces = computed(() => {
+  const byID = new Map(objectionSourcePeriodSpaces.value.map(workspace => [workspace.job_id, workspace]))
+  for (const workspace of objectionConflictSpaces.value) {
+    if (workspace?.job_id && sameObjectionPeriod(selectedObjectionSource.value, workspace)) byID.set(workspace.job_id, workspace)
+  }
+  return [...byID.values()]
+})
+const objectionChosenPeriodSpace = computed(() => objectionPeriodSpaces.value.find(workspace => workspace.job_id === objectionSelectedWorkspace.value) || null)
+const objectionCanCreate = computed(() => objectionSelectedTramites.value.length > 0 && Boolean(objectionSourceWorkspace.value && objectionPreview.value)
+  && (objectionPeriodSpaces.value.length < 2 || Boolean(objectionChosenPeriodSpace.value)))
+const objectionCreateLabel = computed(() => objectionPeriodSpaces.value.length > 1
+  ? 'Agregar al espacio elegido'
+  : objectionSourcePeriodSpaces.value.length === 1
+    ? 'Continuar en el espacio existente'
+    : 'Crear espacio separado')
 const objectionAddCandidateItems = computed(() => {
   const selected = new Set((objectionCurrentWorkspace.value?.objeciones || []).map(row => row.pdi_tramite))
   return (objectionAddPreview.value?.candidatos || [])
@@ -147,6 +186,10 @@ const objectionUniquePatients = computed(() => {
   }
   return [...patients.values()]
 })
+function objectionPatientPDFs(patient) {
+  const prefix = `4. EXPEDIENTES/${patient.folder}/`
+  return objectionPackagePDFs.value.filter(document => document.path.startsWith(prefix))
+}
 const objectionSourceItems = computed(() => {
   const seen = new Set()
   return savedWorkspaces.value
@@ -160,8 +203,8 @@ const objectionSourceItems = computed(() => {
     .map(workspace => ({ title: `${coverageServiceLabel(workspace.tipo_servicio)} · ${coverageMonthLabel(workspace.mes)} ${workspace.anio} · ${workspace.job_id}`, value: workspace.job_id }))
 })
 const objectionWorkspaceItems = computed(() => savedWorkspaces.value
-  .filter(workspace => workspace.es_objeciones && workspace.status === 'PROCESSED')
-  .map(workspace => ({ title: `${coverageServiceLabel(workspace.tipo_servicio)} · ${coverageMonthLabel(workspace.mes)} ${workspace.anio} · Objeciones`, value: workspace.job_id })))
+  .filter(workspace => workspace.es_objeciones && ['PROCESSED', 'INCOMPLETE'].includes(workspace.status))
+  .map(workspace => ({ title: `${coverageServiceLabel(workspace.tipo_servicio)} · ${coverageMonthLabel(workspace.mes)} ${workspace.anio} · Objeciones · ${workspace.job_id}`, value: workspace.job_id })))
 const workspacePDFs = ref([])
 const workspacePDFRevision = ref(0)
 const workspacePatients = ref([])
@@ -191,6 +234,10 @@ const mergeAllSending = ref(false)
 const mergeAllProgress = ref({ done: 0, total: 0 })
 const patientDocumentsLocked = computed(() => workspaceSending.value || workspaceBusy.value || mergeSending.value || mergeAllSending.value || replacePDFDialog.value || deletePDFDialog.value || mergePDFDialog.value || mergeAllConfirmDialog.value)
 watch(() => ingestResult.value?.job_id, () => { patientDocumentsDialog.value = false })
+watch(patientDocumentsDialog, (open, wasOpen) => {
+  const jobId = ingestResult.value?.job_id
+  if (!open && wasOpen && ingestResult.value?.es_objeciones && jobId) void loadObjectionPDFSelection(jobId)
+})
 const deleteWorkspaceDialog = ref(false)
 const workspaceDeleteTargetID = ref('')
 const workspaceDeleteTargetName = ref('')
@@ -1085,32 +1132,85 @@ async function clearIngestTramiteMapping(folder) {
     ingestPreviewNotice.value = error.message || 'No se pudo quitar el vínculo manual.'
   } finally { ingestMappingSaving.value = '' }
 }
-const savedWorkspaceItems = computed(() => savedWorkspaces.value.map(workspace => {
-  const monthName = ingestMonths.find(month => month.value === String(workspace.period || '').slice(5, 7))?.title || workspace.mes
-  const serviceName = ingestServices.find(service => service.value === workspace.tipo_servicio)?.title || workspace.tipo_servicio
-  const state = workspace.status === 'STAGED' ? 'pendiente de preparar' : workspace.status === 'INCOMPLETE' ? 'incompleto' : 'preparado'
-  return { title: `${workspace.es_objeciones ? 'Objeciones · ' : ''}${serviceName} · ${monthName} ${workspace.anio} · ${state} · recibido por ${workspace.creado_por || 'usuario anterior'}`, value: workspace.job_id }
+function workspaceTypeLabel(workspace) {
+  return workspace.es_objeciones ? 'Objeciones · espacio separado' : 'Recepción de planillas'
+}
+function workspaceYearLabel(workspace) {
+  return String(workspace.anio || String(workspace.period || '').slice(0, 4))
+}
+function workspaceMonthValue(workspace) {
+  return String(workspace.mes || String(workspace.period || '').slice(5, 7)).padStart(2, '0')
+}
+function normalizeWorkspaceSearch(value) {
+  return String(value ?? '').trim().toLocaleLowerCase('es').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+}
+const orderedSavedWorkspaces = computed(() => [...savedWorkspaces.value].sort((left, right) => {
+  const leftYear = Number(workspaceYearLabel(left)) || 0
+  const rightYear = Number(workspaceYearLabel(right)) || 0
+  if (leftYear !== rightYear) return rightYear - leftYear
+  const leftMonth = Number(workspaceMonthValue(left)) || 0
+  const rightMonth = Number(workspaceMonthValue(right)) || 0
+  if (leftMonth !== rightMonth) return rightMonth - leftMonth
+  const receivedDifference = new Date(right.received_at || 0).getTime() - new Date(left.received_at || 0).getTime()
+  if (Number.isFinite(receivedDifference) && receivedDifference !== 0) return receivedDifference
+  return String(right.job_id || '').localeCompare(String(left.job_id || ''), 'es')
+}))
+const savedWorkspaceItems = computed(() => orderedSavedWorkspaces.value.map(workspace => {
+  const monthName = coverageMonthLabel(workspaceMonthValue(workspace))
+  const year = workspaceYearLabel(workspace)
+  const serviceName = coverageServiceLabel(workspace.tipo_servicio)
+  const state = workspaceStatusLabel(workspace.status)
+  return { title: `${workspaceTypeLabel(workspace)} · ${serviceName} · ${monthName} ${year} · ${workspace.job_id} · ${state} · ${workspace.creado_por || 'usuario anterior'}`, value: workspace.job_id }
 }))
 const zipDownloadWorkspaceItems = computed(() => {
   const eligibleIDs = new Set(savedWorkspaces.value.filter(workspace => ['PROCESSED', 'INCOMPLETE'].includes(workspace.status)).map(workspace => workspace.job_id))
   return savedWorkspaceItems.value.filter(item => eligibleIDs.has(item.value))
 })
+const savedWorkspaceTypeFilters = computed(() => [
+  { title: 'Todos los tipos', value: 'ALL' },
+  { title: 'Recepción de planillas', value: 'RECEPCION' },
+  { title: 'Objeciones · espacio separado', value: 'OBJECIONES' },
+])
+const savedWorkspaceServiceFilters = computed(() => {
+  const services = [...new Set(savedWorkspaces.value.map(workspace => String(workspace.tipo_servicio || '').trim()).filter(Boolean))]
+  services.sort((left, right) => coverageServiceLabel(left).localeCompare(coverageServiceLabel(right), 'es'))
+  return [{ title: `Todos los servicios (${savedWorkspaces.value.length})`, value: 'ALL' }, ...services.map(service => ({ title: coverageServiceLabel(service), value: service }))]
+})
+const savedWorkspaceYearFilters = computed(() => {
+  const years = [...new Set(savedWorkspaces.value.map(workspaceYearLabel).filter(year => /^\d{4}$/.test(year)))].sort((left, right) => Number(right) - Number(left))
+  return [{ title: 'Todos los años', value: 'ALL' }, ...years.map(year => ({ title: year, value: year }))]
+})
 const filteredSavedWorkspaces = computed(() => {
-  const normalizedQuery = String(savedWorkspaceSearch.value || '').trim().toLocaleLowerCase('es').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-  return savedWorkspaces.value.filter(workspace => {
+  const normalizedQuery = normalizeWorkspaceSearch(savedWorkspaceSearch.value)
+  return orderedSavedWorkspaces.value.filter(workspace => {
+    if (savedWorkspaceTypeFilter.value === 'RECEPCION' && workspace.es_objeciones) return false
+    if (savedWorkspaceTypeFilter.value === 'OBJECIONES' && !workspace.es_objeciones) return false
+    if (savedWorkspaceServiceFilter.value !== 'ALL' && workspace.tipo_servicio !== savedWorkspaceServiceFilter.value) return false
+    const year = workspaceYearLabel(workspace)
+    if (savedWorkspaceYearFilter.value !== 'ALL' && year !== savedWorkspaceYearFilter.value) return false
     if (savedWorkspaceStatusFilter.value !== 'ALL' && workspace.status !== savedWorkspaceStatusFilter.value) return false
     if (!normalizedQuery) return true
-    const haystack = [coverageServiceLabel(workspace.tipo_servicio), workspace.tipo_servicio, coverageMonthLabel(workspace.mes), workspace.mes, workspace.anio, workspace.period, workspace.job_id, workspace.creado_por, workspace.message, workspaceStatusLabel(workspace.status), ...(workspace.missing_documents || [])]
-      .filter(Boolean).join(' ').toLocaleLowerCase('es').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    const haystack = normalizeWorkspaceSearch([
+      workspaceTypeLabel(workspace), coverageServiceLabel(workspace.tipo_servicio), workspace.tipo_servicio,
+      coverageMonthLabel(workspaceMonthValue(workspace)), workspaceMonthValue(workspace), workspaceYearLabel(workspace), workspace.period, workspace.job_id,
+      workspace.creado_por, workspace.message, workspaceStatusLabel(workspace.status),
+      workspaceReceivedAt(workspace.received_at), ...(workspace.missing_documents || []),
+    ].filter(Boolean).join(' '))
     return haystack.includes(normalizedQuery)
   })
 })
+const hasSavedWorkspaceFilters = computed(() => Boolean(String(savedWorkspaceSearch.value || '').trim())
+  || savedWorkspaceTypeFilter.value !== 'ALL'
+  || savedWorkspaceServiceFilter.value !== 'ALL'
+  || savedWorkspaceYearFilter.value !== 'ALL'
+  || savedWorkspaceStatusFilter.value !== 'ALL')
 const savedWorkspaceStatusFilters = computed(() => [
   { title: `Todos (${savedWorkspaces.value.length})`, value: 'ALL' },
   { title: `Incompletos (${savedWorkspaces.value.filter(item => item.status === 'INCOMPLETE').length})`, value: 'INCOMPLETE' },
   { title: `Preparados (${savedWorkspaces.value.filter(item => item.status === 'PROCESSED').length})`, value: 'PROCESSED' },
   { title: `Por preparar (${savedWorkspaces.value.filter(item => item.status === 'STAGED').length})`, value: 'STAGED' },
   { title: `Revisión (${savedWorkspaces.value.filter(item => item.status === 'REQUIERE_REVISION').length})`, value: 'REQUIERE_REVISION' },
+  ...[...new Set(savedWorkspaces.value.map(item => item.status).filter(status => status && !['INCOMPLETE', 'PROCESSED', 'STAGED', 'REQUIERE_REVISION'].includes(status)))].sort().map(status => ({ title: `${workspaceStatusLabel(status)} (${savedWorkspaces.value.filter(item => item.status === status).length})`, value: status })),
 ])
 function workspaceStatusLabel(status) {
   return ({ STAGED: 'Pendiente de preparar', INCOMPLETE: 'Incompleto', PROCESSED: 'Preparado', REQUIERE_REVISION: 'Requiere revisión' })[status] || status || 'Estado desconocido'
@@ -1121,6 +1221,13 @@ function workspaceStatusColor(status) {
 function workspaceReceivedAt(value) {
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? '' : new Intl.DateTimeFormat('es-EC', { dateStyle: 'medium', timeStyle: 'short' }).format(date)
+}
+function clearSavedWorkspaceFilters() {
+  savedWorkspaceSearch.value = ''
+  savedWorkspaceTypeFilter.value = 'ALL'
+  savedWorkspaceServiceFilter.value = 'ALL'
+  savedWorkspaceYearFilter.value = 'ALL'
+  savedWorkspaceStatusFilter.value = 'ALL'
 }
 function billedPeriodLabel(period) {
   const [monthValue, year] = String(period || '').split('/')
@@ -1205,6 +1312,8 @@ async function openZipDownloadPage() {
 async function openObjectionsPage() {
   activePage.value = 'objeciones'
   objectionError.value = ''
+  objectionConflictMessage.value = ''
+  objectionConflictSpaces.value = []
   objectionNotice.value = ''
   await loadSavedWorkspaces()
   if (!objectionSourceItems.value.some(item => item.value === objectionSourceWorkspace.value)) objectionSourceWorkspace.value = objectionSourceItems.value[0]?.value || ''
@@ -1220,6 +1329,14 @@ function objectionFormData() {
 function resetObjectionPreview() {
   objectionPreview.value = null
   objectionSelectedTramites.value = []
+  objectionConflictMessage.value = ''
+  objectionConflictSpaces.value = []
+}
+async function chooseObjectionWorkspace(jobId) {
+  if (!jobId) return
+  objectionSelectedWorkspace.value = jobId
+  objectionConflictMessage.value = ''
+  await loadObjectionWorkspace(jobId)
 }
 function setObjectionInput(kind, event) {
   const file = event.target.files?.[0] || null
@@ -1247,15 +1364,28 @@ async function previewObjections() {
 async function createObjectionWorkspace() {
   const form = objectionFormData()
   if (!form || !objectionCanCreate.value || objectionBusy.value) return
+  if (objectionPeriodSpaces.value.length > 1 && !objectionChosenPeriodSpace.value) {
+    objectionConflictSpaces.value = objectionPeriodSpaces.value
+    objectionConflictMessage.value = 'Ya hay varios espacios de Objeciones para este período. Elige uno para continuar; no se borrarán ni fusionarán automáticamente.'
+    return
+  }
+  if (objectionChosenPeriodSpace.value) form.append('reutilizar_espacio', objectionChosenPeriodSpace.value.job_id)
   const selected = new Set(objectionSelectedTramites.value)
   for (const tramite of selected) form.append('tramites_objetados', tramite)
   objectionBusy.value = true
   objectionError.value = ''
+  objectionConflictMessage.value = ''
+  objectionConflictSpaces.value = []
   objectionNotice.value = ''
   try {
     const response = await fetch('/api/v1/objeciones/crear', { method: 'POST', credentials: 'same-origin', body: form })
     if (response.status === 401) { await signOut(); return }
     const data = await response.json().catch(() => ({}))
+    if (response.status === 409 && Array.isArray(data.espacios_existentes)) {
+      objectionConflictSpaces.value = data.espacios_existentes
+      objectionConflictMessage.value = data.error || 'Hay varios espacios de Objeciones para este período. Elige uno para continuar.'
+      return
+    }
     if (!response.ok) throw new Error(data.error || 'No se pudo crear el espacio separado.')
     objectionSelectedWorkspace.value = data.job_id
     objectionCurrentWorkspace.value = data
@@ -1265,17 +1395,21 @@ async function createObjectionWorkspace() {
     objectionSelectedTramites.value = []
     objectionPostures.value = Object.fromEntries((data.objeciones || []).filter(row => row.postura).map(row => [row.pdi_tramite, row.postura]))
     objectionNotice.value = data.message || 'Se creó el espacio separado de objeciones.'
+    objectionConflictMessage.value = ''
+    objectionConflictSpaces.value = []
+    await loadObjectionPDFSelection(data.job_id)
     await loadSavedWorkspaces()
   } catch (error) { objectionError.value = error.message || 'No se pudo crear el espacio separado.' }
   finally { objectionBusy.value = false }
 }
 async function loadObjectionWorkspace(jobId = objectionSelectedWorkspace.value) {
-  if (!jobId) { objectionCurrentWorkspace.value = null; return }
+  if (!jobId) { objectionCurrentWorkspace.value = null; objectionPackagePDFs.value = []; objectionPDFError.value = ''; return }
   if (objectionCurrentWorkspace.value?.job_id !== jobId) {
     objectionHeaderFiles.value = {}
     objectionAddPreview.value = null
     objectionAddSelectedTramites.value = []
     objectionUploadFiles.value = {}
+    objectionPackagePDFs.value = []
   }
   objectionBusy.value = true
   objectionError.value = ''
@@ -1288,8 +1422,62 @@ async function loadObjectionWorkspace(jobId = objectionSelectedWorkspace.value) 
     if (!data.es_objeciones) throw new Error('El espacio seleccionado no corresponde a objeciones.')
     objectionCurrentWorkspace.value = data
     objectionPostures.value = Object.fromEntries((data.objeciones || []).filter(row => row.postura).map(row => [row.pdi_tramite, row.postura]))
+    await loadObjectionPDFSelection(jobId)
   } catch (error) { objectionError.value = error.message || 'No se pudo abrir el espacio de objeciones.' }
   finally { objectionBusy.value = false }
+}
+async function loadObjectionPDFSelection(jobId) {
+  if (!jobId) { objectionPackagePDFs.value = []; objectionPDFError.value = ''; return }
+  objectionPDFLoading.value = true
+  objectionPDFError.value = ''
+  objectionPackagePDFs.value = []
+  try {
+    const response = await fetch(`/api/v1/objeciones/pdfs/seleccion/${encodeURIComponent(jobId)}`, { credentials: 'same-origin' })
+    if (response.status === 401) { await signOut(); return }
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok) throw new Error(data.error || 'No se pudieron cargar los PDFs del paquete.')
+    objectionPackagePDFs.value = data.documents || []
+  } catch (error) {
+    objectionPDFError.value = error.message || 'No se pudieron cargar los PDFs del paquete.'
+  } finally { objectionPDFLoading.value = false }
+}
+async function setObjectionPDFIncluded(document, included) {
+  if (!document || document.obligatorio || !objectionSelectedWorkspace.value || objectionPDFSavingPath.value) return
+  objectionPDFSavingPath.value = document.path
+  objectionPDFError.value = ''
+  objectionNotice.value = ''
+  try {
+    const response = await fetch(`/api/v1/objeciones/pdfs/seleccion/${encodeURIComponent(objectionSelectedWorkspace.value)}`, {
+      method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: document.path, incluir: Boolean(included) }),
+    })
+    if (response.status === 401) { await signOut(); return }
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok) throw new Error(data.error || 'No se pudo guardar la selección del PDF.')
+    objectionPackagePDFs.value = data.documents || []
+    objectionNotice.value = included ? `${document.name} se incluirá en el ZIP.` : `${document.name} quedará fuera del ZIP.`
+  } catch (error) { objectionPDFError.value = error.message || 'No se pudo guardar la selección del PDF.' }
+  finally { objectionPDFSavingPath.value = '' }
+}
+async function saveObjectionPosture(patient) {
+  const posture = objectionPostures.value[patient?.tramite]
+  if (!patient || !posture || !objectionSelectedWorkspace.value || objectionPostureSaving.value) return
+  objectionPostureSaving.value = patient.tramite
+  objectionError.value = ''
+  objectionNotice.value = ''
+  try {
+    const response = await fetch(`/api/v1/objeciones/postura/${encodeURIComponent(objectionSelectedWorkspace.value)}`, {
+      method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pdi_tramite: patient.tramite, postura: posture }),
+    })
+    if (response.status === 401) { await signOut(); return }
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok) throw new Error(data.error || 'No se pudo guardar la postura.')
+    objectionCurrentWorkspace.value = data
+    objectionPostures.value = Object.fromEntries((data.objeciones || []).filter(row => row.postura).map(row => [row.pdi_tramite, row.postura]))
+    objectionNotice.value = `Se guardó ${posture} para el trámite ${patient.tramite}.`
+  } catch (error) { objectionError.value = error.message || 'No se pudo guardar la postura.' }
+  finally { objectionPostureSaving.value = '' }
 }
 async function previewObjectionAddCandidates() {
   const sourceId = objectionCurrentWorkspace.value?.expediente_origen
@@ -1324,6 +1512,7 @@ async function addObjectionPatients() {
     objectionAddPreview.value = null
     objectionAddSelectedTramites.value = []
     objectionHeaderFiles.value = { ...objectionHeaderFiles.value, matriz: null }
+    await loadObjectionPDFSelection(data.job_id)
     objectionNotice.value = data.message || 'Se agregaron los trámites al espacio de objeciones.'
     await loadSavedWorkspaces()
   } catch (error) { objectionError.value = error.message || 'No se pudieron agregar los pacientes seleccionados.' }
@@ -1355,6 +1544,7 @@ function setObjectionUpload(event, tramite, kind) {
   objectionUploadFiles.value = { ...objectionUploadFiles.value, [`${tramite}:${kind}`]: file }
 }
 async function uploadObjectionDocument(patient, kind) {
+  if (kind !== 'anexo') return
   const key = `${patient.tramite}:${kind}`
   const file = objectionUploadFiles.value[key]
   if (!file || !objectionSelectedWorkspace.value || objectionBusy.value) return
@@ -1365,21 +1555,18 @@ async function uploadObjectionDocument(patient, kind) {
     const form = new FormData()
     form.append('tipo', kind)
     form.append('pdi_tramite', patient.tramite)
-    if (kind === 'respuesta') form.append('postura', objectionPostures.value[patient.tramite] || '')
-    if (kind === 'anexo') {
-      const annexType = objectionAnnexTypeByPatient.value[patient.tramite] || ''
-      form.append('tipo_anexo', annexType)
-      if (annexType === 'OTRO') form.append('nombre_anexo', objectionAnnexNameByPatient.value[patient.tramite] || '')
-    }
+    const annexType = objectionAnnexTypeByPatient.value[patient.tramite] || ''
+    form.append('tipo_anexo', annexType)
+    if (annexType === 'OTRO') form.append('nombre_anexo', objectionAnnexNameByPatient.value[patient.tramite] || '')
     form.append('pdf_file', file, file.name)
     const response = await fetch(`/api/v1/objeciones/documentos/${encodeURIComponent(objectionSelectedWorkspace.value)}`, { method: 'POST', credentials: 'same-origin', body: form })
     if (response.status === 401) { await signOut(); return }
     const data = await response.json().catch(() => ({}))
     if (!response.ok) throw new Error(data.error || 'No se pudo guardar el documento.')
     objectionUploadFiles.value = { ...objectionUploadFiles.value, [key]: null }
-    objectionNotice.value = kind === 'anexo' && data.nombre_archivo
+    objectionNotice.value = data.nombre_archivo
       ? `${data.nombre_archivo} guardado en 5. ANEXOS/${patient.folder}.`
-      : data.message || 'Documento guardado.'
+      : data.message || 'Anexo guardado.'
     await loadObjectionWorkspace(objectionSelectedWorkspace.value)
   } catch (error) { objectionError.value = error.message || 'No se pudo guardar el documento.' }
   finally { objectionBusy.value = false }
@@ -1499,7 +1686,7 @@ const visibleDocs = computed(() => {
   else items.sort((a,b) => (b.addedAt||0)-(a.addedAt||0))
   return items
 })
-  const title = computed(() => activePage.value === 'planilla' ? 'Planilla digital' : activePage.value === 'coberturas' ? 'Hojas de cobertura' : activePage.value === 'objeciones' ? 'Objeciones' : activePage.value === 'patient-documents' ? 'Abrir documentos del paciente' : activePage.value === 'zip-download' ? 'Descargar expediente ZIP' : activePage.value === 'ingesta' ? 'Recepción de planillas' : activeFolder.value === 'Todos los documentos' ? 'Mis documentos' : activeFolder.value)
+  const title = computed(() => activePage.value === 'planilla' ? 'Planilla digital' : activePage.value === 'coberturas' ? 'Hojas de cobertura' : activePage.value === 'objeciones' ? 'Subsanar objeciones' : activePage.value === 'patient-documents' ? 'Revisar documentos del paciente' : activePage.value === 'zip-download' ? 'Descargar expediente ZIP' : activePage.value === 'ingesta' ? 'Recepción de planillas' : activeFolder.value === 'Todos los documentos' ? 'Mis documentos' : activeFolder.value)
 function prettySize(n) { return n < 1024*1024 ? `${Math.max(1, Math.round(n/1024))} KB` : `${(n/1024/1024).toFixed(1)} MB` }
 function handleShortcut(event) {
   if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); searchInput.value?.focus() }
@@ -1573,20 +1760,23 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
     <div v-else class="app-shell" @dragenter="onDragEnter" @dragleave="onDragLeave" @dragover.prevent @drop="onDrop">
       <aside class="sidebar">
         <a class="brand" href="#" aria-label="SPD MSP" @click.prevent="activePage='ingesta'"><span class="brand-mark"><v-icon icon="mdi-book-open-page-variant" size="21" /></span><span>SPD MSP</span></a>
-        <div class="nav-label">DATOS</div>
-        <button class="nav-item" :class="{selected:activePage==='planilla'}" @click="openPlanilla"><v-icon icon="mdi-table-large" size="19"/><span>Planilla digital</span></button>
-        <div class="nav-label">PROCESOS</div>
-        <button class="nav-item" :class="{selected:activePage==='ingesta'}" @click="activePage='ingesta'"><v-icon icon="mdi-cloud-upload-outline" size="19"/><span>Recibir planillas</span></button>
-        <button class="nav-item" :class="{selected:activePage==='coberturas'}" aria-label="Descargar hojas de cobertura" @click="openCoverageDownloads"><v-icon icon="mdi-file-download-outline" size="19"/><span>Descargar hojas de cobertura</span></button>
-        <button class="nav-item" :class="{selected:activePage==='objeciones'}" @click="openObjectionsPage"><v-icon icon="mdi-file-alert-outline" size="19"/><span>Objeciones</span></button>
-        <button class="nav-item" :class="{selected:activePage==='patient-documents'}" @click="openPatientDocumentsPage"><v-icon icon="mdi-folder-account-outline" size="19"/><span>Abrir documentos del paciente</span></button>
-        <button class="nav-item" :class="{selected:activePage==='zip-download'}" @click="openZipDownloadPage"><v-icon icon="mdi-folder-zip-outline" size="19"/><span>Descargar expediente ZIP</span></button>
+        <div class="nav-label">EXPEDIENTES</div>
+        <p class="nav-hint">Usa solo las opciones que necesite cada lote.</p>
+        <button class="nav-item" :class="{selected:activePage==='ingesta'}" aria-label="Recibir planillas" title="Recibir planillas" @click="activePage='ingesta'"><v-icon icon="mdi-cloud-upload-outline" size="19"/><span>Recibir planillas</span></button>
+        <button class="nav-item" :class="{selected:activePage==='patient-documents'}" aria-label="Revisar documentos del paciente" title="Revisar documentos del paciente" @click="openPatientDocumentsPage"><v-icon icon="mdi-folder-account-outline" size="19"/><span>Revisar documentos del paciente</span></button>
+        <button class="nav-item" :class="{selected:activePage==='coberturas'}" aria-label="Hojas de cobertura" title="Hojas de cobertura" @click="openCoverageDownloads"><v-icon icon="mdi-file-download-outline" size="19"/><span>Hojas de cobertura</span></button>
+        <button class="nav-item" :class="{selected:activePage==='objeciones'}" aria-label="Subsanar objeciones" title="Subsanar objeciones" @click="openObjectionsPage"><v-icon icon="mdi-file-alert-outline" size="19"/><span>Subsanar objeciones</span></button>
+        <button class="nav-item" :class="{selected:activePage==='zip-download'}" aria-label="Descargar expediente ZIP" title="Descargar expediente ZIP" @click="openZipDownloadPage"><v-icon icon="mdi-folder-zip-outline" size="19"/><span>Descargar expediente ZIP</span></button>
+        <div class="nav-label">BIBLIOTECA LOCAL</div>
+        <button class="nav-item" :class="{selected:activePage==='documents'}" aria-label="Mis documentos guardados en este navegador" title="Mis documentos" @click="activePage='documents'"><v-icon icon="mdi-folder-multiple-outline" size="19"/><span>Mis documentos</span></button>
+        <div class="nav-label">CONSULTAS</div>
+        <button class="nav-item" :class="{selected:activePage==='planilla'}" aria-label="Consultar planilla digital" title="Consultar planilla digital" @click="openPlanilla"><v-icon icon="mdi-table-large" size="19"/><span>Planilla digital</span></button>
         <div class="sidebar-bottom"><button class="profile" @click="signOut"><span class="avatar">{{ displayUser.slice(0,1) }}</span><span class="profile-copy"><b>{{ displayUser }}</b><small>Cerrar sesión</small></span><v-icon icon="mdi-logout" size="18"/></button></div>
       </aside>
       <main class="main-area">
         <header class="topbar"><div class="breadcrumbs"><span>SPD MSP</span><v-icon icon="mdi-chevron-right" size="16"/><b>{{ title }}</b></div><div class="top-actions"><span class="avatar top-avatar">{{ displayUser.slice(0,1) }}</span></div></header>
         <section v-if="activePage==='documents'" class="content-wrap">
-          <div class="welcome-line"><div><div class="eyebrow">BIBLIOTECA PERSONAL</div><h1>{{ title }}<span class="title-period">.</span></h1><p class="subtitle">Busca, organiza y abre tus documentos guardados.</p></div><button class="primary-upload" @click="uploadInput?.click()"><v-icon icon="mdi-upload" size="18"/> Subir documento</button></div>
+          <div class="welcome-line"><div><div class="eyebrow">BIBLIOTECA LOCAL</div><h1>{{ title }}<span class="title-period">.</span></h1><p class="subtitle">Busca, organiza y abre documentos guardados en este navegador.</p></div><button class="primary-upload" @click="uploadInput?.click()"><v-icon icon="mdi-upload" size="18"/> Subir documento</button></div>
           <div class="stats-row"><div class="stat-card"><span class="stat-icon green"><v-icon icon="mdi-file-multiple-outline"/></span><div><span class="stat-label">Documentos</span><strong>{{ docs.length }} <small>archivos</small></strong></div></div><div class="stat-card"><span class="stat-icon peach"><v-icon icon="mdi-folder-multiple-outline"/></span><div><span class="stat-label">Espacios</span><strong>{{ spaces.length }} <small>activos</small></strong></div></div></div>
           <section class="recent-section"><div class="section-heading"><div><h2>{{ activeFolder==='Todos los documentos' ? 'Tus archivos' : 'Archivos' }} <span class="muted-count">{{ visibleDocs.length }}</span></h2><p>Organiza y encuentra lo que buscas.</p></div><button class="text-action" @click="activeFolder=folders[0]">Ver todo <v-icon icon="mdi-arrow-right" size="16"/></button></div>
             <div class="toolbar"><div class="search-wrap"><v-icon icon="mdi-magnify" size="19"/><input ref="searchInput" v-model="query" placeholder="Buscar documentos..." aria-label="Buscar documentos"/><kbd>⌘ K</kbd></div><div class="toolbar-right"><v-select v-model="sortBy" :items="['Recientes','Nombre','Tamaño']" prepend-inner-icon="mdi-sort" class="sort-select" aria-label="Ordenar documentos"/><div class="view-switch"><button :class="{active:view==='grid'}" aria-label="Vista de cuadrícula" @click="view='grid'"><v-icon icon="mdi-view-grid-outline" size="18"/></button><button :class="{active:view==='list'}" aria-label="Vista de lista" @click="view='list'"><v-icon icon="mdi-view-list-outline" size="19"/></button></div></div></div>
@@ -1625,7 +1815,7 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
           </v-card>
         </section>
         <section v-else-if="activePage==='objeciones'" class="content-wrap">
-          <div class="welcome-line"><div><div class="eyebrow">SUBSANACIÓN DE PLANILLAS OBJETADAS</div><h1>Objeciones<span class="title-period">.</span></h1><p class="subtitle">Selecciona los pacientes objetados y crea un espacio separado para su subsanación.</p></div><v-btn type="button" variant="tonal" prepend-icon="mdi-refresh" :loading="savedWorkspacesLoading || objectionBusy" @click="openObjectionsPage">Actualizar</v-btn></div>
+          <div class="welcome-line"><div><div class="eyebrow">SUBSANACIÓN DE PLANILLAS OBJETADAS</div><h1>Subsanar objeciones<span class="title-period">.</span></h1><p class="subtitle">Parte de un período de primer ingreso preparado y crea un espacio separado para trabajar los trámites objetados.</p></div><v-btn type="button" variant="tonal" prepend-icon="mdi-refresh" :loading="savedWorkspacesLoading || objectionBusy" @click="openObjectionsPage">Actualizar</v-btn></div>
           <v-alert class="mb-4" type="info" variant="tonal" density="comfortable" prepend-icon="mdi-shield-check-outline">Tú defines qué pacientes fueron objetados. Solo los seleccionados se copian al nuevo espacio; el período original permanece intacto y Oracle no se modifica.</v-alert>
           <v-alert v-if="!savedWorkspacesLoading && !objectionSourceItems.length" class="mb-4" type="warning" variant="tonal" density="comfortable">Primero prepara un período de primer ingreso en “Recibir planillas”.</v-alert>
           <v-card class="planilla-card saved-workspaces-card mb-5" rounded="xl" elevation="0">
@@ -1642,17 +1832,26 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
             <v-autocomplete v-model="objectionSelectedTramites" :items="objectionComboItems" label="Pacientes objetados" placeholder="Busca por nombre, trámite o cédula" prepend-inner-icon="mdi-account-multiple-check-outline" multiple chips closable-chips clearable hide-selected :disabled="objectionBusy || !objectionComboItems.length" no-data-text="No hay pacientes disponibles en este período"/>
             <div v-if="!objectionSelectionCandidates.length" class="planilla-state"><v-icon icon="mdi-account-search-outline"/><span>No hay pacientes con PDFs vinculados al período preparado.</span></div>
             <div v-else-if="objectionSelectedCandidates.length" class="planilla-state mt-2"><v-icon icon="mdi-account-check-outline"/><span>{{ objectionSelectedCandidates.length }} trámite{{ objectionSelectedCandidates.length === 1 ? '' : 's' }} seleccionado{{ objectionSelectedCandidates.length === 1 ? '' : 's' }}. Revisa los datos en las etiquetas antes de crear el espacio.</span></div>
+            <v-alert v-if="objectionPeriodSpaces.length===1" class="mt-3" type="info" variant="tonal" density="comfortable">Ya existe {{ objectionPeriodSpaces[0].job_id }} para este servicio y período. Al continuar se reutilizará y solo se agregarán los trámites que falten.</v-alert>
+            <v-alert v-if="objectionPeriodSpaces.length>1" class="mt-3" type="warning" variant="tonal" density="comfortable">
+              <div>{{ objectionConflictMessage || 'Hay varios espacios de Objeciones para este servicio y período. Elige uno para continuar; no se borrarán ni fusionarán automáticamente.' }}</div>
+              <div class="objection-existing-choices">
+                <v-btn v-for="workspace in objectionPeriodSpaces" :key="workspace.job_id" type="button" size="small" variant="outlined" :color="objectionSelectedWorkspace===workspace.job_id ? 'primary' : undefined" :loading="objectionBusy && objectionSelectedWorkspace===workspace.job_id" :disabled="objectionBusy" @click="chooseObjectionWorkspace(workspace.job_id)">
+                  {{ workspace.job_id }} · {{ workspaceReceivedAt(workspace.received_at) || 'sin fecha' }}
+                </v-btn>
+              </div>
+            </v-alert>
             <div class="ingest-card-heading mt-4"><span class="ingest-step">3</span><div><h2>Crear espacio separado</h2><p>Los documentos de cabecera se cargan después; no bloquean la selección ni la creación.</p></div></div>
-            <div class="workspace-download-row mt-3"><span>Se copiarán únicamente los trámites seleccionados. Podrás agregar los que hayas omitido.</span><v-btn type="button" color="primary" prepend-icon="mdi-folder-plus-outline" :loading="objectionBusy" :disabled="!objectionCanCreate || objectionBusy" @click="createObjectionWorkspace">Crear espacio separado</v-btn></div>
+            <div class="workspace-download-row mt-3"><span>Se copiarán únicamente los trámites seleccionados. Podrás agregar los que hayas omitido.</span><v-btn type="button" color="primary" prepend-icon="mdi-folder-plus-outline" :loading="objectionBusy" :disabled="!objectionCanCreate || objectionBusy" @click="createObjectionWorkspace">{{ objectionCreateLabel }}</v-btn></div>
           </v-card>
           <v-card class="planilla-card saved-workspaces-card" rounded="xl" elevation="0">
-            <div class="planilla-toolbar"><div><h2>Espacios existentes</h2><p>Las cargas de respuesta y anexos se guardan solo en el espacio derivado.</p></div></div>
+            <div class="planilla-toolbar"><div><h2>Espacios existentes</h2><p>Los anexos y las correcciones se guardan solo en el espacio derivado.</p></div></div>
             <div class="coverage-toolbar"><v-select v-model="objectionSelectedWorkspace" :items="objectionWorkspaceItems" label="Espacio de objeciones" placeholder="Selecciona un espacio" prepend-inner-icon="mdi-folder-alert-outline" :disabled="objectionBusy || !objectionWorkspaceItems.length" @update:model-value="loadObjectionWorkspace"/><v-btn type="button" color="primary" variant="tonal" prepend-icon="mdi-folder-open-outline" :disabled="!objectionSelectedWorkspace || objectionBusy || workspaceDeleting" @click="loadObjectionWorkspace">Abrir</v-btn><v-btn type="button" color="error" variant="tonal" prepend-icon="mdi-delete-outline" :disabled="!objectionSelectedWorkspace || objectionBusy || workspaceDeleting" @click="requestDeleteWorkspace(objectionSelectedWorkspace)">Eliminar</v-btn></div>
             <div v-if="!objectionWorkspaceItems.length && !savedWorkspacesLoading" class="planilla-state"><v-icon icon="mdi-folder-search-outline" size="24"/><span>Aún no hay espacios de objeciones.</span></div>
             <template v-if="objectionCurrentWorkspace">
-              <v-alert class="mt-3" type="info" variant="tonal" density="comfortable">El ZIP se llamará {{ objectionCurrentWorkspace.job_id }}_OBJECIONES. Antes de descargarlo se exigen los cuatro documentos de cabecera, además de ACEPTA/RECHAZA, P_INDIVIDUAL.pdf y C_COBERTURA.pdf en cada trámite. Los anexos son opcionales.</v-alert>
+              <v-alert class="mt-3" type="info" variant="tonal" density="comfortable">El ZIP se llamará {{ objectionCurrentWorkspace.job_id }}_OBJECIONES. Los PDFs del primer ingreso se copiaron a este espacio; marca aquí cuáles enviar. P_INDIVIDUAL.pdf y C_COBERTURA.pdf son obligatorios. Para reemplazar o renombrar documentos, abre «Revisar y corregir expediente». Los anexos son opcionales.</v-alert>
               <v-card class="planilla-card mt-4" rounded="xl" elevation="0">
-                <div class="planilla-toolbar"><div><h3>Documentos obligatorios del paquete</h3><p>Se guardan en la raíz y puedes cargarlos ahora o más adelante.</p></div></div>
+                <div class="planilla-toolbar"><div><h3>Documentos para completar el ZIP</h3><p>No hacen falta para crear, abrir ni continuar el espacio. Quedan pendientes y puedes cargarlos después; se solicitan al preparar la descarga final.</p></div></div>
                 <div v-for="header in objectionHeaderOptions" :key="header.tipo" class="coverage-toolbar objection-header-row">
                   <label class="coverage-manual-upload">{{ header.nombre }}<input type="file" :accept="header.tipo === 'matriz' ? '.xlsm,application/vnd.ms-excel.sheet.macroEnabled.12' : '.pdf,application/pdf'" :disabled="objectionBusy" @change="setObjectionInput(header.tipo,$event)"/><small>{{ objectionHeaderFiles[header.tipo]?.name || (header.cargado ? 'Cargado; selecciona para reemplazar' : 'Pendiente de carga') }}</small></label>
                   <v-btn type="button" size="small" variant="tonal" :loading="objectionBusy" :disabled="!objectionHeaderFiles[header.tipo] || objectionBusy" @click="uploadObjectionHeader(header.tipo)">{{ header.cargado ? 'Reemplazar' : 'Guardar' }}</v-btn>
@@ -1660,6 +1859,9 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
                 </div>
                 <small class="objection-scan-hint">La matriz oficial .xlsm debe detallar por trámite el valor objetado, código, motivo y respuesta técnica. Folio no genera ni interpreta sus celdas.</small>
               </v-card>
+              <v-alert v-if="objectionPDFError" class="mt-4" type="error" variant="tonal" density="comfortable">
+                <div class="objection-pdf-error-row"><span>No se pudo consultar la lista de PDFs. El espacio de Objeciones sí está creado y disponible; este problema es independiente de los documentos para completar el ZIP.</span><v-btn type="button" size="small" variant="tonal" :loading="objectionPDFLoading" :disabled="objectionPDFLoading" @click="loadObjectionPDFSelection(objectionCurrentWorkspace.job_id)">Reintentar</v-btn></div>
+              </v-alert>
               <v-card class="planilla-card mt-4" rounded="xl" elevation="0">
                 <div class="planilla-toolbar"><div><h3>¿Olvidaste seleccionar un paciente?</h3><p>Puedes añadirlo aquí al mismo espacio. Si ya cargaste la matriz, tendrás que subirla de nuevo con el trámite incluido.</p></div><v-btn type="button" variant="tonal" prepend-icon="mdi-account-search-outline" :loading="objectionBusy" :disabled="objectionBusy" @click="previewObjectionAddCandidates">Buscar pacientes</v-btn></div>
                 <template v-if="objectionAddPreview">
@@ -1674,13 +1876,22 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
                   <div class="objection-document-actions">
                     <v-btn type="button" size="small" variant="tonal" prepend-icon="mdi-file-eye-outline" :disabled="objectionBusy" @click="openObjectionPatientDocuments(patient)">Revisar y corregir expediente</v-btn>
                     <v-select v-model="objectionPostures[patient.tramite]" :items="['ACEPTA','RECHAZA']" label="Postura" density="compact" hide-details/>
-                    <label class="coverage-manual-upload">C_COBERTURA.pdf<input type="file" accept=".pdf,application/pdf" :disabled="objectionBusy" @change="setObjectionUpload($event,patient.tramite,'cobertura')"/><small>{{ objectionUploadFiles[patient.tramite + ':cobertura']?.name || (patient.rows[0]?.cobertura_adjunta ? 'Cobertura adjunta' : 'Seleccionar PDF') }}</small></label>
-                    <v-btn type="button" size="small" variant="tonal" :loading="objectionBusy" :disabled="!objectionUploadFiles[patient.tramite + ':cobertura'] || objectionBusy" @click="uploadObjectionDocument(patient,'cobertura')">Guardar cobertura</v-btn>
-                    <label class="coverage-manual-upload">P_INDIVIDUAL.pdf<input type="file" accept=".pdf,application/pdf" :disabled="objectionBusy" @change="setObjectionUpload($event,patient.tramite,'respuesta')"/><small>{{ objectionUploadFiles[`${patient.tramite}:respuesta`]?.name || 'Seleccionar respuesta' }}</small></label>
-                    <v-btn type="button" size="small" color="primary" variant="tonal" :loading="objectionBusy" :disabled="!objectionUploadFiles[`${patient.tramite}:respuesta`] || !objectionPostures[patient.tramite] || objectionBusy" @click="uploadObjectionDocument(patient,'respuesta')">Guardar postura y PDF</v-btn>
+                    <v-btn type="button" size="small" color="primary" variant="tonal" :loading="objectionPostureSaving===patient.tramite" :disabled="!objectionPostures[patient.tramite] || objectionPostureSaving" @click="saveObjectionPosture(patient)">Guardar postura</v-btn>
+                    <div class="objection-zip-documents">
+                      <strong>PDFs que se incluirán en el ZIP</strong>
+                      <p>Marca los documentos clínicos que correspondan al descargo. Solo los seleccionados entran en el ZIP; los obligatorios siempre se incluyen.</p>
+                      <label v-for="document in objectionPatientPDFs(patient)" :key="document.path" class="objection-zip-document">
+                        <input type="checkbox" :checked="document.incluido_en_zip" :disabled="document.obligatorio || objectionPDFSavingPath===document.path || Boolean(objectionPDFSavingPath)" @change="setObjectionPDFIncluded(document,$event.target.checked)"/>
+                        <span><strong>{{ document.name }}</strong><small>{{ document.obligatorio ? 'Obligatorio' : prettySize(document.size_bytes) }}</small></span>
+                        <v-progress-circular v-if="objectionPDFSavingPath===document.path" indeterminate size="16" width="2"/>
+                      </label>
+                      <div v-if="objectionPDFLoading && !objectionPatientPDFs(patient).length" class="workspace-empty">Cargando PDFs del trámite…</div>
+                      <div v-else-if="!objectionPDFError && !objectionPatientPDFs(patient).length" class="workspace-empty">No hay PDFs copiados para este trámite.</div>
+                    </div>
                     <v-select v-model="objectionAnnexTypeByPatient[patient.tramite]" :items="objectionAnnexTypes" label="Tipo de justificativo" density="compact" hide-details/>
                     <v-text-field v-if="objectionAnnexTypeByPatient[patient.tramite]==='OTRO'" :model-value="objectionAnnexNameByPatient[patient.tramite] || ''" label="Nombre descriptivo" placeholder="INFORME_COMPLEMENTARIO" density="compact" hide-details @update:model-value="setObjectionAnnexName(patient.tramite,$event)"/>
                     <label class="coverage-manual-upload">PDF para 5. ANEXOS<input type="file" accept=".pdf,application/pdf" :disabled="objectionBusy" @change="setObjectionUpload($event,patient.tramite,'anexo')"/><small>{{ objectionUploadFiles[`${patient.tramite}:anexo`]?.name || 'Seleccionar PDF' }}</small></label>
+                    <small class="objection-scan-hint">Los anexos que guardes se incluirán automáticamente en el ZIP.</small>
                     <small class="objection-scan-hint">Escanea entre 72 y 300 DPI; el sistema valida PDF, pero no mide su DPI.</small>
                     <v-btn type="button" size="small" variant="tonal" :loading="objectionBusy" :disabled="!objectionUploadFiles[`${patient.tramite}:anexo`] || !objectionAnnexTypeByPatient[patient.tramite] || (objectionAnnexTypeByPatient[patient.tramite]==='OTRO' && !objectionAnnexNameByPatient[patient.tramite]?.trim()) || objectionBusy" @click="uploadObjectionDocument(patient,'anexo')">Guardar anexo</v-btn>
                   </div>
@@ -1690,7 +1901,7 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
           </v-card>
         </section>
         <section v-else-if="activePage==='patient-documents'" class="content-wrap">
-          <div class="welcome-line"><div><div class="eyebrow">DOCUMENTOS DEL PACIENTE</div><h1>Abrir documentos del paciente<span class="title-period">.</span></h1><p class="subtitle">Elige un período guardado para revisar las carpetas de pacientes y sus PDFs.</p></div></div>
+          <div class="welcome-line"><div><div class="eyebrow">DOCUMENTOS DEL PACIENTE</div><h1>Revisar documentos del paciente<span class="title-period">.</span></h1><p class="subtitle">Elige un período guardado para revisar las carpetas de pacientes y sus PDFs.</p></div></div>
           <v-card class="planilla-card saved-workspaces-card" rounded="xl" elevation="0">
             <div class="coverage-toolbar">
               <v-autocomplete v-model="selectedSavedWorkspace" :items="savedWorkspaceItems" label="Período y servicio" placeholder="Busca un período guardado" prepend-inner-icon="mdi-folder-clock-outline" density="comfortable" variant="outlined" hide-details clearable :loading="savedWorkspacesLoading" :disabled="savedWorkspacesLoading || !savedWorkspaceItems.length"/>
@@ -1716,7 +1927,7 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
             <div v-else-if="savedWorkspacesLoading" class="planilla-state"><v-progress-circular indeterminate color="primary" size="22"/><span>Cargando expedientes…</span></div>
             <div v-else-if="!zipDownloadWorkspaceItems.length" class="planilla-state"><v-icon icon="mdi-folder-search-outline" size="25"/><span>No hay expedientes preparados para descargar todavía.</span><v-btn type="button" variant="text" color="primary" @click="activePage='ingesta'">Recibir planillas</v-btn></div>
             <template v-else>
-              <v-alert v-if="zipDownloadError" class="mt-4" type="warning" variant="tonal" density="comfortable">{{ zipDownloadError }}<v-btn type="button" size="small" variant="text" @click="openPatientDocumentsPage">Abrir documentos del paciente</v-btn></v-alert>
+              <v-alert v-if="zipDownloadError" class="mt-4" type="warning" variant="tonal" density="comfortable">{{ zipDownloadError }}<v-btn type="button" size="small" variant="text" @click="openPatientDocumentsPage">Revisar documentos del paciente</v-btn></v-alert>
               <v-alert v-if="zipDownloadNotice" class="mt-4" type="success" variant="tonal" density="comfortable">{{ zipDownloadNotice }}</v-alert>
               <div class="workspace-download-row"><span>Los grupos de PDFs pendientes de fusionar deben resolverse antes de descargar el ZIP.</span><v-btn type="button" color="primary" prepend-icon="mdi-folder-zip-outline" :loading="zipDownloading" :disabled="!selectedZipWorkspace || zipDownloading" @click="downloadWorkspaceZIP">Descargar expediente ZIP</v-btn></div>
             </template>
@@ -1741,18 +1952,25 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
               <div v-else-if="!savedWorkspaces.length" class="saved-workspaces-empty"><v-icon icon="mdi-folder-search-outline" size="24"/><span><strong>No hay períodos guardados todavía</strong><small>Crea un período nuevo y aparecerá aquí para que cualquier cuenta autorizada pueda continuarlo.</small></span><v-btn type="button" variant="text" color="primary" @click="switchIngestMode('new')">Crear período nuevo</v-btn></div>
               <template v-else>
                 <div class="saved-workspace-filters">
-                  <v-text-field v-model="savedWorkspaceSearch" label="Buscar período" placeholder="Servicio, mes, ID o usuario" prepend-inner-icon="mdi-magnify" density="comfortable" variant="outlined" hide-details clearable/>
-                  <v-chip-group v-model="savedWorkspaceStatusFilter" selected-class="filter-chip-selected" mandatory color="primary" class="saved-workspace-status-filters">
-                    <v-chip v-for="filter in savedWorkspaceStatusFilters" :key="filter.value" :value="filter.value" size="small" variant="outlined">{{ filter.title }}</v-chip>
-                  </v-chip-group>
+                  <v-text-field v-model="savedWorkspaceSearch" label="Buscar períodos" placeholder="Mes, ID, usuario o tipo de espacio" prepend-inner-icon="mdi-magnify" density="comfortable" variant="outlined" hide-details clearable/>
+                  <div class="saved-workspace-filter-grid">
+                    <v-select v-model="savedWorkspaceTypeFilter" :items="savedWorkspaceTypeFilters" label="Tipo de espacio" density="comfortable" variant="outlined" hide-details/>
+                    <v-select v-model="savedWorkspaceServiceFilter" :items="savedWorkspaceServiceFilters" label="Servicio" density="comfortable" variant="outlined" hide-details/>
+                    <v-select v-model="savedWorkspaceYearFilter" :items="savedWorkspaceYearFilters" label="Año" density="comfortable" variant="outlined" hide-details/>
+                    <v-select v-model="savedWorkspaceStatusFilter" :items="savedWorkspaceStatusFilters" item-title="title" item-value="value" label="Estado" density="comfortable" variant="outlined" hide-details/>
+                  </div>
+                  <div class="saved-workspace-results-toolbar">
+                    <p>{{ filteredSavedWorkspaces.length }} de {{ savedWorkspaces.length }} espacios · período más reciente primero</p>
+                    <v-btn v-if="hasSavedWorkspaceFilters" type="button" variant="text" prepend-icon="mdi-filter-remove-outline" @click="clearSavedWorkspaceFilters">Limpiar filtros</v-btn>
+                  </div>
                 </div>
-                <div v-if="!filteredSavedWorkspaces.length" class="saved-workspaces-empty saved-workspaces-no-results"><v-icon icon="mdi-filter-remove-outline" size="24"/><span><strong>No hay períodos que coincidan</strong><small>Cambia el texto de búsqueda o el estado seleccionado.</small></span><v-btn type="button" variant="text" @click="savedWorkspaceSearch='';savedWorkspaceStatusFilter='ALL'">Limpiar filtros</v-btn></div>
+                <div v-if="!filteredSavedWorkspaces.length" class="saved-workspaces-empty saved-workspaces-no-results"><v-icon icon="mdi-filter-remove-outline" size="24"/><span><strong>No hay períodos que coincidan</strong><small>Prueba otra búsqueda o combina otros filtros. Los períodos antiguos siguen disponibles al limpiar los filtros.</small></span><v-btn v-if="hasSavedWorkspaceFilters" type="button" variant="text" @click="clearSavedWorkspaceFilters">Limpiar filtros</v-btn></div>
                 <div v-else class="saved-workspace-list">
                   <article v-for="workspace in filteredSavedWorkspaces" :key="workspace.job_id" class="saved-workspace-card">
                     <div class="saved-workspace-card-main">
                       <span class="saved-workspace-icon"><v-icon icon="mdi-folder-zip-outline" size="22"/></span>
                       <div class="saved-workspace-card-copy">
-                        <div class="saved-workspace-title-row"><h3>{{ coverageServiceLabel(workspace.tipo_servicio) }} · {{ coverageMonthLabel(workspace.mes) }} {{ workspace.anio }}</h3><v-chip size="small" :color="workspaceStatusColor(workspace.status)" variant="tonal">{{ workspaceStatusLabel(workspace.status) }}</v-chip></div>
+                        <div class="saved-workspace-title-row"><v-chip size="small" :color="workspace.es_objeciones ? 'deep-purple' : 'primary'" variant="tonal">{{ workspaceTypeLabel(workspace) }}</v-chip><h3>{{ coverageServiceLabel(workspace.tipo_servicio) }} · {{ coverageMonthLabel(workspaceMonthValue(workspace)) }} {{ workspaceYearLabel(workspace) }}</h3><v-chip size="small" :color="workspaceStatusColor(workspace.status)" variant="tonal">{{ workspaceStatusLabel(workspace.status) }}</v-chip></div>
                         <p v-if="workspace.missing_documents?.length" class="saved-workspace-missing"><v-icon icon="mdi-alert-circle-outline" size="16"/> Faltan: {{ workspace.missing_documents.join(', ') }}</p>
                         <p v-else-if="workspace.message" class="saved-workspace-message">{{ workspace.message }}</p>
                         <p v-else class="saved-workspace-message">Período listo para continuar.</p>

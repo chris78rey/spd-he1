@@ -94,7 +94,7 @@ El clasificador híbrido se describe directamente en código: `classifyPDF()` in
 | R039 | Guardián → PRODUCE → paquete final | NO IMPLEMENTADO | Requerido, no integrado |
 | R040 | Guardián → PRODUCE → paquete formal de objeciones | NO IMPLEMENTADO | El guardián integral no está integrado; existe un flujo manual separado |
 
-Las rutas actuales incluyen APIs `/api/v1/objeciones/previsualizar`, `/crear`, `/agregar/`, `/cabeceras/` y `/documentos/` para el flujo manual. No aparecen los endpoints integrales de empaquetado `/empaquetado/auditar` o `/empaquetado/generar` descritos en documentos de diseño.
+Las rutas actuales incluyen APIs `/api/v1/objeciones/previsualizar`, `/crear`, `/agregar/`, `/cabeceras/`, `/documentos/`, `/pdfs/seleccion/` y `/postura/` para el flujo manual. La carga de documentos de Objeciones acepta anexos; los PDFs del expediente se corrigen en el visor del espacio derivado. La selección de PDFs afecta solo al ZIP de objeciones; los ZIP normales conservan la descarga de todos sus archivos actuales. No aparecen los endpoints integrales de empaquetado `/empaquetado/auditar` o `/empaquetado/generar` descritos en documentos de diseño.
 
 ## Clústeres funcionales
 
