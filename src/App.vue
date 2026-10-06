@@ -99,6 +99,69 @@ const selectedZipWorkspace = ref('')
 const zipDownloading = ref(false)
 const zipDownloadError = ref('')
 const zipDownloadNotice = ref('')
+const objectionSourceWorkspace = ref('')
+const objectionPreview = ref(null)
+const objectionSelectedTramites = ref([])
+const objectionAddPreview = ref(null)
+const objectionAddSelectedTramites = ref([])
+const objectionHeaderFiles = ref({})
+const objectionCurrentWorkspace = ref(null)
+const objectionSelectedWorkspace = ref('')
+const objectionBusy = ref(false)
+const objectionError = ref('')
+const objectionNotice = ref('')
+const objectionUploadFiles = ref({})
+const objectionPostures = ref({})
+const objectionAnnexTypeByPatient = ref({})
+const objectionAnnexNameByPatient = ref({})
+const objectionAnnexTypes = [
+  { title: 'Ficha técnica', value: 'FICHA_TECNICA' },
+  { title: 'Factura de dispositivo', value: 'FACTURA_DISPOSITIVO' },
+  { title: 'Facturas de respaldo', value: 'FACTURAS_RESPALDO' },
+  { title: 'Factura de compra', value: 'FACTURA_COMPRA' },
+  { title: 'Protocolos médicos', value: 'PROTOCOLOS_MEDICOS' },
+  { title: 'Protocolo detallado', value: 'PROTOCOLO_DETALLADO' },
+  { title: 'Examen adicional', value: 'EXAMEN_ADICIONAL' },
+  { title: 'Otro justificativo', value: 'OTRO' },
+]
+const objectionSelectionCandidates = computed(() => objectionPreview.value?.candidatos || [])
+const objectionComboItems = computed(() => objectionSelectionCandidates.value.map(row => ({
+  title: `${row.paciente} · Trámite ${row.pdi_tramite}${row.pdi_cedula ? ` · Cédula ${row.pdi_cedula}` : ''}`,
+  value: row.pdi_tramite,
+})))
+const objectionSelectedCandidates = computed(() => objectionSelectionCandidates.value.filter(row => objectionSelectedTramites.value.includes(row.pdi_tramite)))
+const objectionCanCreate = computed(() => objectionSelectedTramites.value.length > 0 && Boolean(objectionSourceWorkspace.value && objectionPreview.value))
+const objectionAddCandidateItems = computed(() => {
+  const selected = new Set((objectionCurrentWorkspace.value?.objeciones || []).map(row => row.pdi_tramite))
+  return (objectionAddPreview.value?.candidatos || [])
+    .filter(row => !selected.has(row.pdi_tramite))
+    .map(row => ({ title: row.paciente + ' · Trámite ' + row.pdi_tramite + (row.pdi_cedula ? ' · Cédula ' + row.pdi_cedula : ''), value: row.pdi_tramite }))
+})
+const objectionHeaderOptions = computed(() => objectionCurrentWorkspace.value?.cabeceras_objeciones || [])
+const objectionUniquePatients = computed(() => {
+  const patients = new Map()
+  for (const row of objectionCurrentWorkspace.value?.objeciones || objectionPreview.value?.objeciones || []) {
+    const key = row.pdi_tramite
+    if (!patients.has(key)) patients.set(key, { tramite: key, patient: row.paciente, folder: row.carpeta_paciente, rows: [] })
+    patients.get(key).rows.push(row)
+  }
+  return [...patients.values()]
+})
+const objectionSourceItems = computed(() => {
+  const seen = new Set()
+  return savedWorkspaces.value
+    .filter(workspace => !workspace.es_objeciones && ['PROCESSED', 'INCOMPLETE'].includes(workspace.status))
+    .filter(workspace => {
+      const id = String(workspace.job_id || '').trim()
+      if (!id || seen.has(id)) return false
+      seen.add(id)
+      return true
+    })
+    .map(workspace => ({ title: `${coverageServiceLabel(workspace.tipo_servicio)} · ${coverageMonthLabel(workspace.mes)} ${workspace.anio} · ${workspace.job_id}`, value: workspace.job_id }))
+})
+const objectionWorkspaceItems = computed(() => savedWorkspaces.value
+  .filter(workspace => workspace.es_objeciones && workspace.status === 'PROCESSED')
+  .map(workspace => ({ title: `${coverageServiceLabel(workspace.tipo_servicio)} · ${coverageMonthLabel(workspace.mes)} ${workspace.anio} · Objeciones`, value: workspace.job_id })))
 const workspacePDFs = ref([])
 const workspacePDFRevision = ref(0)
 const workspacePatients = ref([])
@@ -134,6 +197,7 @@ const workspaceDeleteTargetName = ref('')
 const workspaceDeleteInput = ref('')
 const workspaceDeleteError = ref('')
 const workspaceDeleting = ref(false)
+const workspaceDeleteIsObjections = computed(() => savedWorkspaces.value.some(workspace => workspace.job_id === workspaceDeleteTargetID.value && workspace.es_objeciones))
 const selectedWorkspaceDocument = computed(() => workspacePDFs.value.find(document => document.path === selectedWorkspacePDF.value) || null)
 const workspacePatientPDFs = computed(() => {
   const prefix = workspacePatient.value ? `4. EXPEDIENTES/${workspacePatient.value}/` : ''
@@ -257,7 +321,7 @@ async function openCoverageDownloads() {
   coverageError.value = ''
   coverageNotice.value = ''
   await loadSavedWorkspaces()
-  const eligible = savedWorkspaces.value.filter(workspace => ['PROCESSED', 'INCOMPLETE'].includes(workspace.status))
+  const eligible = savedWorkspaces.value.filter(workspace => !workspace.es_objeciones && ['PROCESSED', 'INCOMPLETE'].includes(workspace.status))
   if (!eligible.some(workspace => workspace.job_id === selectedCoverageWorkspace.value)) {
     selectedCoverageWorkspace.value = eligible[0]?.job_id || ''
   }
@@ -690,15 +754,18 @@ function requestDeleteWorkspace(jobId = ingestResult.value?.job_id) {
   deleteWorkspaceDialog.value = true
 }
 function setWorkspaceDeleteInput(value) { workspaceDeleteInput.value = String(value || '').trim().toUpperCase() }
+function workspaceDeleteConfirmationMatches() {
+  return Boolean(workspaceDeleteTargetID.value) && workspaceDeleteInput.value.toUpperCase() === workspaceDeleteTargetID.value.toUpperCase()
+}
 async function deleteWholeWorkspace() {
   const jobId = workspaceDeleteTargetID.value
-  if (!jobId || workspaceDeleteInput.value !== jobId || workspaceDeleting.value) return
+  if (!workspaceDeleteConfirmationMatches() || workspaceDeleting.value) return
   workspaceDeleteError.value = ''
   workspaceDeleting.value = true
   try {
     const response = await fetch(`/api/v1/expedientes/eliminar/${encodeURIComponent(jobId)}`, {
       method: 'DELETE', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ confirmacion: workspaceDeleteInput.value }),
+      body: JSON.stringify({ confirmacion: jobId }),
     })
     const data = await response.json().catch(() => ({}))
     if (!response.ok) throw new Error(data.error || 'No se pudo eliminar el espacio completo.')
@@ -721,13 +788,21 @@ async function deleteWholeWorkspace() {
       coverageNotice.value = ''
       coverageError.value = ''
     }
+    if (objectionSelectedWorkspace.value === jobId) {
+      objectionSelectedWorkspace.value = ''
+      objectionCurrentWorkspace.value = null
+      objectionPostures.value = {}
+      objectionUploadFiles.value = {}
+      objectionAnnexTypeByPatient.value = {}
+      objectionAnnexNameByPatient.value = {}
+    }
     deleteWorkspaceDialog.value = false
     selectedSavedWorkspace.value = ''
     await loadSavedWorkspaces()
     workspaceDeleteTargetID.value = ''
     workspaceDeleteTargetName.value = ''
     workspaceDeleteInput.value = ''
-    snackbar.value = `Se eliminó ${deletedFolder} y sus archivos.`
+    snackbar.value = data.message || `Se eliminó ${deletedFolder} y sus archivos.`
   } catch (error) { workspaceDeleteError.value = error.message || 'No se pudo eliminar el espacio completo.' }
   finally { workspaceDeleting.value = false }
 }
@@ -842,7 +917,12 @@ async function replaceIngestZIP(event) {
     if (!response.ok) throw new Error(data.error || 'No se pudo actualizar el ZIP guardado.')
     ingestResult.value = data
     localStorage.setItem('folio-ingest-result', JSON.stringify(data))
-    await loadIngestPreview(data.job_id)
+    if (data.es_objeciones) {
+      ingestPreview.value = null
+      ingestPreviewError.value = ''
+    } else {
+      await loadIngestPreview(data.job_id)
+    }
     await loadSavedWorkspaces()
   } catch (error) {
     ingestError.value = error.message || 'No se pudo actualizar el ZIP guardado.'
@@ -1009,7 +1089,7 @@ const savedWorkspaceItems = computed(() => savedWorkspaces.value.map(workspace =
   const monthName = ingestMonths.find(month => month.value === String(workspace.period || '').slice(5, 7))?.title || workspace.mes
   const serviceName = ingestServices.find(service => service.value === workspace.tipo_servicio)?.title || workspace.tipo_servicio
   const state = workspace.status === 'STAGED' ? 'pendiente de preparar' : workspace.status === 'INCOMPLETE' ? 'incompleto' : 'preparado'
-  return { title: `${serviceName} · ${monthName} ${workspace.anio} · ${state} · recibido por ${workspace.creado_por || 'usuario anterior'}`, value: workspace.job_id }
+  return { title: `${workspace.es_objeciones ? 'Objeciones · ' : ''}${serviceName} · ${monthName} ${workspace.anio} · ${state} · recibido por ${workspace.creado_por || 'usuario anterior'}`, value: workspace.job_id }
 }))
 const zipDownloadWorkspaceItems = computed(() => {
   const eligibleIDs = new Set(savedWorkspaces.value.filter(workspace => ['PROCESSED', 'INCOMPLETE'].includes(workspace.status)).map(workspace => workspace.job_id))
@@ -1087,7 +1167,8 @@ async function openSavedWorkspace(jobId = selectedSavedWorkspace.value) {
     ingestMode.value = 'resume'
     ingestModeTouched.value = true
     ingestResult.value = data
-    localStorage.setItem('folio-ingest-result', JSON.stringify(data))
+    if (data.es_objeciones) localStorage.removeItem('folio-ingest-result')
+    else localStorage.setItem('folio-ingest-result', JSON.stringify(data))
     if (data.output) await loadWorkspaceDocuments(data.job_id)
     else { workspacePDFs.value = []; workspacePatients.value = [] }
     await loadIngestPreview(data.job_id)
@@ -1120,6 +1201,199 @@ async function openZipDownloadPage() {
   zipDownloadNotice.value = ''
   await loadSavedWorkspaces()
   if (!zipDownloadWorkspaceItems.value.some(item => item.value === selectedZipWorkspace.value)) selectedZipWorkspace.value = zipDownloadWorkspaceItems.value[0]?.value || ''
+}
+async function openObjectionsPage() {
+  activePage.value = 'objeciones'
+  objectionError.value = ''
+  objectionNotice.value = ''
+  await loadSavedWorkspaces()
+  if (!objectionSourceItems.value.some(item => item.value === objectionSourceWorkspace.value)) objectionSourceWorkspace.value = objectionSourceItems.value[0]?.value || ''
+  if (!objectionWorkspaceItems.value.some(item => item.value === objectionSelectedWorkspace.value)) objectionSelectedWorkspace.value = objectionWorkspaceItems.value[0]?.value || ''
+  if (objectionSelectedWorkspace.value) await loadObjectionWorkspace(objectionSelectedWorkspace.value)
+}
+function objectionFormData() {
+  if (!objectionSourceWorkspace.value) return null
+  const form = new FormData()
+  form.append('expediente_origen', objectionSourceWorkspace.value)
+  return form
+}
+function resetObjectionPreview() {
+  objectionPreview.value = null
+  objectionSelectedTramites.value = []
+}
+function setObjectionInput(kind, event) {
+  const file = event.target.files?.[0] || null
+  event.target.value = ''
+  objectionHeaderFiles.value = { ...objectionHeaderFiles.value, [kind]: file }
+}
+async function previewObjections() {
+  if (!objectionSourceWorkspace.value || objectionBusy.value) return
+  objectionBusy.value = true
+  objectionError.value = ''
+  objectionNotice.value = ''
+  objectionPreview.value = null
+  objectionSelectedTramites.value = []
+  try {
+    const form = new URLSearchParams({ expediente_origen: objectionSourceWorkspace.value })
+    const response = await fetch('/api/v1/objeciones/previsualizar', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' }, body: form })
+    if (response.status === 401) { await signOut(); return }
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok) throw new Error(data.error || 'No se pudieron cargar los pacientes del período.')
+    objectionPreview.value = data
+    objectionNotice.value = ''
+  } catch (error) { objectionError.value = error.message || 'No se pudieron cargar los pacientes del período.' }
+  finally { objectionBusy.value = false }
+}
+async function createObjectionWorkspace() {
+  const form = objectionFormData()
+  if (!form || !objectionCanCreate.value || objectionBusy.value) return
+  const selected = new Set(objectionSelectedTramites.value)
+  for (const tramite of selected) form.append('tramites_objetados', tramite)
+  objectionBusy.value = true
+  objectionError.value = ''
+  objectionNotice.value = ''
+  try {
+    const response = await fetch('/api/v1/objeciones/crear', { method: 'POST', credentials: 'same-origin', body: form })
+    if (response.status === 401) { await signOut(); return }
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok) throw new Error(data.error || 'No se pudo crear el espacio separado.')
+    objectionSelectedWorkspace.value = data.job_id
+    objectionCurrentWorkspace.value = data
+    objectionHeaderFiles.value = {}
+    objectionAddPreview.value = null
+    objectionPreview.value = null
+    objectionSelectedTramites.value = []
+    objectionPostures.value = Object.fromEntries((data.objeciones || []).filter(row => row.postura).map(row => [row.pdi_tramite, row.postura]))
+    objectionNotice.value = data.message || 'Se creó el espacio separado de objeciones.'
+    await loadSavedWorkspaces()
+  } catch (error) { objectionError.value = error.message || 'No se pudo crear el espacio separado.' }
+  finally { objectionBusy.value = false }
+}
+async function loadObjectionWorkspace(jobId = objectionSelectedWorkspace.value) {
+  if (!jobId) { objectionCurrentWorkspace.value = null; return }
+  if (objectionCurrentWorkspace.value?.job_id !== jobId) {
+    objectionHeaderFiles.value = {}
+    objectionAddPreview.value = null
+    objectionAddSelectedTramites.value = []
+    objectionUploadFiles.value = {}
+  }
+  objectionBusy.value = true
+  objectionError.value = ''
+  objectionSelectedWorkspace.value = jobId
+  try {
+    const response = await fetch(`/api/v1/ingesta/estado/${encodeURIComponent(jobId)}`, { credentials: 'same-origin' })
+    if (response.status === 401) { await signOut(); return }
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok) throw new Error(data.error || 'No se pudo abrir el espacio de objeciones.')
+    if (!data.es_objeciones) throw new Error('El espacio seleccionado no corresponde a objeciones.')
+    objectionCurrentWorkspace.value = data
+    objectionPostures.value = Object.fromEntries((data.objeciones || []).filter(row => row.postura).map(row => [row.pdi_tramite, row.postura]))
+  } catch (error) { objectionError.value = error.message || 'No se pudo abrir el espacio de objeciones.' }
+  finally { objectionBusy.value = false }
+}
+async function previewObjectionAddCandidates() {
+  const sourceId = objectionCurrentWorkspace.value?.expediente_origen
+  if (!sourceId || objectionBusy.value) return
+  objectionBusy.value = true
+  objectionError.value = ''
+  objectionNotice.value = ''
+  try {
+    const form = new URLSearchParams({ expediente_origen: sourceId })
+    const response = await fetch('/api/v1/objeciones/previsualizar', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' }, body: form })
+    if (response.status === 401) { await signOut(); return }
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok) throw new Error(data.error || 'No se pudo volver a cargar la lista del período.')
+    objectionAddPreview.value = data
+    objectionAddSelectedTramites.value = []
+  } catch (error) { objectionError.value = error.message || 'No se pudo volver a cargar la lista del período.' }
+  finally { objectionBusy.value = false }
+}
+async function addObjectionPatients() {
+  if (!objectionSelectedWorkspace.value || !objectionAddSelectedTramites.value.length || objectionBusy.value) return
+  objectionBusy.value = true
+  objectionError.value = ''
+  objectionNotice.value = ''
+  try {
+    const form = new URLSearchParams()
+    for (const tramite of objectionAddSelectedTramites.value) form.append('tramites_objetados', tramite)
+    const response = await fetch('/api/v1/objeciones/agregar/' + encodeURIComponent(objectionSelectedWorkspace.value), { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' }, body: form })
+    if (response.status === 401) { await signOut(); return }
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok) throw new Error(data.error || 'No se pudieron agregar los pacientes seleccionados.')
+    objectionCurrentWorkspace.value = data
+    objectionAddPreview.value = null
+    objectionAddSelectedTramites.value = []
+    objectionHeaderFiles.value = { ...objectionHeaderFiles.value, matriz: null }
+    objectionNotice.value = data.message || 'Se agregaron los trámites al espacio de objeciones.'
+    await loadSavedWorkspaces()
+  } catch (error) { objectionError.value = error.message || 'No se pudieron agregar los pacientes seleccionados.' }
+  finally { objectionBusy.value = false }
+}
+async function uploadObjectionHeader(kind) {
+  const file = objectionHeaderFiles.value[kind]
+  if (!file || !objectionSelectedWorkspace.value || objectionBusy.value) return
+  objectionBusy.value = true
+  objectionError.value = ''
+  objectionNotice.value = ''
+  try {
+    const form = new FormData()
+    form.append('tipo', kind)
+    form.append('archivo', file, file.name)
+    const response = await fetch('/api/v1/objeciones/cabeceras/' + encodeURIComponent(objectionSelectedWorkspace.value), { method: 'POST', credentials: 'same-origin', body: form })
+    if (response.status === 401) { await signOut(); return }
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok) throw new Error(data.error || 'No se pudo guardar el documento de cabecera.')
+    objectionHeaderFiles.value = { ...objectionHeaderFiles.value, [kind]: null }
+    objectionNotice.value = data.message || 'Documento de cabecera guardado.'
+    await loadObjectionWorkspace(objectionSelectedWorkspace.value)
+  } catch (error) { objectionError.value = error.message || 'No se pudo guardar el documento de cabecera.' }
+  finally { objectionBusy.value = false }
+}
+function setObjectionUpload(event, tramite, kind) {
+  const file = event.target.files?.[0] || null
+  event.target.value = ''
+  objectionUploadFiles.value = { ...objectionUploadFiles.value, [`${tramite}:${kind}`]: file }
+}
+async function uploadObjectionDocument(patient, kind) {
+  const key = `${patient.tramite}:${kind}`
+  const file = objectionUploadFiles.value[key]
+  if (!file || !objectionSelectedWorkspace.value || objectionBusy.value) return
+  objectionBusy.value = true
+  objectionError.value = ''
+  objectionNotice.value = ''
+  try {
+    const form = new FormData()
+    form.append('tipo', kind)
+    form.append('pdi_tramite', patient.tramite)
+    if (kind === 'respuesta') form.append('postura', objectionPostures.value[patient.tramite] || '')
+    if (kind === 'anexo') {
+      const annexType = objectionAnnexTypeByPatient.value[patient.tramite] || ''
+      form.append('tipo_anexo', annexType)
+      if (annexType === 'OTRO') form.append('nombre_anexo', objectionAnnexNameByPatient.value[patient.tramite] || '')
+    }
+    form.append('pdf_file', file, file.name)
+    const response = await fetch(`/api/v1/objeciones/documentos/${encodeURIComponent(objectionSelectedWorkspace.value)}`, { method: 'POST', credentials: 'same-origin', body: form })
+    if (response.status === 401) { await signOut(); return }
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok) throw new Error(data.error || 'No se pudo guardar el documento.')
+    objectionUploadFiles.value = { ...objectionUploadFiles.value, [key]: null }
+    objectionNotice.value = kind === 'anexo' && data.nombre_archivo
+      ? `${data.nombre_archivo} guardado en 5. ANEXOS/${patient.folder}.`
+      : data.message || 'Documento guardado.'
+    await loadObjectionWorkspace(objectionSelectedWorkspace.value)
+  } catch (error) { objectionError.value = error.message || 'No se pudo guardar el documento.' }
+  finally { objectionBusy.value = false }
+}
+function setObjectionAnnexName(tramite, value) {
+  objectionAnnexNameByPatient.value = { ...objectionAnnexNameByPatient.value, [tramite]: value }
+}
+async function openObjectionPatientDocuments(patient) {
+  await openPatientDocumentsWorkspace(objectionSelectedWorkspace.value)
+  if (!patientDocumentsDialog.value) return
+  workspacePatient.value = patient.folder
+  const prefix = `4. EXPEDIENTES/${patient.folder}/`
+  const first = workspacePDFs.value.find(document => document.path.startsWith(prefix))
+  selectWorkspacePDF(first?.path || '')
 }
 function startNewIngest() {
   ingestMode.value = 'new'
@@ -1225,7 +1499,7 @@ const visibleDocs = computed(() => {
   else items.sort((a,b) => (b.addedAt||0)-(a.addedAt||0))
   return items
 })
-  const title = computed(() => activePage.value === 'planilla' ? 'Planilla digital' : activePage.value === 'coberturas' ? 'Hojas de cobertura' : activePage.value === 'patient-documents' ? 'Abrir documentos del paciente' : activePage.value === 'zip-download' ? 'Descargar expediente ZIP' : activePage.value === 'ingesta' ? 'Recepción de planillas' : activeFolder.value === 'Todos los documentos' ? 'Mis documentos' : activeFolder.value)
+  const title = computed(() => activePage.value === 'planilla' ? 'Planilla digital' : activePage.value === 'coberturas' ? 'Hojas de cobertura' : activePage.value === 'objeciones' ? 'Objeciones' : activePage.value === 'patient-documents' ? 'Abrir documentos del paciente' : activePage.value === 'zip-download' ? 'Descargar expediente ZIP' : activePage.value === 'ingesta' ? 'Recepción de planillas' : activeFolder.value === 'Todos los documentos' ? 'Mis documentos' : activeFolder.value)
 function prettySize(n) { return n < 1024*1024 ? `${Math.max(1, Math.round(n/1024))} KB` : `${(n/1024/1024).toFixed(1)} MB` }
 function handleShortcut(event) {
   if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); searchInput.value?.focus() }
@@ -1304,6 +1578,7 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
         <div class="nav-label">PROCESOS</div>
         <button class="nav-item" :class="{selected:activePage==='ingesta'}" @click="activePage='ingesta'"><v-icon icon="mdi-cloud-upload-outline" size="19"/><span>Recibir planillas</span></button>
         <button class="nav-item" :class="{selected:activePage==='coberturas'}" aria-label="Descargar hojas de cobertura" @click="openCoverageDownloads"><v-icon icon="mdi-file-download-outline" size="19"/><span>Descargar hojas de cobertura</span></button>
+        <button class="nav-item" :class="{selected:activePage==='objeciones'}" @click="openObjectionsPage"><v-icon icon="mdi-file-alert-outline" size="19"/><span>Objeciones</span></button>
         <button class="nav-item" :class="{selected:activePage==='patient-documents'}" @click="openPatientDocumentsPage"><v-icon icon="mdi-folder-account-outline" size="19"/><span>Abrir documentos del paciente</span></button>
         <button class="nav-item" :class="{selected:activePage==='zip-download'}" @click="openZipDownloadPage"><v-icon icon="mdi-folder-zip-outline" size="19"/><span>Descargar expediente ZIP</span></button>
         <div class="sidebar-bottom"><button class="profile" @click="signOut"><span class="avatar">{{ displayUser.slice(0,1) }}</span><span class="profile-copy"><b>{{ displayUser }}</b><small>Cerrar sesión</small></span><v-icon icon="mdi-logout" size="18"/></button></div>
@@ -1338,7 +1613,7 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
         <section v-else-if="activePage==='coberturas'" class="content-wrap">
           <div class="welcome-line"><div><div class="eyebrow">COBERTURAS DEL LOTE</div><h1>Hojas de cobertura<span class="title-period">.</span></h1><p class="subtitle">Las hojas se guardan en la carpeta de cada paciente. Puedes descargar una copia ZIP si la necesitas.</p></div><v-btn type="button" variant="tonal" prepend-icon="mdi-refresh" :loading="coverageLoading || savedWorkspacesLoading" @click="openCoverageDownloads">Actualizar</v-btn></div>
           <v-card class="planilla-card coverage-card" rounded="xl" elevation="0">
-            <div class="coverage-toolbar"><v-select :model-value="selectedCoverageWorkspace" :items="savedWorkspaces.filter(workspace => ['PROCESSED','INCOMPLETE'].includes(workspace.status)).map(workspace => ({ title: `${coverageServiceLabel(workspace.tipo_servicio)} · ${coverageMonthLabel(workspace.mes)} ${workspace.anio}`, value: workspace.job_id }))" label="Servicio y período del ZIP" placeholder="Selecciona un lote preparado" prepend-inner-icon="mdi-folder-zip-outline" density="comfortable" hide-details :disabled="savedWorkspacesLoading || coverageLoading || coverageGenerating" @update:model-value="loadCoveragePlanillas"/><v-btn color="primary" prepend-icon="mdi-content-save-outline" :loading="coverageGenerating" :disabled="!coverageSelectedIds.length || coverageGenerating" @click="generateCoverageSheets">Generar y guardar ({{ coverageSelectedIds.length }})</v-btn><v-btn variant="tonal" prepend-icon="mdi-download-outline" :loading="coverageGenerating" :disabled="!coverageSelectedIds.length || coverageSelectedIds.length > 500 || coverageGenerating" @click="downloadSelectedCoverageSheets">Descargar ZIP ({{ coverageSelectedIds.length }})</v-btn></div>
+            <div class="coverage-toolbar"><v-select :model-value="selectedCoverageWorkspace" :items="savedWorkspaces.filter(workspace => !workspace.es_objeciones && ['PROCESSED','INCOMPLETE'].includes(workspace.status)).map(workspace => ({ title: `${coverageServiceLabel(workspace.tipo_servicio)} · ${coverageMonthLabel(workspace.mes)} ${workspace.anio}`, value: workspace.job_id }))" label="Servicio y período del ZIP" placeholder="Selecciona un lote preparado" prepend-inner-icon="mdi-folder-zip-outline" density="comfortable" hide-details :disabled="savedWorkspacesLoading || coverageLoading || coverageGenerating" @update:model-value="loadCoveragePlanillas"/><v-btn color="primary" prepend-icon="mdi-content-save-outline" :loading="coverageGenerating" :disabled="!coverageSelectedIds.length || coverageGenerating" @click="generateCoverageSheets">Generar y guardar ({{ coverageSelectedIds.length }})</v-btn><v-btn variant="tonal" prepend-icon="mdi-download-outline" :loading="coverageGenerating" :disabled="!coverageSelectedIds.length || coverageSelectedIds.length > 500 || coverageGenerating" @click="downloadSelectedCoverageSheets">Descargar ZIP ({{ coverageSelectedIds.length }})</v-btn></div>
             <div v-if="coverageProgress" class="coverage-notice"><v-progress-circular indeterminate color="primary" size="18"/><span>{{ coverageProgress }}</span></div>
             <div v-if="coverageNotice" class="coverage-notice"><v-icon icon="mdi-information-outline"/><span>{{ coverageNotice }}</span></div>
             <div v-if="coverageError" class="planilla-state planilla-error"><v-icon icon="mdi-alert-circle-outline"/><span>{{ coverageError }}</span><v-btn size="small" variant="text" @click="loadCoveragePlanillas()">Reintentar</v-btn></div>
@@ -1347,6 +1622,71 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
             <div v-else-if="!coveragePlanillas.length" class="planilla-state"><v-icon icon="mdi-file-search-outline"/><span>No se encontraron planillas MSP de ese período en las carpetas del ZIP.</span></div>
             <div v-else class="planilla-table-wrap"><v-table class="planilla-table" density="comfortable" fixed-header height="min(62vh, 620px)"><thead><tr><th><label title="Seleccionar todas las pendientes"><input type="checkbox" :checked="coverageAllSelected" :disabled="!coverageSelectableRows.length || coverageGenerating" aria-label="Seleccionar todas las planillas pendientes" @change="toggleAllCoveragePlanillas"/> Todas</label></th><th>Trámite del ZIP</th><th>Paciente</th><th>Fecha hasta</th><th>Estado de cobertura</th><th>Acción manual</th></tr></thead><tbody><tr v-for="row in coveragePlanillas" :key="row.pdi_id"><td><input type="checkbox" :checked="coverageSelectedIds.includes(row.pdi_id)" :disabled="(row.pdi_cobertura === 'S' && !row.hoja_generada) || coverageGenerating" :aria-label="`Seleccionar planilla ${row.pdi_tramite}`" @change="toggleCoveragePlanilla(row)"/></td><td>{{ row.pdi_tramite }}</td><td>{{ row.paciente || '—' }}</td><td>{{ row.fecha_hasta || '—' }}</td><td><v-chip size="small" :color="row.pdi_cobertura === 'S' ? 'success' : row.hoja_generada ? 'info' : (row.descarga_manual || row.motivo_manual) ? 'error' : 'warning'" variant="tonal">{{ row.pdi_cobertura === 'S' ? 'Generada' : row.hoja_generada ? 'PDF en expediente · Oracle pendiente' : row.descarga_manual ? 'Descarga manual' : row.motivo_manual ? 'Revisar datos' : 'Pendiente' }}</v-chip><small v-if="row.motivo_manual" class="coverage-failure">{{ row.motivo_manual }}</small></td><td><div v-if="row.descarga_manual" class="coverage-manual"><a href="https://coberturasalud.msp.gob.ec/" target="_blank" rel="noopener noreferrer">Abrir portal MSP</a><small v-if="row.coberturas_manual?.length">Descarga un PDF por cédula: {{ row.coberturas_manual.map(member => member.cedula).join(', ') }}</small><label class="coverage-manual-upload"><input type="file" accept="application/pdf,.pdf" multiple :disabled="coverageManualUploadingId === row.pdi_id" @change="uploadManualCoverageSheets(row,$event)"/>{{ coverageManualUploadingId === row.pdi_id ? 'Adjuntando…' : 'Adjuntar PDFs descargados' }}</label></div><span v-else>—</span></td></tr></tbody></v-table></div>
             <div v-if="coveragePlanillas.length" class="coverage-footnote">Marca la casilla del encabezado para seleccionar todas las pendientes. Se procesan en grupos de 10; las hojas generadas se guardan en cada expediente. El ZIP admite hasta 500 planillas.</div>
+          </v-card>
+        </section>
+        <section v-else-if="activePage==='objeciones'" class="content-wrap">
+          <div class="welcome-line"><div><div class="eyebrow">SUBSANACIÓN DE PLANILLAS OBJETADAS</div><h1>Objeciones<span class="title-period">.</span></h1><p class="subtitle">Selecciona los pacientes objetados y crea un espacio separado para su subsanación.</p></div><v-btn type="button" variant="tonal" prepend-icon="mdi-refresh" :loading="savedWorkspacesLoading || objectionBusy" @click="openObjectionsPage">Actualizar</v-btn></div>
+          <v-alert class="mb-4" type="info" variant="tonal" density="comfortable" prepend-icon="mdi-shield-check-outline">Tú defines qué pacientes fueron objetados. Solo los seleccionados se copian al nuevo espacio; el período original permanece intacto y Oracle no se modifica.</v-alert>
+          <v-alert v-if="!savedWorkspacesLoading && !objectionSourceItems.length" class="mb-4" type="warning" variant="tonal" density="comfortable">Primero prepara un período de primer ingreso en “Recibir planillas”.</v-alert>
+          <v-card class="planilla-card saved-workspaces-card mb-5" rounded="xl" elevation="0">
+            <div class="ingest-card-heading"><span class="ingest-step">1</span><div><h2>Cargar pacientes del período</h2><p>Elige el primer ingreso del que salieron las objeciones. Los documentos de cabecera se cargan después de crear el espacio.</p></div></div>
+            <div class="coverage-toolbar">
+              <v-select v-model="objectionSourceWorkspace" :items="objectionSourceItems" label="Período de primer ingreso" placeholder="Selecciona un período preparado" prepend-inner-icon="mdi-folder-open-outline" clearable hide-selected :disabled="objectionBusy || savedWorkspacesLoading" @update:model-value="resetObjectionPreview"/>
+              <v-btn type="button" variant="tonal" prepend-icon="mdi-account-search-outline" :loading="objectionBusy" :disabled="!objectionSourceWorkspace || objectionBusy" @click="previewObjections">Cargar pacientes</v-btn>
+            </div>
+            <v-alert v-if="objectionError" class="mt-3" type="error" variant="tonal" density="comfortable">{{ objectionError }}</v-alert>
+            <v-alert v-if="objectionNotice" class="mt-3" type="success" variant="tonal" density="comfortable">{{ objectionNotice }}</v-alert>
+          </v-card>
+          <v-card v-if="objectionPreview" class="planilla-card saved-workspaces-card mb-5" rounded="xl" elevation="0">
+            <div class="ingest-card-heading"><span class="ingest-step">2</span><div><h2>Selecciona los objetados</h2><p>Elige uno o varios pacientes de la lista. El informe de liquidación se guarda como respaldo, sin leerlo.</p></div></div>
+            <v-autocomplete v-model="objectionSelectedTramites" :items="objectionComboItems" label="Pacientes objetados" placeholder="Busca por nombre, trámite o cédula" prepend-inner-icon="mdi-account-multiple-check-outline" multiple chips closable-chips clearable hide-selected :disabled="objectionBusy || !objectionComboItems.length" no-data-text="No hay pacientes disponibles en este período"/>
+            <div v-if="!objectionSelectionCandidates.length" class="planilla-state"><v-icon icon="mdi-account-search-outline"/><span>No hay pacientes con PDFs vinculados al período preparado.</span></div>
+            <div v-else-if="objectionSelectedCandidates.length" class="planilla-state mt-2"><v-icon icon="mdi-account-check-outline"/><span>{{ objectionSelectedCandidates.length }} trámite{{ objectionSelectedCandidates.length === 1 ? '' : 's' }} seleccionado{{ objectionSelectedCandidates.length === 1 ? '' : 's' }}. Revisa los datos en las etiquetas antes de crear el espacio.</span></div>
+            <div class="ingest-card-heading mt-4"><span class="ingest-step">3</span><div><h2>Crear espacio separado</h2><p>Los documentos de cabecera se cargan después; no bloquean la selección ni la creación.</p></div></div>
+            <div class="workspace-download-row mt-3"><span>Se copiarán únicamente los trámites seleccionados. Podrás agregar los que hayas omitido.</span><v-btn type="button" color="primary" prepend-icon="mdi-folder-plus-outline" :loading="objectionBusy" :disabled="!objectionCanCreate || objectionBusy" @click="createObjectionWorkspace">Crear espacio separado</v-btn></div>
+          </v-card>
+          <v-card class="planilla-card saved-workspaces-card" rounded="xl" elevation="0">
+            <div class="planilla-toolbar"><div><h2>Espacios existentes</h2><p>Las cargas de respuesta y anexos se guardan solo en el espacio derivado.</p></div></div>
+            <div class="coverage-toolbar"><v-select v-model="objectionSelectedWorkspace" :items="objectionWorkspaceItems" label="Espacio de objeciones" placeholder="Selecciona un espacio" prepend-inner-icon="mdi-folder-alert-outline" :disabled="objectionBusy || !objectionWorkspaceItems.length" @update:model-value="loadObjectionWorkspace"/><v-btn type="button" color="primary" variant="tonal" prepend-icon="mdi-folder-open-outline" :disabled="!objectionSelectedWorkspace || objectionBusy || workspaceDeleting" @click="loadObjectionWorkspace">Abrir</v-btn><v-btn type="button" color="error" variant="tonal" prepend-icon="mdi-delete-outline" :disabled="!objectionSelectedWorkspace || objectionBusy || workspaceDeleting" @click="requestDeleteWorkspace(objectionSelectedWorkspace)">Eliminar</v-btn></div>
+            <div v-if="!objectionWorkspaceItems.length && !savedWorkspacesLoading" class="planilla-state"><v-icon icon="mdi-folder-search-outline" size="24"/><span>Aún no hay espacios de objeciones.</span></div>
+            <template v-if="objectionCurrentWorkspace">
+              <v-alert class="mt-3" type="info" variant="tonal" density="comfortable">El ZIP se llamará {{ objectionCurrentWorkspace.job_id }}_OBJECIONES. Antes de descargarlo se exigen los cuatro documentos de cabecera, además de ACEPTA/RECHAZA, P_INDIVIDUAL.pdf y C_COBERTURA.pdf en cada trámite. Los anexos son opcionales.</v-alert>
+              <v-card class="planilla-card mt-4" rounded="xl" elevation="0">
+                <div class="planilla-toolbar"><div><h3>Documentos obligatorios del paquete</h3><p>Se guardan en la raíz y puedes cargarlos ahora o más adelante.</p></div></div>
+                <div v-for="header in objectionHeaderOptions" :key="header.tipo" class="coverage-toolbar objection-header-row">
+                  <label class="coverage-manual-upload">{{ header.nombre }}<input type="file" :accept="header.tipo === 'matriz' ? '.xlsm,application/vnd.ms-excel.sheet.macroEnabled.12' : '.pdf,application/pdf'" :disabled="objectionBusy" @change="setObjectionInput(header.tipo,$event)"/><small>{{ objectionHeaderFiles[header.tipo]?.name || (header.cargado ? 'Cargado; selecciona para reemplazar' : 'Pendiente de carga') }}</small></label>
+                  <v-btn type="button" size="small" variant="tonal" :loading="objectionBusy" :disabled="!objectionHeaderFiles[header.tipo] || objectionBusy" @click="uploadObjectionHeader(header.tipo)">{{ header.cargado ? 'Reemplazar' : 'Guardar' }}</v-btn>
+                  <v-chip size="small" :color="header.cargado ? 'success' : 'warning'" variant="tonal">{{ header.cargado ? 'Listo' : 'Pendiente' }}</v-chip>
+                </div>
+                <small class="objection-scan-hint">La matriz oficial .xlsm debe detallar por trámite el valor objetado, código, motivo y respuesta técnica. Folio no genera ni interpreta sus celdas.</small>
+              </v-card>
+              <v-card class="planilla-card mt-4" rounded="xl" elevation="0">
+                <div class="planilla-toolbar"><div><h3>¿Olvidaste seleccionar un paciente?</h3><p>Puedes añadirlo aquí al mismo espacio. Si ya cargaste la matriz, tendrás que subirla de nuevo con el trámite incluido.</p></div><v-btn type="button" variant="tonal" prepend-icon="mdi-account-search-outline" :loading="objectionBusy" :disabled="objectionBusy" @click="previewObjectionAddCandidates">Buscar pacientes</v-btn></div>
+                <template v-if="objectionAddPreview">
+                  <v-autocomplete v-model="objectionAddSelectedTramites" :items="objectionAddCandidateItems" label="Pacientes para agregar" placeholder="Busca por nombre, trámite o cédula" multiple chips closable-chips clearable hide-selected :disabled="objectionBusy || !objectionAddCandidateItems.length" no-data-text="No quedan trámites por agregar"/>
+                  <div class="coverage-toolbar"><span class="coverage-footnote">Cada atención se agrega con su propia carpeta identificada por trámite.</span><v-btn type="button" color="primary" variant="tonal" prepend-icon="mdi-account-plus-outline" :loading="objectionBusy" :disabled="!objectionAddSelectedTramites.length || objectionBusy" @click="addObjectionPatients">Agregar seleccionados</v-btn></div>
+                </template>
+              </v-card>
+              <div class="planilla-table-wrap mt-3"><v-table class="planilla-table" density="comfortable" fixed-header height="min(34vh, 330px)"><thead><tr><th>Paciente seleccionado</th><th>Trámite</th><th>Cédula</th><th>Postura</th><th>Cobertura</th></tr></thead><tbody><tr v-for="row in objectionCurrentWorkspace.objeciones" :key="row.pdi_tramite"><td>{{ row.paciente }}</td><td>{{ row.pdi_tramite }}</td><td>{{ row.pdi_cedula || '—' }}</td><td>{{ row.postura || 'Pendiente' }}</td><td>{{ row.cobertura_adjunta ? 'Adjunta' : 'Pendiente' }}</td></tr></tbody></v-table></div>
+              <div class="objection-patient-list">
+                <article v-for="patient in objectionUniquePatients" :key="patient.tramite" class="saved-workspace-card">
+                  <div class="saved-workspace-card-main"><span class="saved-workspace-icon"><v-icon icon="mdi-account-alert-outline" size="22"/></span><div class="saved-workspace-card-copy"><h3>{{ patient.patient || 'Paciente' }}</h3><p class="saved-workspace-message">Trámite {{ patient.tramite }} · {{ patient.rows.length }} observación(es)</p></div></div>
+                  <div class="objection-document-actions">
+                    <v-btn type="button" size="small" variant="tonal" prepend-icon="mdi-file-eye-outline" :disabled="objectionBusy" @click="openObjectionPatientDocuments(patient)">Revisar y corregir expediente</v-btn>
+                    <v-select v-model="objectionPostures[patient.tramite]" :items="['ACEPTA','RECHAZA']" label="Postura" density="compact" hide-details/>
+                    <label class="coverage-manual-upload">C_COBERTURA.pdf<input type="file" accept=".pdf,application/pdf" :disabled="objectionBusy" @change="setObjectionUpload($event,patient.tramite,'cobertura')"/><small>{{ objectionUploadFiles[patient.tramite + ':cobertura']?.name || (patient.rows[0]?.cobertura_adjunta ? 'Cobertura adjunta' : 'Seleccionar PDF') }}</small></label>
+                    <v-btn type="button" size="small" variant="tonal" :loading="objectionBusy" :disabled="!objectionUploadFiles[patient.tramite + ':cobertura'] || objectionBusy" @click="uploadObjectionDocument(patient,'cobertura')">Guardar cobertura</v-btn>
+                    <label class="coverage-manual-upload">P_INDIVIDUAL.pdf<input type="file" accept=".pdf,application/pdf" :disabled="objectionBusy" @change="setObjectionUpload($event,patient.tramite,'respuesta')"/><small>{{ objectionUploadFiles[`${patient.tramite}:respuesta`]?.name || 'Seleccionar respuesta' }}</small></label>
+                    <v-btn type="button" size="small" color="primary" variant="tonal" :loading="objectionBusy" :disabled="!objectionUploadFiles[`${patient.tramite}:respuesta`] || !objectionPostures[patient.tramite] || objectionBusy" @click="uploadObjectionDocument(patient,'respuesta')">Guardar postura y PDF</v-btn>
+                    <v-select v-model="objectionAnnexTypeByPatient[patient.tramite]" :items="objectionAnnexTypes" label="Tipo de justificativo" density="compact" hide-details/>
+                    <v-text-field v-if="objectionAnnexTypeByPatient[patient.tramite]==='OTRO'" :model-value="objectionAnnexNameByPatient[patient.tramite] || ''" label="Nombre descriptivo" placeholder="INFORME_COMPLEMENTARIO" density="compact" hide-details @update:model-value="setObjectionAnnexName(patient.tramite,$event)"/>
+                    <label class="coverage-manual-upload">PDF para 5. ANEXOS<input type="file" accept=".pdf,application/pdf" :disabled="objectionBusy" @change="setObjectionUpload($event,patient.tramite,'anexo')"/><small>{{ objectionUploadFiles[`${patient.tramite}:anexo`]?.name || 'Seleccionar PDF' }}</small></label>
+                    <small class="objection-scan-hint">Escanea entre 72 y 300 DPI; el sistema valida PDF, pero no mide su DPI.</small>
+                    <v-btn type="button" size="small" variant="tonal" :loading="objectionBusy" :disabled="!objectionUploadFiles[`${patient.tramite}:anexo`] || !objectionAnnexTypeByPatient[patient.tramite] || (objectionAnnexTypeByPatient[patient.tramite]==='OTRO' && !objectionAnnexNameByPatient[patient.tramite]?.trim()) || objectionBusy" @click="uploadObjectionDocument(patient,'anexo')">Guardar anexo</v-btn>
+                  </div>
+                </article>
+              </div>
+            </template>
           </v-card>
         </section>
         <section v-else-if="activePage==='patient-documents'" class="content-wrap">
@@ -1633,15 +1973,16 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
     </v-dialog>
     <v-dialog v-model="deleteWorkspaceDialog" max-width="600" persistent>
       <v-card class="action-dialog">
-        <v-card-title>Eliminar período guardado</v-card-title>
+        <v-card-title>{{ workspaceDeleteIsObjections ? 'Eliminar espacio de objeciones' : 'Eliminar período guardado' }}</v-card-title>
         <v-card-text>
-          <p>Se eliminará permanentemente <strong>{{ workspaceDeleteTargetName }}</strong>, con el ZIP fuente, los documentos habilitantes, reportes y archivos preparados. También se quitará su asociación en Oracle y sus coberturas quedarán pendientes para poder generarlas nuevamente al recrear el período. Esta acción no se puede deshacer.</p>
+          <p v-if="workspaceDeleteIsObjections">Se eliminará permanentemente el espacio derivado <strong>{{ workspaceDeleteTargetName }}</strong>. No se tocará el primer ingreso relacionado ni se cambiarán datos de Oracle. Esta acción no se puede deshacer.</p>
+          <p v-else>Se eliminará permanentemente <strong>{{ workspaceDeleteTargetName }}</strong>, con el ZIP fuente, los documentos habilitantes, reportes y archivos preparados. También se quitará su asociación en Oracle y sus coberturas quedarán pendientes para poder generarlas nuevamente al recrear el período. Esta acción no se puede deshacer.</p>
           <p>Para confirmar, escribe o pega el ID completo del período:</p>
           <div class="workspace-delete-code">{{ workspaceDeleteTargetID }}</div>
           <v-text-field :model-value="workspaceDeleteInput" label="ID del período" autocomplete="off" autocapitalize="characters" spellcheck="false" prepend-inner-icon="mdi-keyboard-outline" @update:model-value="setWorkspaceDeleteInput"/>
           <v-alert v-if="workspaceDeleteError" type="error" variant="tonal" density="comfortable">{{ workspaceDeleteError }}</v-alert>
         </v-card-text>
-        <v-card-actions><v-spacer/><v-btn type="button" variant="text" :disabled="workspaceDeleting" @click="deleteWorkspaceDialog=false;workspaceDeleteInput='';workspaceDeleteError='';workspaceDeleteTargetID='';workspaceDeleteTargetName=''">Cancelar</v-btn><v-btn type="button" color="error" prepend-icon="mdi-delete-forever-outline" :loading="workspaceDeleting" :disabled="workspaceDeleteInput !== workspaceDeleteTargetID" @click="deleteWholeWorkspace">Eliminar período definitivamente</v-btn></v-card-actions>
+        <v-card-actions><v-spacer/><v-btn type="button" variant="text" :disabled="workspaceDeleting" @click="deleteWorkspaceDialog=false;workspaceDeleteInput='';workspaceDeleteError='';workspaceDeleteTargetID='';workspaceDeleteTargetName=''">Cancelar</v-btn><v-btn type="button" color="error" prepend-icon="mdi-delete-forever-outline" :loading="workspaceDeleting" :disabled="!workspaceDeleteConfirmationMatches() || workspaceDeleting" @click="deleteWholeWorkspace">Eliminar definitivamente</v-btn></v-card-actions>
       </v-card>
     </v-dialog>
     <v-dialog v-model="createSpaceDialog" max-width="420"><v-card class="action-dialog"><v-card-title>Crear un espacio</v-card-title><v-card-text><p>Organiza tus archivos en un espacio nuevo.</p><v-text-field v-model="newSpaceName" label="Nombre del espacio" placeholder="Ej. Clientes" prepend-inner-icon="mdi-folder-outline" maxlength="36" autofocus @keyup.enter="createSpace"/></v-card-text><v-card-actions><v-spacer/><v-btn variant="text" @click="createSpaceDialog=false">Cancelar</v-btn><v-btn color="primary" :disabled="!newSpaceName.trim()" @click="createSpace">Crear espacio</v-btn></v-card-actions></v-card></v-dialog>

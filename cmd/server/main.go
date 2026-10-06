@@ -114,6 +114,11 @@ func main() {
 	mux.HandleFunc("/api/v1/expedientes/documentos/archivo/", s.serveWorkspacePDF)
 	mux.HandleFunc("/api/v1/expedientes/documentos/", s.workspaceDocuments)
 	mux.HandleFunc("/api/v1/expedientes/descargar/", s.downloadWorkspaceZIP)
+	mux.HandleFunc("/api/v1/objeciones/previsualizar", s.previewObjections)
+	mux.HandleFunc("/api/v1/objeciones/crear", s.createObjectionWorkspace)
+	mux.HandleFunc("/api/v1/objeciones/agregar/", s.addObjectionPatients)
+	mux.HandleFunc("/api/v1/objeciones/cabeceras/", s.uploadObjectionHeader)
+	mux.HandleFunc("/api/v1/objeciones/documentos/", s.uploadObjectionDocument)
 	mux.Handle("/", http.FileServer(http.Dir("dist")))
 
 	addr := net.JoinHostPort(envOr("FOLIO_LISTEN_HOST", "127.0.0.1"), envOr("API_PORT", "8080"))

@@ -61,6 +61,9 @@ type stagedJob struct {
 	DocumentPlanillas map[string]int64          `json:"document_planillas,omitempty"`
 	TramiteMappings   map[string]string         `json:"tramite_mappings,omitempty"`
 	CoverageFailures  map[int64]coverageFailure `json:"coverage_failures,omitempty"`
+	IsObjections      bool                      `json:"es_objeciones,omitempty"`
+	ObjectionSourceID string                    `json:"expediente_origen,omitempty"`
+	ObjectionRows     []objectionRecord         `json:"objeciones,omitempty"`
 	StatusDetail      string                    `json:"status_detail"`
 }
 
@@ -71,6 +74,9 @@ var headerParts = []uploadPart{
 }
 
 func missingHeaders(job stagedJob) []string {
+	if job.IsObjections {
+		return nil
+	}
 	present := make(map[string]bool, len(job.Files))
 	for _, file := range job.Files {
 		present[file.Field] = true
@@ -92,6 +98,18 @@ func jobResponse(s *server, job stagedJob, output string, summary any) map[strin
 		status = "INCOMPLETE"
 	}
 	result := map[string]any{"status": status, "job_id": job.ID, "message": job.StatusDetail, "workspace": s.jobRoot(job.ID), "missing_documents": missing, "files": job.Files, "mes": job.Month, "anio": job.Year, "tipo_servicio": job.Service, "creado_por": job.Username}
+	if job.IsObjections {
+		result["es_objeciones"] = true
+		result["expediente_origen"] = job.ObjectionSourceID
+		rows := append([]objectionRecord(nil), job.ObjectionRows...)
+		packageRoot := filepath.Join(s.jobRoot(job.ID), "trabajo", packageFolderName(&job))
+		for index := range rows {
+			coverage := filepath.Join(packageRoot, "4. EXPEDIENTES", rows[index].PatientFolder, "C_COBERTURA.pdf")
+			rows[index].CoverageAttached = validPDFFile(coverage)
+		}
+		result["objeciones"] = rows
+		result["cabeceras_objeciones"] = objectionHeaderStatuses(s, job)
+	}
 	if output != "" {
 		result["output"] = output
 	}
@@ -115,6 +133,8 @@ func periodWorkspaceID(service, month, year string) string {
 
 type planillaIdentity struct {
 	PlanillaID int64
+	Tramite    string
+	Cedula     string
 	Patient    string
 	Service    string
 	CareFrom   time.Time
@@ -161,7 +181,7 @@ type ingestPreview struct {
 
 func (s *server) loadPlanillaIdentities(ctx context.Context, job stagedJob) (map[string]planillaIdentity, error) {
 	table := oracleTableName(s.schema)
-	query := "SELECT TO_CHAR(PDI_ID), PDI_TRAMITE, PDI_PACIENTE, TO_CHAR(PDI_FECHA_DESDE, 'YYYY-MM-DD'), TO_CHAR(PDI_FECHA_HASTA, 'YYYY-MM-DD'), PDI_SERVICIO FROM " + table + " WHERE PDI_MES = :mes AND PDI_ANIO = :anio AND PDI_PLANILLADO = 'S' AND PDI_ASEGURADORA = 'MSP'"
+	query := "SELECT TO_CHAR(PDI_ID), PDI_TRAMITE, PDI_PACIENTE, TO_CHAR(PDI_FECHA_DESDE, 'YYYY-MM-DD'), TO_CHAR(PDI_FECHA_HASTA, 'YYYY-MM-DD'), PDI_SERVICIO, PDI_CEDULA FROM " + table + " WHERE PDI_MES = :mes AND PDI_ANIO = :anio AND PDI_PLANILLADO = 'S' AND PDI_ASEGURADORA = 'MSP'"
 	rows, err := s.serviceDB.QueryContext(ctx, query, sql.Named("mes", job.Month), sql.Named("anio", job.Year))
 	if err != nil {
 		return nil, fmt.Errorf("No se pudo consultar Oracle para el período %s/%s.", job.Month, job.Year)
@@ -169,8 +189,8 @@ func (s *server) loadPlanillaIdentities(ctx context.Context, job stagedJob) (map
 	defer rows.Close()
 	identities := make(map[string]planillaIdentity)
 	for rows.Next() {
-		var rawPlanillaID, rawID, patient, rawCareFrom, rawCareUntil, service sql.NullString
-		if err := rows.Scan(&rawPlanillaID, &rawID, &patient, &rawCareFrom, &rawCareUntil, &service); err != nil {
+		var rawPlanillaID, rawID, patient, rawCareFrom, rawCareUntil, service, cedula sql.NullString
+		if err := rows.Scan(&rawPlanillaID, &rawID, &patient, &rawCareFrom, &rawCareUntil, &service, &cedula); err != nil {
 			return nil, errors.New("No se pudo leer la identidad del paciente desde Oracle.")
 		}
 		tramite := strings.TrimSpace(rawID.String)
@@ -181,7 +201,7 @@ func (s *server) loadPlanillaIdentities(ctx context.Context, job stagedJob) (map
 		if !rawPlanillaID.Valid || parseErr != nil || planillaID <= 0 {
 			return nil, errors.New("Oracle devolvió un PDI_ID inválido para una planilla MSP.")
 		}
-		identities[tramite] = planillaIdentity{PlanillaID: planillaID, Patient: strings.TrimSpace(patient.String), Service: strings.TrimSpace(service.String), CareFrom: parseOracleDate(rawCareFrom), CareUntil: parseOracleDate(rawCareUntil)}
+		identities[tramite] = planillaIdentity{PlanillaID: planillaID, Tramite: tramite, Cedula: strings.TrimSpace(cedula.String), Patient: strings.TrimSpace(patient.String), Service: strings.TrimSpace(service.String), CareFrom: parseOracleDate(rawCareFrom), CareUntil: parseOracleDate(rawCareUntil)}
 	}
 	if err := rows.Err(); err != nil {
 		return nil, errors.New("Falló la lectura de pacientes desde Oracle.")
@@ -703,6 +723,9 @@ func (s *server) reclassifyStagedJob(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) hasClinicalSource(job stagedJob) bool {
+	if job.IsObjections {
+		return job.Status == "PROCESSED" && len(job.ObjectionRows) > 0
+	}
 	for _, file := range job.Files {
 		if file.Field != "zip_file" || file.StoredName != "lote.zip" {
 			continue
@@ -973,10 +996,12 @@ func (s *server) getStagedJobStatus(w http.ResponseWriter, r *http.Request) {
 	var summary any
 	if job.Status == "PROCESSED" || job.Status == "INCOMPLETE" {
 		output = filepath.Join(s.jobRoot(job.ID), "trabajo", packageFolderName(&job))
-		if reportData, readErr := os.ReadFile(filepath.Join(s.jobRoot(job.ID), "reportes", "classification_report.json")); readErr == nil {
-			var report classificationReport
-			if json.Unmarshal(reportData, &report) == nil {
-				summary = report.Summary
+		if !job.IsObjections {
+			if reportData, readErr := os.ReadFile(filepath.Join(s.jobRoot(job.ID), "reportes", "classification_report.json")); readErr == nil {
+				var report classificationReport
+				if json.Unmarshal(reportData, &report) == nil {
+					summary = report.Summary
+				}
 			}
 		}
 	}
@@ -1000,7 +1025,7 @@ func (s *server) listWorkspaces(w http.ResponseWriter, r *http.Request) {
 	}
 	items := make([]map[string]any, 0, len(directories))
 	for _, directory := range directories {
-		if !directory.IsDir() {
+		if !directory.IsDir() || strings.HasPrefix(directory.Name(), ".") {
 			continue
 		}
 		job, loadErr := s.loadStagedJob(directory.Name())
@@ -1289,6 +1314,30 @@ func writePrivateJSON(filePath string, value any) error {
 	return os.WriteFile(filePath, data, 0600)
 }
 
+func atomicWritePrivateFile(destination string, contents []byte) error {
+	if err := os.MkdirAll(filepath.Dir(destination), 0700); err != nil {
+		return err
+	}
+	temporary, err := os.CreateTemp(filepath.Dir(destination), ".folio-write-*")
+	if err != nil {
+		return err
+	}
+	temporaryPath := temporary.Name()
+	defer os.Remove(temporaryPath)
+	if err := temporary.Chmod(0600); err != nil {
+		_ = temporary.Close()
+		return err
+	}
+	if _, err := temporary.Write(contents); err != nil {
+		_ = temporary.Close()
+		return err
+	}
+	if err := temporary.Close(); err != nil {
+		return err
+	}
+	return os.Rename(temporaryPath, destination)
+}
+
 func (s *server) jobRoot(id string) string {
 	if match := stableWorkspaceIDPattern.FindStringSubmatch(id); match != nil {
 		period := match[2]
@@ -1431,7 +1480,11 @@ func packageFolderName(job *stagedJob) string {
 	if err != nil || month < 1 || month >= len(monthNames) {
 		return "LOTE_PERIODO_INVALIDO"
 	}
-	return job.Service + "_" + monthNames[month] + "_" + job.Year
+	name := job.Service + "_" + monthNames[month] + "_" + job.Year
+	if job.IsObjections {
+		name += "_OBJECIONES"
+	}
+	return name
 }
 
 func matrixFilename(job *stagedJob) string {
@@ -1491,7 +1544,7 @@ func (s *server) saveStagedJob(job stagedJob) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(p, b, 0600)
+	return atomicWritePrivateFile(p, b)
 }
 
 func copyPrivateFile(source, destination string) error {

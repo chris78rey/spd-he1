@@ -326,6 +326,16 @@
 .patient-documents-modal .workspace-rename-panel{flex:none;padding:10px 14px}
 .patient-documents-modal .workspace-rename-copy small{font-size:12px}
 .patient-documents-modal .workspace-edit-row{grid-template-columns:minmax(0,1fr) auto}
+.objection-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:18px}
+.objection-form-grid .coverage-manual-upload,.objection-document-actions .coverage-manual-upload{position:relative;display:flex;min-height:56px;flex-direction:column;align-items:flex-start;justify-content:center;gap:4px;padding:9px 12px;overflow:hidden}
+.objection-form-grid .coverage-manual-upload small,.objection-document-actions .coverage-manual-upload small{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#78857b;font-weight:400}
+.objection-patient-list{display:grid;gap:10px;margin-top:16px}
+.objection-header-row .coverage-manual-upload{flex:1;min-width:220px}
+.objection-patient-list>.saved-workspace-card{align-items:flex-start;flex-direction:column}
+.objection-document-actions{display:grid;width:100%;grid-template-columns:repeat(3,minmax(0,1fr));align-items:center;gap:10px}
+.objection-document-actions .v-select{max-width:200px}
+.objection-document-actions .coverage-manual-upload{width:100%}
+.objection-scan-hint{grid-column:1/-1;color:#78857b;font-size:.78rem}
 @media(max-width:900px){
   .patient-documents-launch{align-items:stretch;flex-direction:column}
   .patient-documents-dialog>.v-overlay__content{width:100vw!important;max-width:100vw!important;max-height:100dvh!important;margin:0!important}
@@ -338,3 +348,5 @@
   .patient-documents-modal .workspace-preview{height:65dvh;min-height:400px}
   .patient-documents-modal .workspace-edit-row{grid-template-columns:1fr}
 }
+@media(max-width:760px){.objection-form-grid{grid-template-columns:1fr}.objection-document-actions{grid-template-columns:1fr 1fr}.objection-document-actions .v-select{max-width:none}}
+@media(max-width:460px){.objection-document-actions{grid-template-columns:1fr}}

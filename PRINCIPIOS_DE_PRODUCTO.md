@@ -41,3 +41,15 @@ El usuario indicó que ampliar el visor dejaba poco espacio para distinguir los 
 ## Evidencia de uso: regenerar coberturas después de eliminar un período
 
 El usuario indicó que, al eliminar un período, debe poder volver a generar y descargar sus hojas de cobertura. El estado de cobertura debe liberarse junto con las rutas de documentos del período eliminado; las planillas que conservan una ruta activa en otro expediente no se deben alterar. Los registros históricos de períodos eliminados deben permitir recuperar las planillas que quedaron marcadas como cubiertas sin un expediente activo.
+
+## Decisión de producto: subsanar objeciones en un espacio separado
+
+El usuario pidió un flujo de Objeciones independiente de la recepción del primer ingreso. El operador selecciona directamente en una lista a los pacientes objetados del período preparado; el sistema crea un espacio derivado solo con los seleccionados. El lote de primer ingreso debe permanecer intacto.
+
+El espacio derivado se crea en cuanto el operador selecciona trámites objetados; no depende de que haya cargado documentos de cabecera. Solo copia los trámites seleccionados y deja intacto el primer ingreso. Se puede agregar un trámite omitido más tarde desde el mismo espacio; si ya se cargó la matriz oficial, se invalida para que se vuelva a presentar con la nueva selección.
+
+Antes de descargar el ZIP, se exigen en la raíz `I_LIQUIDACION.pdf`, `1. OFICIO DE PAGO.pdf`, `2. PLANILLA CONSOLIDADA.pdf` y la matriz oficial `3. MATRIZ_OBJECIONES_<SERVICIO>_<MES>_<AÑO>.xlsm`. El sistema conserva esos archivos y no interpreta el informe ni la matriz. La matriz cargada debe detallar por trámite los valores objetados, códigos, motivos y respuesta técnica. El ZIP requiere además `C_COBERTURA.pdf`, postura y un `P_INDIVIDUAL.pdf` por cada trámite; no exige anexos, que se guardan en `5. ANEXOS/<PACIENTE_TRAMITE>/` cuando existan.
+
+Cada carpeta dentro de `4. EXPEDIENTES/` y `5. ANEXOS/` identifica una atención con cédula, paciente y trámite para que un mismo paciente pueda tener varios `P_INDIVIDUAL.pdf` sin colisiones. Si falta `C_COBERTURA.pdf` en el primer ingreso, el operador puede cargarlo en el espacio derivado.
+
+El flujo no modifica `PDI_OBJETADO`, `PDI_ESTADO_DIGITALIZACION` ni otros estados Oracle hasta confirmar el esquema y la política transaccional. La interfaz debe distinguir el espacio derivado del primer ingreso y no presentarlo como cierre oficial del MSP.

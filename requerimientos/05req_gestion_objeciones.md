@@ -286,3 +286,18 @@ Los nombres normativos permitidos en la selección manual abarcan:
 2. **Estrategia ante Archivos Inyectados que superen la Resolución Permitida:** La normativa de la DPSP exige resoluciones entre **72 DPI y 300 DPI**. _El desarrollador debe definir si el endpoint de inyección ejecutará una comprobación previa mediante `pdfcpu` / ImageMagick para rechazar PDFs que no cumplan la resolución antes de copiarlos al expediente._
 
 ---
+
+## Estado de implementación en Folio (2026-10-06)
+
+Esta sección describe el código actual y no certifica ejecución contra la base Oracle institucional ni aprobación normativa.
+
+- El menú **Objeciones** permite elegir un primer ingreso preparado y marcar manualmente los trámites observados. El espacio separado se crea al confirmar al menos un trámite; la carga de documentos de cabecera no bloquea su creación. El sistema no interpreta el informe de liquidación ni la matriz.
+- Solo se copian los trámites seleccionados que tienen PDFs vinculados en el primer ingreso. Cada trámite se guarda en una carpeta de atención única, formada con cédula, paciente y número de trámite, bajo `4. EXPEDIENTES/`; la subcarpeta correspondiente bajo `5. ANEXOS/` aparece solo cuando se agrega un justificativo. El primer ingreso no se modifica. El operador puede agregar trámites omitidos desde el espacio ya creado; al hacerlo se invalida la matriz cargada para que se vuelva a subir actualizada.
+- Los documentos de cabecera se cargan después de crear el espacio: `I_LIQUIDACION.pdf`, `1. OFICIO DE PAGO.pdf`, `2. PLANILLA CONSOLIDADA.pdf` y la matriz oficial `3. MATRIZ_OBJECIONES_<SERVICIO>_<MES>_<AÑO>.xlsm`. La matriz no se genera ni interpreta Folio; la plantilla oficial debe detallar por trámite el valor objetado, el código, el motivo y la respuesta técnica.
+- Por cada trámite, el operador guarda `P_INDIVIDUAL.pdf` con postura `ACEPTA` o `RECHAZA`. También debe estar presente `C_COBERTURA.pdf`; se copia desde el primer ingreso si existe y se puede cargar o reemplazar en el espacio de objeciones. Los anexos PDF en `5. ANEXOS/<CEDULA>_<PACIENTE>_<TRAMITE>/` son opcionales. Se pueden nombrar `FICHA_TECNICA.pdf`, `FACTURA_DISPOSITIVO.pdf`, `FACTURAS_RESPALDO.pdf`, `FACTURA_COMPRA.pdf`, `PROTOCOLOS_MEDICOS.pdf`, `PROTOCOLO_DETALLADO.pdf` o `EXAMEN_ADICIONAL.pdf`; otros nombres descriptivos se normalizan a mayúsculas, sin tildes, con guiones bajos y extensión `.pdf`. Los duplicados reciben un sufijo numérico.
+- La descarga ZIP exige los cuatro documentos de cabecera con extensión/firma correspondiente, postura y `P_INDIVIDUAL.pdf` por cada trámite, además de `C_COBERTURA.pdf` válido por trámite. Los anexos no forman parte de las condiciones de cierre. Se mantienen los controles generales de documentos pendientes de fusión.
+- La creación y edición del espacio derivado no escriben `PDI_OBJETADO`, `PDI_ESTADO_DIGITALIZACION`, rutas documentales ni coberturas en Oracle. El cruce consulta identidades del período.
+- El sistema valida la firma PDF de los tres documentos PDF y que la matriz sea un contenedor Excel macro-enabled `.xlsm`; no inspecciona sus celdas ni certifica que incluya los datos de respuesta. Tampoco valida resolución DPI, checklist documental integral ni certifica el cierre formal del MSP.
+- Las pruebas automatizadas usan nombres y números ficticios. La vista previa y el flujo completo requieren una cuenta con acceso a Oracle y un período preparado real; no se usaron datos de pacientes reales como fixtures.
+
+---

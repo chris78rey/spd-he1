@@ -52,6 +52,23 @@ func loadMSPPDFCodeSet() (map[string]struct{}, error) {
 }
 
 func (s *server) planillaForPatient(ctx context.Context, job stagedJob, patient string) (int64, error) {
+	if job.IsObjections {
+		ids := make(map[int64]bool)
+		for _, row := range job.ObjectionRows {
+			if row.PatientFolder == patient && row.PlanillaID > 0 {
+				ids[row.PlanillaID] = true
+			}
+		}
+		if len(ids) == 1 {
+			for id := range ids {
+				return id, nil
+			}
+		}
+		if len(ids) > 1 {
+			return 0, errors.New("Esta carpeta contiene más de un trámite objetado. Elige un trámite antes de añadir el PDF.")
+		}
+		return 0, errors.New("No se encontró un trámite objetado para esta carpeta.")
+	}
 	identities, err := s.loadPlanillaIdentities(ctx, job)
 	if err != nil {
 		return 0, err
@@ -170,6 +187,13 @@ func (s *server) deleteWorkspace(w http.ResponseWriter, r *http.Request) {
 	backup := filepath.Join(filepath.Dir(root), "."+filepath.Base(root)+".delete-"+fmt.Sprintf("%x", token[:]))
 	if err := os.Rename(root, backup); err != nil {
 		writeError(w, http.StatusInternalServerError, "No se pudo preparar la eliminación segura del período.")
+		return
+	}
+	if job.IsObjections {
+		if err := os.RemoveAll(backup); err != nil {
+			log.Printf("objeciones %s: el espacio se desvinculó, pero quedó una carpeta recuperable %s: %v", job.ID, backup, err)
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"status": "DELETED", "job_id": job.ID, "message": "Se eliminó el espacio de objeciones. El expediente de primer ingreso y Oracle no se modificaron."})
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
@@ -339,6 +363,12 @@ func (s *server) downloadWorkspaceZIP(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "No se encontró la carpeta preparada del expediente.")
 		return
 	}
+	if job.IsObjections {
+		if err := validateObjectionCloseout(job, root); err != nil {
+			writeError(w, http.StatusConflict, err.Error())
+			return
+		}
+	}
 	fusionGroups, err := workspaceFusionGroups(root)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "No se pudo revisar si hay documentos pendientes de fusionar.")
@@ -385,6 +415,9 @@ func (s *server) downloadWorkspaceZIP(w http.ResponseWriter, r *http.Request) {
 			return err
 		}
 		archivePath := filepath.ToSlash(filepath.Join(packageFolderName(&job), relative))
+		if job.IsObjections && filepath.ToSlash(relative) == "3. MATRIZ_RESPUESTA.xlsx" {
+			return nil
+		}
 		if file.IsDir() {
 			info, err := file.Info()
 			if err != nil {

@@ -62,6 +62,11 @@ func canonicalPath(filePath string) (string, error) {
 // syncOracleWorkspace records the active PDFs and version history after the
 // workspace and report have been atomically published on disk.
 func (s *server) syncOracleWorkspace(ctx context.Context, job *stagedJob, packageRoot string) error {
+	// Derived objection workspaces remain isolated from Oracle until the business
+	// policy for PDI_OBJETADO and PDI_ESTADO_DIGITALIZACION is confirmed.
+	if job.IsObjections {
+		return nil
+	}
 	if s.serviceDB == nil {
 		return errors.New("Oracle no está disponible")
 	}

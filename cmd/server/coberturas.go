@@ -623,6 +623,9 @@ func (s *server) coverageJob(id string) (stagedJob, error) {
 	if err != nil || (job.Status != "PROCESSED" && job.Status != "INCOMPLETE") {
 		return stagedJob{}, errors.New("Abre un período cuyo ZIP ya se haya preparado antes de generar coberturas.")
 	}
+	if job.IsObjections {
+		return stagedJob{}, errors.New("Los espacios de objeciones no admiten generar coberturas del primer ingreso.")
+	}
 	if !s.hasClinicalSource(job) {
 		return stagedJob{}, errors.New("Este período ya no conserva el ZIP fuente.")
 	}
