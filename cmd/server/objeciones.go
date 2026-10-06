@@ -1322,6 +1322,15 @@ func nextSafeAnnexName(directory, base string) (string, error) {
 }
 
 func validateObjectionCloseout(job stagedJob, packageRoot string) error {
+	missing := objectionCloseoutMissing(job, packageRoot)
+	if len(missing) > 0 {
+		return errors.New(missing[0])
+	}
+	return nil
+}
+
+func objectionCloseoutMissing(job stagedJob, packageRoot string) []string {
+	missing := make([]string, 0)
 	requiredPDFs := []struct{ name, label string }{
 		{"I_LIQUIDACION.pdf", "I_LIQUIDACION.pdf"},
 		{"1. OFICIO DE PAGO.pdf", "1. OFICIO DE PAGO.pdf"},
@@ -1329,39 +1338,48 @@ func validateObjectionCloseout(job stagedJob, packageRoot string) error {
 	}
 	for _, item := range requiredPDFs {
 		if !validPDFFile(filepath.Join(packageRoot, item.name)) {
-			return fmt.Errorf("Falta cargar %s en la raíz del paquete.", item.label)
+			missing = append(missing, fmt.Sprintf("Falta cargar %s en la raíz del paquete.", item.label))
 		}
 	}
 	matrixName := objectionMatrixFilename(job)
 	if !validXLSMFile(filepath.Join(packageRoot, matrixName)) {
-		return fmt.Errorf("Falta cargar la matriz oficial %s en la raíz del paquete.", matrixName)
+		missing = append(missing, fmt.Sprintf("Falta cargar la matriz oficial %s en la raíz del paquete.", matrixName))
 	}
-	seen := make(map[string]objectionRecord)
+	seen := make(map[string]objectionRecord, len(job.ObjectionRows))
 	for _, row := range job.ObjectionRows {
 		seen[row.Tramite] = row
 	}
-	for tramite, row := range seen {
+	tramites := make([]string, 0, len(seen))
+	for tramite := range seen {
+		tramites = append(tramites, tramite)
+	}
+	sort.Strings(tramites)
+	if len(tramites) == 0 {
+		missing = append(missing, "Selecciona al menos un trámite objetado.")
+	}
+	for _, tramite := range tramites {
+		row := seen[tramite]
 		if row.Posture != "ACEPTA" && row.Posture != "RECHAZA" {
-			return fmt.Errorf("Falta registrar ACEPTA o RECHAZA para el trámite %s.", tramite)
+			missing = append(missing, fmt.Sprintf("Falta registrar ACEPTA o RECHAZA para el trámite %s.", tramite))
 		}
 		path := filepath.Join(packageRoot, "4. EXPEDIENTES", row.PatientFolder, "P_INDIVIDUAL.pdf")
 		if !validPDFFile(path) {
-			return fmt.Errorf("Falta P_INDIVIDUAL.pdf válido para el trámite %s de %s.", tramite, row.Patient)
+			missing = append(missing, fmt.Sprintf("Falta P_INDIVIDUAL.pdf válido para el trámite %s de %s.", tramite, row.Patient))
 		}
 		relativeResponse := filepath.ToSlash(filepath.Join("4. EXPEDIENTES", row.PatientFolder, "P_INDIVIDUAL.pdf"))
 		if !objectionPDFIncluded(job, relativeResponse) {
-			return fmt.Errorf("P_INDIVIDUAL.pdf del trámite %s debe incluirse en el ZIP.", tramite)
+			missing = append(missing, fmt.Sprintf("P_INDIVIDUAL.pdf del trámite %s debe incluirse en el ZIP.", tramite))
 		}
 		coverage := filepath.Join(packageRoot, "4. EXPEDIENTES", row.PatientFolder, "C_COBERTURA.pdf")
 		if !validPDFFile(coverage) {
-			return fmt.Errorf("Falta C_COBERTURA.pdf válido para el trámite %s de %s.", tramite, row.Patient)
+			missing = append(missing, fmt.Sprintf("Falta C_COBERTURA.pdf válido para el trámite %s de %s.", tramite, row.Patient))
 		}
 		relativeCoverage := filepath.ToSlash(filepath.Join("4. EXPEDIENTES", row.PatientFolder, "C_COBERTURA.pdf"))
 		if !objectionPDFIncluded(job, relativeCoverage) {
-			return fmt.Errorf("C_COBERTURA.pdf del trámite %s debe incluirse en el ZIP.", tramite)
+			missing = append(missing, fmt.Sprintf("C_COBERTURA.pdf del trámite %s debe incluirse en el ZIP.", tramite))
 		}
 	}
-	return nil
+	return missing
 }
 
 func validPDFFile(filename string) bool {

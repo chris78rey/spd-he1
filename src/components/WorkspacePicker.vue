@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import {
   filterWorkspaceRecords,
   orderWorkspaceRecords,
+  workspaceFilterStatusValue,
   workspaceMonthValue,
   workspaceTypeLabel,
   workspaceYearLabel,
@@ -50,9 +51,13 @@ const typeOptions = computed(() => {
   ]
 })
 const statusOptions = computed(() => {
-  const statuses = [...new Set(orderedWorkspaces.value.map(workspace => String(workspace.status || '').trim()).filter(Boolean))]
-    .sort((left, right) => props.statusLabel(left).localeCompare(props.statusLabel(right), 'es'))
-  return [{ title: 'Todos los estados', value: 'ALL' }, ...statuses.map(value => ({ title: props.statusLabel(value), value }))]
+  const statuses = new Map()
+  for (const workspace of orderedWorkspaces.value) {
+    const value = workspaceFilterStatusValue(workspace)
+    if (!value) continue
+    statuses.set(value, props.statusLabel(workspace.status, workspace))
+  }
+  return [{ title: 'Todos los estados', value: 'ALL' }, ...[...statuses].map(([value, title]) => ({ title, value }))]
 })
 const typeFilterVisible = computed(() => props.allowTypeFilter && typeOptions.value.length > 2)
 const filteredWorkspaces = computed(() => filterWorkspaceRecords(props.workspaces, {
@@ -75,13 +80,20 @@ const displayedModelValue = computed(() => selectedWorkspaceOutsideFilters.value
 const selectedWorkspaceSummary = computed(() => {
   const workspace = orderedWorkspaces.value.find(item => item.job_id === props.modelValue)
   if (!workspace) return ''
-  return `${workspaceTypeLabel(workspace)} · ${props.serviceLabel(workspace.tipo_servicio)} · ${props.monthLabel(workspaceMonthValue(workspace))} ${workspaceYearLabel(workspace)} · ${props.statusLabel(workspace.status)} · ${workspace.job_id}`
+  return `${workspaceTypeLabel(workspace)} · ${props.serviceLabel(workspace.tipo_servicio)} · ${props.monthLabel(workspaceMonthValue(workspace))} ${workspaceYearLabel(workspace)} · ${props.statusLabel(workspace.status, workspace)} · ${workspace.job_id}`
 })
+function workspaceDetailLabel(workspace) {
+  const pending = workspace.delivery_missing?.length ? workspace.delivery_missing : workspace.missing_documents || []
+  if (!pending.length) return workspace.message || 'Espacio disponible para continuar.'
+  const shown = pending.slice(0, 3).join('; ')
+  const remaining = pending.length - 3
+  return `Pendiente: ${shown}${remaining > 0 ? `; y ${remaining} más` : ''}`
+}
 const pickerItems = computed(() => filteredWorkspaces.value.map(workspace => {
   const typeName = workspaceTypeLabel(workspace)
   const serviceName = props.serviceLabel(workspace.tipo_servicio)
   const periodName = `${props.monthLabel(workspaceMonthValue(workspace))} ${workspaceYearLabel(workspace)}`.trim()
-  const statusName = props.statusLabel(workspace.status)
+  const statusName = props.statusLabel(workspace.status, workspace)
   return {
     value: workspace.job_id,
     title: `${typeName} · ${serviceName} · ${periodName} · ${statusName} · ${workspace.job_id}`,
@@ -91,13 +103,11 @@ const pickerItems = computed(() => filteredWorkspaces.value.map(workspace => {
     statusName,
     receivedLabel: props.receivedAt(workspace.received_at),
     userLabel: workspace.creado_por || 'Usuario anterior',
-    detailLabel: workspace.missing_documents?.length
-      ? `Faltan: ${workspace.missing_documents.join(', ')}`
-      : workspace.message || 'Espacio disponible para continuar.',
+    detailLabel: workspaceDetailLabel(workspace),
     workspace,
   }
 }))
-const hasFilters = computed(() => Boolean(search.value.trim())
+const hasFilters = computed(() => Boolean(String(search.value ?? '').trim())
   || service.value !== 'ALL'
   || year.value !== 'ALL'
   || (typeFilterVisible.value && type.value !== 'ALL')

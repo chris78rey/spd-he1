@@ -3,7 +3,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { openDB } from 'idb'
 import mspPdfCodes from '../catalogos/codigos_msp.json'
 import WorkspacePicker from './components/WorkspacePicker.vue'
-import { filterWorkspaceRecords, orderWorkspaceRecords, workspaceMonthValue, workspaceTypeLabel, workspaceYearLabel } from './workspace-search.js'
+import { filterWorkspaceRecords, normalizeWorkspaceSearch, orderWorkspaceRecords, workspaceFilterStatusValue, workspaceMonthValue, workspaceTypeLabel, workspaceYearLabel } from './workspace-search.js'
 
 const dbPromise = openDB('folio-documentos', 1, { upgrade(db) { db.createObjectStore('files', { keyPath: 'id' }) } })
 const folders = ['Todos los documentos', 'Favoritos']
@@ -105,6 +105,7 @@ const zipDownloadType = ref('RECEPCION')
 const zipDownloading = ref(false)
 const zipDownloadError = ref('')
 const zipDownloadNotice = ref('')
+const zipDownloadArchiveState = ref('')
 const objectionSourceWorkspace = ref('')
 const objectionPreview = ref(null)
 const objectionSelectedTramites = ref([])
@@ -127,6 +128,9 @@ const objectionPDFSavingPath = ref('')
 const objectionPostureSaving = ref('')
 const objectionAnnexTypeByPatient = ref({})
 const objectionAnnexNameByPatient = ref({})
+const objectionPatientSearch = ref('')
+const objectionPatientPage = ref(1)
+const objectionPatientPageSize = 10
 const objectionAnnexTypes = [
   { title: 'Ficha técnica', value: 'FICHA_TECNICA' },
   { title: 'Factura de dispositivo', value: 'FACTURA_DISPOSITIVO' },
@@ -189,9 +193,46 @@ const objectionUniquePatients = computed(() => {
   }
   return [...patients.values()]
 })
+const objectionPackagePDFsByFolder = computed(() => {
+  const grouped = new Map()
+  const root = '4. EXPEDIENTES/'
+  for (const document of objectionPackagePDFs.value) {
+    if (!document.path.startsWith(root)) continue
+    const folder = document.path.slice(root.length).split('/')[0]
+    if (!folder) continue
+    if (!grouped.has(folder)) grouped.set(folder, [])
+    grouped.get(folder).push(document)
+  }
+  return grouped
+})
+const filteredObjectionPatients = computed(() => {
+  const terms = normalizeWorkspaceSearch(objectionPatientSearch.value).split(/\s+/).filter(Boolean)
+  if (!terms.length) return objectionUniquePatients.value
+  return objectionUniquePatients.value.filter(patient => {
+    const searchText = normalizeWorkspaceSearch([
+      patient.patient,
+      patient.tramite,
+      patient.rows.map(row => row.pdi_cedula || '').join(' '),
+    ].join(' '))
+    return terms.every(term => searchText.includes(term))
+  })
+})
+const objectionPatientPageCount = computed(() => Math.max(1, Math.ceil(filteredObjectionPatients.value.length / objectionPatientPageSize)))
+const objectionPatientsPage = computed(() => filteredObjectionPatients.value.slice(
+  (objectionPatientPage.value - 1) * objectionPatientPageSize,
+  objectionPatientPage.value * objectionPatientPageSize,
+))
+const objectionRowsPage = computed(() => objectionPatientsPage.value.flatMap(patient => patient.rows))
+const objectionPatientRangeStart = computed(() => filteredObjectionPatients.value.length ? (objectionPatientPage.value - 1) * objectionPatientPageSize + 1 : 0)
+const objectionPatientRangeEnd = computed(() => Math.min(objectionPatientPage.value * objectionPatientPageSize, filteredObjectionPatients.value.length))
+watch(objectionPatientSearch, () => { objectionPatientPage.value = 1 })
+watch(() => objectionUniquePatients.value.length, () => { objectionPatientPage.value = 1 })
+watch(() => objectionCurrentWorkspace.value?.job_id, () => {
+  objectionPatientSearch.value = ''
+  objectionPatientPage.value = 1
+})
 function objectionPatientPDFs(patient) {
-  const prefix = `4. EXPEDIENTES/${patient.folder}/`
-  return objectionPackagePDFs.value.filter(document => document.path.startsWith(prefix))
+  return objectionPackagePDFsByFolder.value.get(patient.folder) || []
 }
 const workspacePDFs = ref([])
 const workspacePDFRevision = ref(0)
@@ -201,6 +242,7 @@ const workspaceRename = ref('')
 const workspacePatient = ref('')
 const workspaceUploadFiles = ref([])
 const workspaceBusy = ref(false)
+const workspaceMutationBusy = ref(false)
 const workspaceSending = ref(false)
 const workspaceNotice = ref('')
 const workspacePDFInput = ref(null)
@@ -220,9 +262,18 @@ const mergeSending = ref(false)
 const mergeAllConfirmDialog = ref(false)
 const mergeAllSending = ref(false)
 const mergeAllProgress = ref({ done: 0, total: 0 })
-const patientDocumentsLocked = computed(() => workspaceSending.value || workspaceBusy.value || mergeSending.value || mergeAllSending.value || replacePDFDialog.value || deletePDFDialog.value || mergePDFDialog.value || mergeAllConfirmDialog.value)
-watch(() => ingestResult.value?.job_id, () => { patientDocumentsDialog.value = false })
+watch(() => ingestResult.value?.job_id, (jobId, previousJobId) => {
+  patientDocumentsDialog.value = false
+  if (jobId !== previousJobId) workspaceUploadFiles.value = []
+})
 watch(patientDocumentsDialog, (open, wasOpen) => {
+  if (!open && wasOpen) {
+    workspaceDocumentsAbortController?.abort()
+    mergePDFDialog.value = false
+    mergeAllConfirmDialog.value = false
+    deletePDFDialog.value = false
+    replacePDFDialog.value = false
+  }
   const jobId = ingestResult.value?.job_id
   if (!open && wasOpen && ingestResult.value?.es_objeciones && jobId) void loadObjectionPDFSelection(jobId)
 })
@@ -233,6 +284,7 @@ const workspaceDeleteInput = ref('')
 const workspaceDeleteError = ref('')
 const workspaceDeleting = ref(false)
 const workspaceDeleteIsObjections = computed(() => savedWorkspaces.value.some(workspace => workspace.job_id === workspaceDeleteTargetID.value && workspace.es_objeciones))
+let workspaceDocumentsAbortController = null
 const selectedWorkspaceDocument = computed(() => workspacePDFs.value.find(document => document.path === selectedWorkspacePDF.value) || null)
 const workspacePatientPDFs = computed(() => {
   const prefix = workspacePatient.value ? `4. EXPEDIENTES/${workspacePatient.value}/` : ''
@@ -520,11 +572,22 @@ function selectIngestFile(field, event) {
 }
 async function loadWorkspaceDocuments(jobId, preferPath = '') {
   if (!jobId) return
+  workspaceDocumentsAbortController?.abort()
+  const controller = new AbortController()
+  workspaceDocumentsAbortController = controller
+  let timedOut = false
+  const timeoutId = window.setTimeout(() => {
+    timedOut = true
+    controller.abort()
+  }, 30000)
   workspaceBusy.value = true
   try {
-    const response = await fetch(`/api/v1/expedientes/documentos/${encodeURIComponent(jobId)}`, { credentials: 'same-origin' })
+    const response = await fetch(`/api/v1/expedientes/documentos/${encodeURIComponent(jobId)}`, { credentials: 'same-origin', signal: controller.signal })
+    if (controller.signal.aborted || workspaceDocumentsAbortController !== controller) return
     const data = await response.json().catch(() => ({}))
+    if (controller.signal.aborted || workspaceDocumentsAbortController !== controller) return
     if (!response.ok) throw new Error(data.error || 'No se pudieron cargar los PDFs del expediente.')
+    if (ingestResult.value?.job_id !== jobId) return
     workspacePDFs.value = data.documents || []
     workspacePDFRevision.value++
     workspacePatients.value = data.patients || []
@@ -537,8 +600,38 @@ async function loadWorkspaceDocuments(jobId, preferPath = '') {
       : patientDocuments.some(file => file.path === selectedWorkspacePDF.value) ? selectedWorkspacePDF.value : (patientDocuments[0]?.path || '')
     workspaceRename.value = standardCodeForFilename(selectedWorkspaceDocument.value?.name || '')
   } catch (error) {
-    workspaceNotice.value = error.message || 'No se pudieron cargar los PDFs del expediente.'
-  } finally { workspaceBusy.value = false }
+    if (timedOut) workspaceNotice.value = 'La carga de PDFs tardó demasiado. Puedes cerrar el visor y volver a intentarlo.'
+    else if (!controller.signal.aborted) workspaceNotice.value = error.message || 'No se pudieron cargar los PDFs del expediente.'
+  } finally {
+    window.clearTimeout(timeoutId)
+    if (workspaceDocumentsAbortController === controller) {
+      workspaceDocumentsAbortController = null
+      workspaceBusy.value = false
+    }
+  }
+}
+async function fetchWorkspaceJSON(url, options, timeoutMs, operation) {
+  const controller = new AbortController()
+  let timedOut = false
+  const timeoutId = window.setTimeout(() => {
+    timedOut = true
+    controller.abort()
+  }, timeoutMs)
+  try {
+    const response = await fetch(url, { ...options, signal: controller.signal })
+    const data = await response.json().catch(error => {
+      if (timedOut) throw error
+      return {}
+    })
+    return { response, data }
+  } catch (error) {
+    if (timedOut) {
+      throw new Error(`La solicitud de ${operation} superó ${Math.round(timeoutMs / 1000)} segundos. El servidor puede haber completado el cambio; revisa el expediente antes de repetirla.`)
+    }
+    throw error
+  } finally {
+    window.clearTimeout(timeoutId)
+  }
 }
 function selectWorkspacePDF(path) {
   selectedWorkspacePDF.value = path
@@ -550,20 +643,27 @@ function selectWorkspacePatient(patient) {
   if (!selectedWorkspacePDF.value.startsWith(prefix)) selectWorkspacePDF(workspacePDFs.value.find(file => file.path.startsWith(prefix))?.path || '')
 }
 async function renameWorkspacePDF() {
-  if (!selectedWorkspaceDocument.value || !workspaceRename.value || workspaceBusy.value) return
-  workspaceNotice.value = ''; workspaceBusy.value = true
+  const jobId = ingestResult.value?.job_id
+  const document = selectedWorkspaceDocument.value
+  if (!jobId || !document || !workspaceRename.value || workspaceBusy.value) return
+  workspaceNotice.value = ''; workspaceBusy.value = true; workspaceMutationBusy.value = true
   try {
-    const response = await fetch(`/api/v1/expedientes/documentos/renombrar/${encodeURIComponent(ingestResult.value.job_id)}`, {
+    const { response, data } = await fetchWorkspaceJSON(`/api/v1/expedientes/documentos/renombrar/${encodeURIComponent(jobId)}`, {
       method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path: selectedWorkspaceDocument.value.path, name: workspaceRename.value }),
-    })
-    const data = await response.json().catch(() => ({}))
+      body: JSON.stringify({ path: document.path, name: workspaceRename.value }),
+    }, 60000, 'cambiar el nombre del PDF')
     if (!response.ok) throw new Error(data.error || 'No se pudo cambiar el nombre del PDF.')
     const path = data.path
-    await loadWorkspaceDocuments(ingestResult.value.job_id, path)
-    workspaceNotice.value = `Se guardó como ${data.name}.`
-  } catch (error) { workspaceNotice.value = error.message || 'No se pudo cambiar el nombre del PDF.' }
-  finally { workspaceBusy.value = false }
+    if (ingestResult.value?.job_id === jobId && patientDocumentsDialog.value) {
+      await loadWorkspaceDocuments(jobId, path)
+      workspaceNotice.value = `Se guardó como ${data.name}.`
+    } else snackbar.value = `Se guardó como ${data.name}. Al volver a abrir, se actualizará la lista de PDFs.`
+  } catch (error) {
+    const message = error.message || 'No se pudo cambiar el nombre del PDF.'
+    if (patientDocumentsDialog.value && ingestResult.value?.job_id === jobId) workspaceNotice.value = message
+    else snackbar.value = message
+  }
+  finally { workspaceBusy.value = false; workspaceMutationBusy.value = false }
 }
 function openWorkspaceFusion(group) {
   if (!group || mergeAllSending.value) return
@@ -595,11 +695,10 @@ async function confirmMergeAllPending() {
   let failure = ''
   for (const group of groups) {
     try {
-      const response = await fetch(`/api/v1/expedientes/documentos/fusionar/${encodeURIComponent(jobId)}`, {
+      const { response, data } = await fetchWorkspaceJSON(`/api/v1/expedientes/documentos/fusionar/${encodeURIComponent(jobId)}`, {
         method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ rutas: group.paths }),
-      })
-      const data = await response.json().catch(() => ({}))
+      }, 60000, 'fusionar PDFs')
       if (!response.ok) throw new Error(data.error || `Falló la fusión de ${group.patient} · ${group.code}.`)
       merged++
       mergeAllProgress.value = { done: merged, total: groups.length }
@@ -609,12 +708,15 @@ async function confirmMergeAllPending() {
     }
   }
   mergeAllSending.value = false
-  await loadWorkspaceDocuments(jobId, selectedWorkspacePDF.value)
-  await loadSavedWorkspaces()
+  if (patientDocumentsDialog.value && ingestResult.value?.job_id === jobId) {
+    await loadWorkspaceDocuments(jobId, selectedWorkspacePDF.value)
+    await loadSavedWorkspaces()
+  }
   if (failure) workspaceNotice.value = merged
     ? `Se detuvo después de fusionar ${merged} de ${groups.length} grupos. Los demás siguen pendientes. ${failure}`
     : `No se completó la fusión general. Los grupos siguen pendientes. ${failure}`
   else workspaceNotice.value = `Se fusionaron ${merged} grupos pendientes en el orden actual de cada lista. Las fuentes originales se conservaron.`
+  if (!patientDocumentsDialog.value || ingestResult.value?.job_id !== jobId) snackbar.value = workspaceNotice.value
 }
 function moveWorkspaceFusionPDF(index, offset) {
   const target = index + offset
@@ -651,24 +753,31 @@ function finishWorkspaceFusionDrag() {
   mergeDropIndex.value = -1
 }
 async function confirmWorkspaceFusion() {
-  if (!ingestResult.value?.job_id || mergePDFPaths.value.length < 2 || mergeSending.value || mergeAllSending.value) return
+  const jobId = ingestResult.value?.job_id
+  if (!jobId || mergePDFPaths.value.length < 2 || mergeSending.value || mergeAllSending.value) return
   mergeSending.value = true
   workspaceNotice.value = ''
   try {
-    const response = await fetch(`/api/v1/expedientes/documentos/fusionar/${encodeURIComponent(ingestResult.value.job_id)}`, {
+    const { response, data } = await fetchWorkspaceJSON(`/api/v1/expedientes/documentos/fusionar/${encodeURIComponent(jobId)}`, {
       method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ rutas: mergePDFPaths.value }),
-    })
-    const data = await response.json().catch(() => ({}))
+    }, 60000, 'fusionar PDFs')
     if (!response.ok) throw new Error(data.error || 'No se pudieron fusionar los PDFs.')
     mergePDFDialog.value = false
     mergePDFPaths.value = []
     mergePreviewPath.value = ''
     pendingFusionSelection.value = ''
-    await loadWorkspaceDocuments(data.job_id, data.fused)
-    workspaceNotice.value = `${data.merged_count} PDFs fusionados en ${data.fused.split('/').at(-1)}. Las fuentes originales se conservaron.`
-    await loadSavedWorkspaces()
-  } catch (error) { workspaceNotice.value = error.message || 'No se pudieron fusionar los PDFs.' }
+    const message = `${data.merged_count} PDFs fusionados en ${data.fused.split('/').at(-1)}. Las fuentes originales se conservaron.`
+    if (ingestResult.value?.job_id === jobId && patientDocumentsDialog.value) {
+      await loadWorkspaceDocuments(jobId, data.fused)
+      workspaceNotice.value = message
+      await loadSavedWorkspaces()
+    } else snackbar.value = `${message} Al volver a abrir, se actualizará la lista de PDFs.`
+  } catch (error) {
+    const message = error.message || 'No se pudieron fusionar los PDFs.'
+    if (patientDocumentsDialog.value && ingestResult.value?.job_id === jobId) workspaceNotice.value = message
+    else snackbar.value = message
+  }
   finally { mergeSending.value = false }
 }
 function selectWorkspacePDFs(event) {
@@ -700,10 +809,12 @@ function selectReplacementPDF(event) {
   }
 }
 async function addWorkspacePDFs() {
-  if (!workspaceUploadFiles.value.length || !workspacePatient.value || workspaceSending.value) return
+  const jobId = ingestResult.value?.job_id
+  const patient = workspacePatient.value
+  if (!jobId || !workspaceUploadFiles.value.length || !patient || workspaceSending.value) return
   workspaceNotice.value = ''; workspaceSending.value = true; ingestProgress.value = 0
   const form = new FormData()
-  form.append('paciente', workspacePatient.value)
+  form.append('paciente', patient)
   for (const item of workspaceUploadFiles.value) {
     form.append('pdf_files', item.file)
     form.append('pdf_codes', item.code)
@@ -711,7 +822,8 @@ async function addWorkspacePDFs() {
   try {
     const data = await new Promise((resolve, reject) => {
       const request = new XMLHttpRequest()
-      request.open('POST', `/api/v1/expedientes/documentos/${encodeURIComponent(ingestResult.value.job_id)}`)
+      request.open('POST', `/api/v1/expedientes/documentos/${encodeURIComponent(jobId)}`)
+      request.timeout = 120000
       request.withCredentials = true
       request.upload.onprogress = event => { if (event.lengthComputable) ingestProgress.value = Math.round(event.loaded / event.total * 100) }
       request.onload = () => {
@@ -721,26 +833,38 @@ async function addWorkspacePDFs() {
         else reject(new Error(response.error || `No se pudieron añadir los PDFs (HTTP ${request.status}).`))
       }
       request.onerror = () => reject(new Error('Se interrumpió la conexión durante la carga.'))
+      request.ontimeout = () => reject(new Error('La carga superó 120 segundos. El servidor puede haber recibido los PDFs; revisa la carpeta antes de volver a subirlos.'))
       request.send(form)
     })
+    if (ingestResult.value?.job_id !== jobId) {
+      snackbar.value = 'Terminó la carga del período anterior. Abre ese período para revisar sus PDFs.'
+      return
+    }
     workspaceUploadFiles.value = []
     workspacePDFs.value = data.documents || []
     workspacePDFRevision.value++
     workspacePatients.value = data.patients || []
     const replacedCount = data.replaced_count || 0
     const addedCount = data.added_count ?? (data.added?.length || 0)
-    workspaceNotice.value = replacedCount
+    const message = replacedCount
       ? `${addedCount} PDF${addedCount === 1 ? '' : 's'} añadido${addedCount === 1 ? '' : 's'} y ${replacedCount} reemplazado${replacedCount === 1 ? '' : 's'}. Las versiones anteriores se conservan como fuentes.`
       : `${addedCount} PDF${addedCount === 1 ? '' : 's'} añadido${addedCount === 1 ? '' : 's'} al expediente.`
+    if (patientDocumentsDialog.value) workspaceNotice.value = message
+    else snackbar.value = `${message} Al volver a abrir, se actualizará la lista de PDFs.`
     selectedWorkspacePDF.value = data.added?.at(-1)?.relative_path || selectedWorkspacePDF.value
     workspaceRename.value = standardCodeForFilename(selectedWorkspaceDocument.value?.name || '')
     ingestProgress.value = 100
-  } catch (error) { workspaceNotice.value = error.message || 'No se pudieron añadir los PDFs.' }
+  } catch (error) {
+    const message = error.message || 'No se pudieron añadir los PDFs.'
+    if (patientDocumentsDialog.value && ingestResult.value?.job_id === jobId) workspaceNotice.value = message
+    else snackbar.value = message
+  }
   finally { workspaceSending.value = false }
 }
 async function confirmReplaceWorkspacePDF() {
+  const jobId = ingestResult.value?.job_id
   const current = workspacePDFs.value.find(document => document.path === replacePDFTarget.value)
-  if (!current || !replacePDFFile.value || workspaceSending.value) return
+  if (!jobId || !current || !replacePDFFile.value || workspaceSending.value) return
   replacePDFError.value = ''
   workspaceNotice.value = ''; workspaceSending.value = true; ingestProgress.value = 0
   const form = new FormData()
@@ -752,7 +876,8 @@ async function confirmReplaceWorkspacePDF() {
   try {
     const data = await new Promise((resolve, reject) => {
       const request = new XMLHttpRequest()
-      request.open('POST', `/api/v1/expedientes/documentos/${encodeURIComponent(ingestResult.value.job_id)}`)
+      request.open('POST', `/api/v1/expedientes/documentos/${encodeURIComponent(jobId)}`)
+      request.timeout = 120000
       request.withCredentials = true
       request.upload.onprogress = event => { if (event.lengthComputable) ingestProgress.value = Math.round(event.loaded / event.total * 100) }
       request.onload = () => {
@@ -762,8 +887,13 @@ async function confirmReplaceWorkspacePDF() {
         else reject(new Error(response.error || `No se pudo reemplazar el PDF (HTTP ${request.status}).`))
       }
       request.onerror = () => reject(new Error('Se interrumpió la conexión durante el reemplazo.'))
+      request.ontimeout = () => reject(new Error('El reemplazo superó 120 segundos. El servidor puede haber recibido el PDF; revisa la carpeta antes de volver a intentarlo.'))
       request.send(form)
     })
+    if (ingestResult.value?.job_id !== jobId) {
+      snackbar.value = 'Terminó el reemplazo del período anterior. Abre ese período para revisar sus PDFs.'
+      return
+    }
     workspacePDFs.value = data.documents || []
     workspacePDFRevision.value++
     replacePDFFile.value = null
@@ -771,7 +901,11 @@ async function confirmReplaceWorkspacePDF() {
     workspaceNotice.value = 'PDF reemplazado. La versión fuente se conserva en el expediente.'
     ingestProgress.value = 100
     replacePDFDialog.value = false
-  } catch (error) { replacePDFError.value = error.message || 'No se pudo reemplazar el PDF.' }
+  } catch (error) {
+    const message = error.message || 'No se pudo reemplazar el PDF.'
+    if (replacePDFDialog.value) replacePDFError.value = message
+    else snackbar.value = message
+  }
   finally { workspaceSending.value = false }
 }
 function requestDeleteWorkspacePDF(path) {
@@ -792,19 +926,27 @@ function setWorkspaceDeleteInput(value) { workspaceDeleteInput.value = String(va
 function workspaceDeleteConfirmationMatches() {
   return Boolean(workspaceDeleteTargetID.value) && workspaceDeleteInput.value.toUpperCase() === workspaceDeleteTargetID.value.toUpperCase()
 }
+function closeWorkspaceDeleteDialog() {
+  deleteWorkspaceDialog.value = false
+  workspaceDeleteInput.value = ''
+  workspaceDeleteError.value = ''
+  if (!workspaceDeleting.value) {
+    workspaceDeleteTargetID.value = ''
+    workspaceDeleteTargetName.value = ''
+  }
+}
 async function deleteWholeWorkspace() {
   const jobId = workspaceDeleteTargetID.value
+  const deletedFolder = workspaceDeleteTargetName.value
   if (!workspaceDeleteConfirmationMatches() || workspaceDeleting.value) return
   workspaceDeleteError.value = ''
   workspaceDeleting.value = true
   try {
-    const response = await fetch(`/api/v1/expedientes/eliminar/${encodeURIComponent(jobId)}`, {
+    const { response, data } = await fetchWorkspaceJSON(`/api/v1/expedientes/eliminar/${encodeURIComponent(jobId)}`, {
       method: 'DELETE', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ confirmacion: jobId }),
-    })
-    const data = await response.json().catch(() => ({}))
+    }, 60000, 'eliminar el espacio')
     if (!response.ok) throw new Error(data.error || 'No se pudo eliminar el espacio completo.')
-    const deletedFolder = workspaceDeleteTargetName.value
     if (ingestResult.value?.job_id === jobId) {
       ingestResult.value = null
       ingestPreview.value = null
@@ -833,37 +975,52 @@ async function deleteWholeWorkspace() {
     }
     deleteWorkspaceDialog.value = false
     selectedSavedWorkspace.value = ''
-    await loadSavedWorkspaces()
+    workspaceDeleting.value = false
+    void loadSavedWorkspaces()
     workspaceDeleteTargetID.value = ''
     workspaceDeleteTargetName.value = ''
     workspaceDeleteInput.value = ''
     snackbar.value = data.message || `Se eliminó ${deletedFolder} y sus archivos.`
-  } catch (error) { workspaceDeleteError.value = error.message || 'No se pudo eliminar el espacio completo.' }
+  } catch (error) {
+    const message = error.message || 'No se pudo eliminar el espacio completo.'
+    if (deleteWorkspaceDialog.value && workspaceDeleteTargetID.value === jobId) workspaceDeleteError.value = message
+    else snackbar.value = message
+  }
   finally { workspaceDeleting.value = false }
 }
 async function deleteWorkspacePDF() {
-  if (!deletePDFTarget.value || workspaceBusy.value) return
-  workspaceNotice.value = ''; workspaceBusy.value = true
+  const jobId = ingestResult.value?.job_id
+  const path = deletePDFTarget.value
+  if (!jobId || !path || workspaceBusy.value) return
+  workspaceNotice.value = ''; workspaceBusy.value = true; workspaceMutationBusy.value = true
   try {
-    const response = await fetch(`/api/v1/expedientes/documentos/${encodeURIComponent(ingestResult.value.job_id)}`, {
+    const { response, data } = await fetchWorkspaceJSON(`/api/v1/expedientes/documentos/${encodeURIComponent(jobId)}`, {
       method: 'DELETE', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path: deletePDFTarget.value }),
-    })
-    const data = await response.json().catch(() => ({}))
+      body: JSON.stringify({ path }),
+    }, 60000, 'quitar el PDF')
     if (!response.ok) throw new Error(data.error || 'No se pudo quitar el PDF.')
+    if (ingestResult.value?.job_id !== jobId) {
+      snackbar.value = 'Terminó la operación en el período anterior. Abre ese período para revisar sus PDFs.'
+      return
+    }
     workspacePDFs.value = data.documents || []
-    const previousPath = deletePDFTarget.value
+    const previousPath = path
     deletePDFTarget.value = ''
     if (selectedWorkspacePDF.value === previousPath) selectWorkspacePDF(workspacePatientPDFs.value[0]?.path || '')
     workspaceNotice.value = 'PDF quitado de la carpeta del paciente.'
     deletePDFDialog.value = false
-  } catch (error) { workspaceNotice.value = error.message || 'No se pudo quitar el PDF.' }
-  finally { workspaceBusy.value = false }
+  } catch (error) {
+    const message = error.message || 'No se pudo quitar el PDF.'
+    if (patientDocumentsDialog.value && ingestResult.value?.job_id === jobId) workspaceNotice.value = message
+    else snackbar.value = message
+  }
+  finally { workspaceBusy.value = false; workspaceMutationBusy.value = false }
 }
 async function downloadWorkspaceZIP() {
   if (!selectedZipWorkspace.value || zipDownloading.value) return
   zipDownloadError.value = ''
   zipDownloadNotice.value = ''
+  zipDownloadArchiveState.value = ''
   zipDownloading.value = true
   try {
     const response = await fetch(`/api/v1/expedientes/descargar/${encodeURIComponent(selectedZipWorkspace.value)}`, { credentials: 'same-origin' })
@@ -872,13 +1029,17 @@ async function downloadWorkspaceZIP() {
       throw new Error(data.error || `No se pudo descargar el ZIP (HTTP ${response.status}).`)
     }
     const blob = await response.blob()
+    zipDownloadArchiveState.value = response.headers.get('X-Folio-Archive-State') || (selectedZipWorkspaceReady.value ? 'READY' : 'INCOMPLETE')
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
     link.download = response.headers.get('Content-Disposition')?.match(/filename="?([^";]+)"?/i)?.[1] || `${selectedZipWorkspace.value}.zip`
     link.click()
     URL.revokeObjectURL(url)
-    zipDownloadNotice.value = 'Se descargó el ZIP con los archivos actuales del expediente.'
+    const filename = link.download || 'expediente.zip'
+    zipDownloadNotice.value = zipDownloadArchiveState.value === 'INCOMPLETE'
+      ? `Se descargó ${filename} como avance incompleto. La descarga no cambia el estado ni los documentos guardados.`
+      : `Se descargó ${filename}. El expediente está listo para entrega; la descarga no cambia su estado ni sus documentos.`
   } catch (error) { zipDownloadError.value = error.message || 'No se pudo descargar el ZIP.' }
   finally { zipDownloading.value = false }
 }
@@ -1148,11 +1309,14 @@ const zipDownloadTypeCounts = computed(() => ({
   RECEPCION: zipDownloadPreparedWorkspaces.value.filter(workspace => !workspace.es_objeciones).length,
   OBJECIONES: zipDownloadPreparedWorkspaces.value.filter(workspace => workspace.es_objeciones).length,
 }))
+const selectedZipWorkspaceRecord = computed(() => savedWorkspaces.value.find(workspace => workspace.job_id === selectedZipWorkspace.value) || null)
+const selectedZipWorkspaceReady = computed(() => selectedZipWorkspaceRecord.value?.ready_for_delivery === true)
+const selectedZipWorkspaceMissing = computed(() => selectedZipWorkspaceRecord.value?.delivery_missing || [])
 function workspaceSavedOption(workspace) {
   const monthName = coverageMonthLabel(workspaceMonthValue(workspace))
   const year = workspaceYearLabel(workspace)
   const serviceName = coverageServiceLabel(workspace.tipo_servicio)
-  const state = workspaceStatusLabel(workspace.status)
+  const state = workspaceStatusLabel(workspace.status, workspace)
   return { title: `${workspaceTypeLabel(workspace)} · ${serviceName} · ${monthName} ${year} · ${workspace.job_id} · ${state} · ${workspace.creado_por || 'usuario anterior'}`, value: workspace.job_id }
 }
 const savedWorkspaceItems = computed(() => orderedSavedWorkspaces.value.map(workspaceSavedOption))
@@ -1194,16 +1358,21 @@ const hasSavedWorkspaceFilters = computed(() => Boolean(String(savedWorkspaceSea
   || savedWorkspaceStatusFilter.value !== 'ALL')
 const savedWorkspaceStatusFilters = computed(() => [
   { title: `Todos (${savedWorkspaces.value.length})`, value: 'ALL' },
-  { title: `Incompletos (${savedWorkspaces.value.filter(item => item.status === 'INCOMPLETE').length})`, value: 'INCOMPLETE' },
-  { title: `Preparados (${savedWorkspaces.value.filter(item => item.status === 'PROCESSED').length})`, value: 'PROCESSED' },
+  { title: `Listos para entrega (${savedWorkspaces.value.filter(item => workspaceFilterStatusValue(item) === 'READY_FOR_DELIVERY').length})`, value: 'READY_FOR_DELIVERY' },
+  { title: `Avances incompletos (${savedWorkspaces.value.filter(item => workspaceFilterStatusValue(item) === 'INCOMPLETE_PACKAGE').length})`, value: 'INCOMPLETE_PACKAGE' },
   { title: `Por preparar (${savedWorkspaces.value.filter(item => item.status === 'STAGED').length})`, value: 'STAGED' },
   { title: `Revisión (${savedWorkspaces.value.filter(item => item.status === 'REQUIERE_REVISION').length})`, value: 'REQUIERE_REVISION' },
   ...[...new Set(savedWorkspaces.value.map(item => item.status).filter(status => status && !['INCOMPLETE', 'PROCESSED', 'STAGED', 'REQUIERE_REVISION'].includes(status)))].sort().map(status => ({ title: `${workspaceStatusLabel(status)} (${savedWorkspaces.value.filter(item => item.status === status).length})`, value: status })),
 ])
-function workspaceStatusLabel(status) {
+function workspaceStatusLabel(status, workspace = null) {
+  if (workspace && (status === 'PROCESSED' || status === 'INCOMPLETE')) {
+    if (workspace.ready_for_delivery === true) return 'Listo para entrega'
+    if (workspace.ready_for_delivery === false) return 'Avance incompleto'
+  }
   return ({ STAGED: 'Pendiente de preparar', INCOMPLETE: 'Incompleto', PROCESSED: 'Preparado', REQUIERE_REVISION: 'Requiere revisión' })[status] || status || 'Estado desconocido'
 }
-function workspaceStatusColor(status) {
+function workspaceStatusColor(status, workspace = null) {
+  if (workspace && (status === 'PROCESSED' || status === 'INCOMPLETE')) return workspace.ready_for_delivery === true ? 'success' : 'warning'
   return ({ STAGED: 'info', INCOMPLETE: 'warning', PROCESSED: 'success', REQUIERE_REVISION: 'error' })[status] || 'secondary'
 }
 function workspaceReceivedAt(value) {
@@ -1303,6 +1472,7 @@ function selectZipDownloadType(type) {
   selectedZipWorkspace.value = zipDownloadWorkspaceItems.value[0]?.value || ''
   zipDownloadError.value = ''
   zipDownloadNotice.value = ''
+  zipDownloadArchiveState.value = ''
 }
 async function openObjectionsPage() {
   activePage.value = 'objeciones'
@@ -1454,23 +1624,31 @@ async function setObjectionPDFIncluded(document, included) {
   } catch (error) { objectionPDFError.value = error.message || 'No se pudo guardar la selección del PDF.' }
   finally { objectionPDFSavingPath.value = '' }
 }
+function setObjectionPostureSelection(tramite, value) {
+  const key = String(tramite ?? '')
+  if (!key) return
+  objectionPostures.value = { ...objectionPostures.value, [key]: String(value ?? '') }
+}
 async function saveObjectionPosture(patient) {
-  const posture = objectionPostures.value[patient?.tramite]
-  if (!patient || !posture || !objectionSelectedWorkspace.value || objectionPostureSaving.value) return
-  objectionPostureSaving.value = patient.tramite
+  const tramite = String(patient?.tramite ?? '')
+  const jobId = objectionSelectedWorkspace.value
+  const posture = objectionPostures.value[tramite]
+  if (!patient || !tramite || !['ACEPTA', 'RECHAZA'].includes(posture) || !jobId || objectionPostureSaving.value) return
+  objectionPostureSaving.value = tramite
   objectionError.value = ''
   objectionNotice.value = ''
   try {
-    const response = await fetch(`/api/v1/objeciones/postura/${encodeURIComponent(objectionSelectedWorkspace.value)}`, {
+    const { response, data } = await fetchWorkspaceJSON(`/api/v1/objeciones/postura/${encodeURIComponent(jobId)}`, {
       method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pdi_tramite: patient.tramite, postura: posture }),
-    })
+      body: JSON.stringify({ pdi_tramite: tramite, postura: posture }),
+    }, 30000, 'guardar la postura')
     if (response.status === 401) { await signOut(); return }
-    const data = await response.json().catch(() => ({}))
     if (!response.ok) throw new Error(data.error || 'No se pudo guardar la postura.')
-    objectionCurrentWorkspace.value = data
-    objectionPostures.value = Object.fromEntries((data.objeciones || []).filter(row => row.postura).map(row => [row.pdi_tramite, row.postura]))
-    objectionNotice.value = `Se guardó ${posture} para el trámite ${patient.tramite}.`
+    if (objectionSelectedWorkspace.value === jobId) {
+      objectionCurrentWorkspace.value = data
+      objectionPostures.value = Object.fromEntries((data.objeciones || []).filter(row => row.postura).map(row => [String(row.pdi_tramite), row.postura]))
+      objectionNotice.value = `Se guardó ${posture} para el trámite ${tramite}.`
+    }
   } catch (error) { objectionError.value = error.message || 'No se pudo guardar la postura.' }
   finally { objectionPostureSaving.value = '' }
 }
@@ -1869,7 +2047,7 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
               <div>{{ objectionConflictMessage || 'Hay varios espacios de Objeciones para este servicio y período. Elige uno para continuar; no se borrarán ni fusionarán automáticamente.' }}</div>
               <div class="objection-existing-choices">
                 <v-btn v-for="workspace in objectionPeriodSpaces" :key="workspace.job_id" type="button" size="small" variant="outlined" :color="objectionSelectedWorkspace===workspace.job_id ? 'primary' : undefined" :loading="objectionBusy && objectionSelectedWorkspace===workspace.job_id" :disabled="objectionBusy" @click="chooseObjectionWorkspace(workspace.job_id)">
-                  {{ workspaceTypeLabel(workspace) }} · {{ coverageServiceLabel(workspace.tipo_servicio) }} · {{ coverageMonthLabel(workspaceMonthValue(workspace)) }} {{ workspaceYearLabel(workspace) }} · {{ workspaceStatusLabel(workspace.status) }} · ID {{ workspace.job_id }} · {{ workspaceReceivedAt(workspace.received_at) || 'sin fecha' }}
+                  {{ workspaceTypeLabel(workspace) }} · {{ coverageServiceLabel(workspace.tipo_servicio) }} · {{ coverageMonthLabel(workspaceMonthValue(workspace)) }} {{ workspaceYearLabel(workspace) }} · {{ workspaceStatusLabel(workspace.status, workspace) }} · ID {{ workspace.job_id }} · {{ workspaceReceivedAt(workspace.received_at) || 'sin fecha' }}
                 </v-btn>
               </div>
             </v-alert>
@@ -1896,7 +2074,7 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
                 @update:model-value="loadObjectionWorkspace"
               />
               <div class="objection-workspace-picker-buttons">
-                <v-btn type="button" color="primary" variant="tonal" prepend-icon="mdi-folder-open-outline" :disabled="!objectionSelectedWorkspace || objectionBusy || workspaceDeleting" @click="loadObjectionWorkspace">Abrir</v-btn>
+                <v-btn type="button" color="primary" variant="tonal" prepend-icon="mdi-folder-open-outline" :disabled="!objectionSelectedWorkspace || objectionBusy || workspaceDeleting" @click="loadObjectionWorkspace(objectionSelectedWorkspace)">Abrir</v-btn>
                 <v-btn type="button" color="error" variant="tonal" prepend-icon="mdi-delete-outline" :disabled="!objectionSelectedWorkspace || objectionBusy || workspaceDeleting" @click="requestDeleteWorkspace(objectionSelectedWorkspace)">Eliminar</v-btn>
               </div>
             </div>
@@ -1922,14 +2100,18 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
                   <div class="coverage-toolbar"><span class="coverage-footnote">Cada atención se agrega con su propia carpeta identificada por trámite.</span><v-btn type="button" color="primary" variant="tonal" prepend-icon="mdi-account-plus-outline" :loading="objectionBusy" :disabled="!objectionAddSelectedTramites.length || objectionBusy" @click="addObjectionPatients">Agregar seleccionados</v-btn></div>
                 </template>
               </v-card>
-              <div class="planilla-table-wrap mt-3"><v-table class="planilla-table" density="comfortable" fixed-header height="min(34vh, 330px)"><thead><tr><th>Paciente seleccionado</th><th>Trámite</th><th>Cédula</th><th>Postura</th><th>Cobertura</th></tr></thead><tbody><tr v-for="row in objectionCurrentWorkspace.objeciones" :key="row.pdi_tramite"><td>{{ row.paciente }}</td><td>{{ row.pdi_tramite }}</td><td>{{ row.pdi_cedula || '—' }}</td><td>{{ row.postura || 'Pendiente' }}</td><td>{{ row.cobertura_adjunta ? 'Adjunta' : 'Pendiente' }}</td></tr></tbody></v-table></div>
+              <div class="planilla-table-wrap mt-3"><v-table class="planilla-table" density="comfortable" fixed-header height="min(34vh, 330px)"><thead><tr><th>Paciente seleccionado</th><th>Trámite</th><th>Cédula</th><th>Postura</th><th>Cobertura</th></tr></thead><tbody><tr v-for="row in objectionRowsPage" :key="row.pdi_tramite"><td>{{ row.paciente }}</td><td>{{ row.pdi_tramite }}</td><td>{{ row.pdi_cedula || '—' }}</td><td>{{ row.postura || 'Pendiente' }}</td><td>{{ row.cobertura_adjunta ? 'Adjunta' : 'Pendiente' }}</td></tr></tbody></v-table></div>
+              <div class="objection-patient-controls">
+                <v-text-field v-model="objectionPatientSearch" label="Buscar paciente objetado" placeholder="Nombre, trámite o cédula" prepend-inner-icon="mdi-magnify" density="comfortable" variant="outlined" clearable hide-details/>
+                <span>{{ filteredObjectionPatients.length }} paciente(s) coinciden</span>
+              </div>
               <div class="objection-patient-list">
-                <article v-for="patient in objectionUniquePatients" :key="patient.tramite" class="saved-workspace-card">
+                <article v-for="patient in objectionPatientsPage" :key="patient.tramite" class="saved-workspace-card">
                   <div class="saved-workspace-card-main"><span class="saved-workspace-icon"><v-icon icon="mdi-account-alert-outline" size="22"/></span><div class="saved-workspace-card-copy"><h3>{{ patient.patient || 'Paciente' }}</h3><p class="saved-workspace-message">Trámite {{ patient.tramite }} · {{ patient.rows.length }} observación(es)</p></div></div>
                   <div class="objection-document-actions">
                     <v-btn type="button" size="small" variant="tonal" prepend-icon="mdi-file-eye-outline" :disabled="objectionBusy" @click="openObjectionPatientDocuments(patient)">Revisar y corregir expediente</v-btn>
-                    <v-select v-model="objectionPostures[patient.tramite]" :items="['ACEPTA','RECHAZA']" label="Postura" density="compact" hide-details/>
-                    <v-btn type="button" size="small" color="primary" variant="tonal" :loading="objectionPostureSaving===patient.tramite" :disabled="!objectionPostures[patient.tramite] || objectionPostureSaving" @click="saveObjectionPosture(patient)">Guardar postura</v-btn>
+                    <v-select :model-value="objectionPostures[String(patient.tramite)] || ''" :items="['ACEPTA','RECHAZA']" label="Postura" density="compact" hide-details @update:model-value="setObjectionPostureSelection(patient.tramite,$event)"/>
+                    <v-btn type="button" size="small" color="primary" variant="tonal" :loading="objectionPostureSaving===String(patient.tramite)" :disabled="!['ACEPTA','RECHAZA'].includes(objectionPostures[String(patient.tramite)]) || Boolean(objectionPostureSaving)" @click="saveObjectionPosture(patient)">Guardar postura</v-btn>
                     <div class="objection-zip-documents">
                       <strong>PDFs que se incluirán en el ZIP</strong>
                       <p>Marca los documentos clínicos que correspondan al descargo. Solo los seleccionados entran en el ZIP; los obligatorios siempre se incluyen.</p>
@@ -1949,6 +2131,11 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
                     <v-btn type="button" size="small" variant="tonal" :loading="objectionBusy" :disabled="!objectionUploadFiles[`${patient.tramite}:anexo`] || !objectionAnnexTypeByPatient[patient.tramite] || (objectionAnnexTypeByPatient[patient.tramite]==='OTRO' && !objectionAnnexNameByPatient[patient.tramite]?.trim()) || objectionBusy" @click="uploadObjectionDocument(patient,'anexo')">Guardar anexo</v-btn>
                   </div>
                 </article>
+              </div>
+              <div v-if="!filteredObjectionPatients.length" class="workspace-empty">No hay pacientes con ese nombre, trámite o cédula. Borra la búsqueda para volver a ver todos.</div>
+              <div class="planilla-pagination objection-patient-pagination">
+                <span>Pacientes {{ objectionPatientRangeStart }}–{{ objectionPatientRangeEnd }} de {{ filteredObjectionPatients.length }}</span>
+                <v-pagination v-if="objectionPatientPageCount > 1" v-model="objectionPatientPage" :length="objectionPatientPageCount" :total-visible="5" density="comfortable"/>
               </div>
             </template>
           </v-card>
@@ -2010,15 +2197,22 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
             <div v-else-if="!zipDownloadWorkspaceItems.length" class="planilla-state"><v-icon icon="mdi-folder-search-outline" size="25"/><span v-if="zipDownloadType === 'OBJECIONES'">No hay espacios de Objeciones preparados para descargar.</span><span v-else>No hay períodos de recepción preparados todavía. Prepara el expediente desde Recepción de planillas; luego aparecerá aquí.</span><v-btn type="button" variant="text" color="primary" @click="activePage='ingesta'">Recibir planillas</v-btn></div>
             <template v-else>
               <v-alert v-if="zipDownloadError" class="mt-4" type="warning" variant="tonal" density="comfortable">{{ zipDownloadError }}<v-btn type="button" size="small" variant="text" @click="openPatientDocumentsPage">Revisar documentos del paciente</v-btn></v-alert>
-              <v-alert v-if="zipDownloadNotice" class="mt-4" type="success" variant="tonal" density="comfortable">{{ zipDownloadNotice }}</v-alert>
-              <div class="workspace-download-row"><span>Los grupos de PDFs pendientes de fusionar deben resolverse antes de descargar el ZIP.</span><v-btn type="button" color="primary" prepend-icon="mdi-folder-zip-outline" :loading="zipDownloading" :disabled="!selectedZipWorkspace || zipDownloading" @click="downloadWorkspaceZIP">Descargar expediente ZIP</v-btn></div>
+              <v-alert v-if="zipDownloadNotice" class="mt-4" :type="zipDownloadArchiveState === 'INCOMPLETE' ? 'warning' : 'success'" variant="tonal" density="comfortable">{{ zipDownloadNotice }}</v-alert>
+              <v-alert v-if="selectedZipWorkspaceRecord" class="zip-readiness-alert mt-4" :type="selectedZipWorkspaceReady ? 'success' : 'warning'" variant="tonal" density="comfortable" :title="selectedZipWorkspaceReady ? 'Listo para entrega' : 'Avance incompleto'">
+                <p v-if="selectedZipWorkspaceReady">Este paquete cumple los requisitos actuales para preparar la entrega.</p>
+                <p v-else>Puedes descargar ahora los archivos disponibles. El expediente seguirá abierto para completar estos requisitos:</p>
+                <ul v-if="selectedZipWorkspaceMissing.length" class="zip-readiness-list">
+                  <li v-for="item in selectedZipWorkspaceMissing" :key="item">{{ item }}</li>
+                </ul>
+              </v-alert>
+              <div class="workspace-download-row"><span>{{ selectedZipWorkspaceRecord?.es_objeciones ? 'Se incluirán los PDFs clínicos marcados para Objeciones y los documentos obligatorios.' : 'Se incluirán todos los documentos disponibles del período de recepción.' }} {{ selectedZipWorkspaceReady ? 'El paquete cumple los requisitos actuales.' : 'La descarga se identificará como avance incompleto.' }}</span><v-btn type="button" color="primary" prepend-icon="mdi-folder-zip-outline" :loading="zipDownloading" :disabled="!selectedZipWorkspace || zipDownloading" @click="downloadWorkspaceZIP">{{ selectedZipWorkspaceRecord?.es_objeciones ? 'Descargar ZIP de Objeciones' : selectedZipWorkspaceReady ? 'Descargar ZIP listo para entrega' : 'Descargar ZIP de avance incompleto' }}</v-btn></div>
             </template>
           </v-card>
         </section>
         <section v-else class="content-wrap ingest-content" :class="{'ingest-workspace-active': !!ingestResult?.output}">
           <div v-if="!ingestResult?.output" class="welcome-line"><div><div class="eyebrow">RECEPCIÓN DE EXPEDIENTES</div><h1>Recibir lote de planillas<span class="title-period">.</span></h1><p class="subtitle">Carga el ZIP de planillas y añade los documentos habilitantes cuando los tengas.</p></div></div>
           <div v-else class="ingest-workspace-toolbar">
-            <div><small>PERÍODO ABIERTO</small><strong>{{ coverageServiceLabel(ingestResult.tipo_servicio || ingestService) }} · {{ coverageMonthLabel(ingestResult.mes) }} {{ ingestResult.anio }}</strong><v-chip size="small" :color="workspaceStatusColor(ingestResult.status)" variant="tonal">{{ workspaceStatusLabel(ingestResult.status) }}</v-chip></div>
+            <div><small>PERÍODO ABIERTO</small><strong>{{ coverageServiceLabel(ingestResult.tipo_servicio || ingestService) }} · {{ coverageMonthLabel(ingestResult.mes) }} {{ ingestResult.anio }}</strong><v-chip size="small" :color="workspaceStatusColor(ingestResult.status, ingestResult)" variant="tonal">{{ workspaceStatusLabel(ingestResult.status, ingestResult) }}</v-chip></div>
             <div class="ingest-workspace-actions"><v-btn type="button" variant="tonal" prepend-icon="mdi-information-outline" @click="showWorkspaceDetails = !showWorkspaceDetails">{{ showWorkspaceDetails ? 'Ocultar detalles' : 'Detalles del lote' }}</v-btn><v-btn type="button" color="primary" variant="text" prepend-icon="mdi-folder-clock-outline" @click="showSavedWorkspaceList">Cambiar período</v-btn></div>
           </div>
           <v-alert v-if="!ingestResult?.output" class="ingest-notice" type="info" variant="tonal" density="comfortable" prepend-icon="mdi-information-outline">{{ ingestMode === 'resume' ? 'Abre un período existente para revisar sus documentos o continuar el trabajo en el mismo espacio.' : 'Puedes empezar con el ZIP de planillas. Después añade la matriz, la planilla consolidada y el oficio al mismo expediente.' }}</v-alert>
@@ -2052,7 +2246,7 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
                     <div class="saved-workspace-card-main">
                       <span class="saved-workspace-icon"><v-icon icon="mdi-folder-zip-outline" size="22"/></span>
                       <div class="saved-workspace-card-copy">
-                        <div class="saved-workspace-title-row"><v-chip size="small" :color="workspace.es_objeciones ? 'deep-purple' : 'primary'" variant="tonal">{{ workspaceTypeLabel(workspace) }}</v-chip><h3>{{ coverageServiceLabel(workspace.tipo_servicio) }} · {{ coverageMonthLabel(workspaceMonthValue(workspace)) }} {{ workspaceYearLabel(workspace) }}</h3><v-chip size="small" :color="workspaceStatusColor(workspace.status)" variant="tonal">{{ workspaceStatusLabel(workspace.status) }}</v-chip></div>
+                        <div class="saved-workspace-title-row"><v-chip size="small" :color="workspace.es_objeciones ? 'deep-purple' : 'primary'" variant="tonal">{{ workspaceTypeLabel(workspace) }}</v-chip><h3>{{ coverageServiceLabel(workspace.tipo_servicio) }} · {{ coverageMonthLabel(workspaceMonthValue(workspace)) }} {{ workspaceYearLabel(workspace) }}</h3><v-chip size="small" :color="workspaceStatusColor(workspace.status, workspace)" variant="tonal">{{ workspaceStatusLabel(workspace.status, workspace) }}</v-chip></div>
                         <p v-if="workspace.missing_documents?.length" class="saved-workspace-missing"><v-icon icon="mdi-alert-circle-outline" size="16"/> Faltan: {{ workspace.missing_documents.join(', ') }}</p>
                         <p v-else-if="workspace.message" class="saved-workspace-message">{{ workspace.message }}</p>
                         <p v-else class="saved-workspace-message">Período listo para continuar.</p>
@@ -2169,13 +2363,16 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
       </main>
     </div>
     <div v-if="dragging" class="drop-overlay"><div class="drop-message"><v-icon icon="mdi-cloud-upload-outline" size="46"/><h2>Suelta tus archivos aquí</h2><p>Se guardarán en {{ activeFolder === folders[0] ? 'Mi espacio' : activeFolder }}</p></div></div>
-    <v-dialog v-model="patientDocumentsDialog" class="patient-documents-dialog" width="96vw" max-width="1800" :persistent="patientDocumentsLocked" aria-labelledby="patient-documents-title">
+    <v-dialog v-model="patientDocumentsDialog" class="patient-documents-dialog" width="96vw" max-width="1800" aria-labelledby="patient-documents-title">
       <v-card class="patient-documents-modal">
         <div class="patient-documents-header">
           <div><h2 id="patient-documents-title">Documentos del paciente</h2><p>{{ coverageServiceLabel(ingestResult?.tipo_servicio) }} · {{ coverageMonthLabel(ingestResult?.mes) }} {{ ingestResult?.anio }}</p></div>
-          <div class="patient-documents-header-actions"><v-btn type="button" icon="mdi-refresh" variant="text" aria-label="Actualizar lista de PDFs" :loading="workspaceBusy" :disabled="patientDocumentsLocked" @click="loadWorkspaceDocuments(ingestResult.job_id, selectedWorkspacePDF)"/><v-btn type="button" variant="tonal" prepend-icon="mdi-close" :disabled="patientDocumentsLocked" @click="patientDocumentsDialog = false">Cerrar</v-btn></div>
+          <div class="patient-documents-header-actions"><v-btn type="button" icon="mdi-refresh" variant="text" aria-label="Actualizar lista de PDFs" :loading="workspaceBusy" :disabled="workspaceBusy" @click="loadWorkspaceDocuments(ingestResult.job_id, selectedWorkspacePDF)"/><v-btn type="button" variant="tonal" prepend-icon="mdi-close" @click="patientDocumentsDialog = false">Cerrar</v-btn></div>
         </div>
         <v-card-text v-if="ingestResult?.output" class="patient-documents-body">
+              <v-alert v-if="workspaceSending || workspaceMutationBusy || mergeSending || mergeAllSending" type="info" variant="tonal" density="comfortable" class="workspace-notice">
+                Puedes cerrar este visor y seguir navegando. La operación ya enviada continuará en el servidor; si vence el tiempo de espera, revisa los PDFs antes de repetirla.
+              </v-alert>
               <v-alert v-if="workspaceNotice" :type="workspaceNotice.includes('Se guardó') || workspaceNotice.includes('añadidos') || workspaceNotice.includes('reemplazado') || workspaceNotice.includes('quitado') || workspaceNotice.includes('descargó') || workspaceNotice.includes('fusionaron') ? 'success' : 'warning'" variant="tonal" density="compact" class="workspace-notice">{{ workspaceNotice }}</v-alert>
               <v-alert v-if="workspaceFusionGroups.length" type="warning" variant="tonal" density="comfortable" prepend-icon="mdi-content-copy">Hay {{ workspaceFusionGroups.length }} grupo(s) de documentos repetidos. Se conservaron con nombres numerados para revisarlos y fusionarlos después. Las fuentes originales se mantienen.</v-alert>
               <div v-if="workspaceFusionQueue.length" class="workspace-fusion-quick-access">
@@ -2243,7 +2440,8 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
                       <div class="workspace-fusion-preview"><div class="workspace-fusion-preview-title">{{ mergePreviewPath.split('/').at(-1) || 'Vista previa del PDF' }}</div><iframe v-if="mergePreviewURL" :key="mergePreviewURL" :src="mergePreviewURL" :title="`Vista previa de ${mergePreviewPath.split('/').at(-1)}`"/><div v-else class="workspace-empty">Selecciona “Ver PDF” para revisar un documento.</div></div>
                     </div>
                   </v-card-text>
-                  <v-card-actions><v-spacer/><v-btn type="button" variant="text" :disabled="mergeSending || mergeAllSending" @click="mergePDFDialog=false">Cancelar</v-btn><v-btn type="button" color="warning" prepend-icon="mdi-file-document-multiple-outline" :loading="mergeSending" :disabled="mergeAllSending" @click="confirmWorkspaceFusion">Fusionar PDFs</v-btn></v-card-actions>
+                  <v-alert v-if="mergeSending" type="info" variant="tonal" class="mx-6">La fusión ya fue enviada. Puedes cerrar esta ventana; se seguirá procesando y recibirás el resultado al volver.</v-alert>
+                  <v-card-actions><v-spacer/><v-btn type="button" variant="text" @click="mergePDFDialog=false">{{ mergeSending ? 'Cerrar ventana' : 'Cancelar' }}</v-btn><v-btn type="button" color="warning" prepend-icon="mdi-file-document-multiple-outline" :loading="mergeSending" :disabled="mergeSending || mergeAllSending" @click="confirmWorkspaceFusion">Fusionar PDFs</v-btn></v-card-actions>
                 </v-card>
               </v-dialog>
               <v-dialog v-model="mergeAllConfirmDialog" max-width="600">
@@ -2260,18 +2458,19 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
                   <v-card-actions><v-spacer/><v-btn type="button" variant="text" @click="deletePDFDialog=false;deletePDFTarget=''">Cancelar</v-btn><v-btn type="button" color="error" :loading="workspaceBusy" @click="deleteWorkspacePDF">Quitar PDF</v-btn></v-card-actions>
                 </v-card>
               </v-dialog>
-              <v-dialog v-model="replacePDFDialog" max-width="460" :persistent="workspaceSending">
+              <v-dialog v-model="replacePDFDialog" max-width="460">
                 <v-card class="action-dialog">
                   <v-card-title>Reemplazar PDF</v-card-title>
                   <v-alert v-if="replacePDFError" type="error" variant="tonal" role="alert" class="mx-6">{{ replacePDFError }}</v-alert>
+                  <v-alert v-if="workspaceSending" type="info" variant="tonal" role="status" class="mx-6">El reemplazo ya fue enviado y seguirá en el servidor aunque cierres esta ventana.</v-alert>
                   <v-card-text><p>El archivo local <strong>{{ replacePDFFile?.name }}</strong> reemplazará a <strong>{{ selectedWorkspaceDocument?.name }}</strong> dentro de <strong>{{ workspacePatient }}</strong>. El archivo local adoptará automáticamente el nombre del PDF seleccionado; su nombre original se conservará solo como referencia. La versión anterior queda en las fuentes del expediente.</p></v-card-text>
-                  <v-card-actions><v-spacer/><v-btn type="button" variant="text" :disabled="workspaceSending" @click="replacePDFDialog=false;replacePDFFile=null;replacePDFTarget='';replacePDFError=''">Cancelar</v-btn><v-btn type="button" color="warning" :loading="workspaceSending" @click="confirmReplaceWorkspacePDF">Confirmar reemplazo</v-btn></v-card-actions>
+                  <v-card-actions><v-spacer/><v-btn type="button" variant="text" @click="replacePDFDialog=false;replacePDFFile=null;replacePDFTarget='';replacePDFError=''">{{ workspaceSending ? 'Cerrar ventana' : 'Cancelar' }}</v-btn><v-btn type="button" color="warning" :loading="workspaceSending" :disabled="workspaceSending" @click="confirmReplaceWorkspacePDF">Confirmar reemplazo</v-btn></v-card-actions>
                 </v-card>
               </v-dialog>
         </v-card-text>
       </v-card>
     </v-dialog>
-    <v-dialog v-model="deleteWorkspaceDialog" max-width="600" persistent>
+    <v-dialog v-model="deleteWorkspaceDialog" max-width="600" :persistent="!workspaceDeleting">
       <v-card class="action-dialog">
         <v-card-title>{{ workspaceDeleteIsObjections ? 'Eliminar espacio de objeciones' : 'Eliminar período guardado' }}</v-card-title>
         <v-card-text>
@@ -2281,8 +2480,9 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
           <div class="workspace-delete-code">{{ workspaceDeleteTargetID }}</div>
           <v-text-field :model-value="workspaceDeleteInput" label="ID del período" autocomplete="off" autocapitalize="characters" spellcheck="false" prepend-inner-icon="mdi-keyboard-outline" @update:model-value="setWorkspaceDeleteInput"/>
           <v-alert v-if="workspaceDeleteError" type="error" variant="tonal" density="comfortable">{{ workspaceDeleteError }}</v-alert>
+          <v-alert v-if="workspaceDeleting" type="info" variant="tonal" density="comfortable">La eliminación ya fue enviada. Cerrar esta ventana no la cancela; espera el resultado antes de volver a intentarlo.</v-alert>
         </v-card-text>
-        <v-card-actions><v-spacer/><v-btn type="button" variant="text" :disabled="workspaceDeleting" @click="deleteWorkspaceDialog=false;workspaceDeleteInput='';workspaceDeleteError='';workspaceDeleteTargetID='';workspaceDeleteTargetName=''">Cancelar</v-btn><v-btn type="button" color="error" prepend-icon="mdi-delete-forever-outline" :loading="workspaceDeleting" :disabled="!workspaceDeleteConfirmationMatches() || workspaceDeleting" @click="deleteWholeWorkspace">Eliminar definitivamente</v-btn></v-card-actions>
+        <v-card-actions><v-spacer/><v-btn type="button" variant="text" @click="closeWorkspaceDeleteDialog">{{ workspaceDeleting ? 'Cerrar ventana' : 'Cancelar' }}</v-btn><v-btn type="button" color="error" prepend-icon="mdi-delete-forever-outline" :loading="workspaceDeleting" :disabled="!workspaceDeleteConfirmationMatches() || workspaceDeleting" @click="deleteWholeWorkspace">Eliminar definitivamente</v-btn></v-card-actions>
       </v-card>
     </v-dialog>
     <v-dialog v-model="createSpaceDialog" max-width="420"><v-card class="action-dialog"><v-card-title>Crear un espacio</v-card-title><v-card-text><p>Organiza tus archivos en un espacio nuevo.</p><v-text-field v-model="newSpaceName" label="Nombre del espacio" placeholder="Ej. Clientes" prepend-inner-icon="mdi-folder-outline" maxlength="36" autofocus @keyup.enter="createSpace"/></v-card-text><v-card-actions><v-spacer/><v-btn variant="text" @click="createSpaceDialog=false">Cancelar</v-btn><v-btn color="primary" :disabled="!newSpaceName.trim()" @click="createSpace">Crear espacio</v-btn></v-card-actions></v-card></v-dialog>

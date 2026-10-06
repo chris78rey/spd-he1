@@ -99,6 +99,9 @@ func jobResponse(s *server, job stagedJob, output string, summary any) map[strin
 		status = "INCOMPLETE"
 	}
 	result := map[string]any{"status": status, "job_id": job.ID, "message": job.StatusDetail, "workspace": s.jobRoot(job.ID), "missing_documents": missing, "files": job.Files, "mes": job.Month, "anio": job.Year, "tipo_servicio": job.Service, "creado_por": job.Username}
+	deliveryMissing, readyForDelivery := s.workspaceDeliveryMissing(job)
+	result["delivery_missing"] = deliveryMissing
+	result["ready_for_delivery"] = readyForDelivery
 	if job.IsObjections {
 		result["es_objeciones"] = true
 		result["expediente_origen"] = job.ObjectionSourceID

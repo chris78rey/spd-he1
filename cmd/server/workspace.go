@@ -366,24 +366,16 @@ func (s *server) downloadWorkspaceZIP(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "No se encontró la carpeta preparada del expediente.")
 		return
 	}
-	if job.IsObjections {
-		if err := validateObjectionCloseout(job, root); err != nil {
-			writeError(w, http.StatusConflict, err.Error())
-			return
-		}
-	}
-	fusionGroups, err := workspaceFusionGroups(root)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "No se pudo revisar si hay documentos pendientes de fusionar.")
-		return
-	}
-	if len(fusionGroups) > 0 {
-		writeError(w, http.StatusConflict, fmt.Sprintf("Hay %d grupo(s) de PDFs reconocidos pendientes de fusionar. Fusiónalos desde la carpeta del paciente antes de descargar el ZIP final.", len(fusionGroups)))
-		return
-	}
+	_, readyForDelivery := s.workspaceDeliveryMissing(job)
+	archiveState := "READY"
 	archiveName := packageFolderName(&job) + ".zip"
+	if !readyForDelivery {
+		archiveState = "INCOMPLETE"
+		archiveName = packageFolderName(&job) + "_AVANCE_INCOMPLETO.zip"
+	}
 	w.Header().Set("Content-Type", "application/zip")
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", archiveName))
+	w.Header().Set("X-Folio-Archive-State", archiveState)
 	w.Header().Set("Cache-Control", "no-store")
 	archive := zip.NewWriter(w)
 	writeDirectory := func(name string, info os.FileInfo) error {
@@ -460,6 +452,46 @@ func (s *server) downloadWorkspaceZIP(w http.ResponseWriter, r *http.Request) {
 	if walkErr != nil || closeErr != nil {
 		log.Printf("expediente %s: falló exportación ZIP (walk=%v close=%v)", job.ID, walkErr, closeErr)
 	}
+}
+
+func (s *server) workspaceDeliveryMissing(job stagedJob) ([]string, bool) {
+	if job.Status != "PROCESSED" && job.Status != "INCOMPLETE" {
+		return []string{}, false
+	}
+	packageRoot := filepath.Join(s.jobRoot(job.ID), "trabajo", packageFolderName(&job))
+	rootInfo, err := os.Stat(packageRoot)
+	if err != nil || !rootInfo.IsDir() {
+		return []string{"No se encontró la carpeta preparada del paquete."}, false
+	}
+	var missing []string
+	if job.IsObjections {
+		missing = objectionCloseoutMissing(job, packageRoot)
+	} else {
+		required := []struct {
+			field string
+			name  string
+			valid func(string) bool
+		}{
+			{"matriz_file", matrixFilename(&job), func(filename string) bool { return validateStagedFile(filename, ".xlsm") == nil }},
+			{"consolidada_file", "2. PLANILLA CONSOLIDADA.pdf", validPDFFile},
+			{"oficio_file", "1. OFICIO DE PAGO.pdf", validPDFFile},
+		}
+		for _, item := range required {
+			filename := headerOutputFilename(&job, item.field)
+			if filename == "" || !item.valid(filepath.Join(packageRoot, filename)) {
+				missing = append(missing, item.name)
+			}
+		}
+	}
+	fusionGroups, err := workspaceFusionGroups(packageRoot)
+	if err != nil {
+		missing = append(missing, "No se pudieron comprobar las fusiones de PDFs pendientes.")
+	} else {
+		for _, group := range fusionGroups {
+			missing = append(missing, fmt.Sprintf("Fusionar PDFs pendientes: %s (%d archivos)", group.CanonicalPath, len(group.Paths)))
+		}
+	}
+	return missing, len(missing) == 0
 }
 
 func listWorkspacePDFs(packageRoot string) ([]workspacePDF, []string, error) {

@@ -334,6 +334,9 @@
 .objection-form-grid .coverage-manual-upload,.objection-document-actions .coverage-manual-upload{position:relative;display:flex;min-height:56px;flex-direction:column;align-items:flex-start;justify-content:center;gap:4px;padding:9px 12px;overflow:hidden}
 .objection-form-grid .coverage-manual-upload small,.objection-document-actions .coverage-manual-upload small{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#78857b;font-weight:400}
 .objection-patient-list{display:grid;gap:10px;margin-top:16px}
+.objection-patient-controls{display:grid;grid-template-columns:minmax(260px,1fr) auto;align-items:center;gap:14px;margin-top:18px;color:#526257;font-size:14px}
+.objection-patient-controls .v-input{max-width:560px}
+.objection-patient-pagination{margin-top:8px}
 .objection-header-row .coverage-manual-upload{flex:1;min-width:220px}
 .objection-patient-list>.saved-workspace-card{align-items:flex-start;flex-direction:column}
 .objection-document-actions{display:grid;width:100%;grid-template-columns:repeat(3,minmax(0,1fr));align-items:center;gap:10px}
@@ -363,7 +366,7 @@
   .patient-documents-modal .workspace-preview{height:65dvh;min-height:400px}
   .patient-documents-modal .workspace-edit-row{grid-template-columns:1fr}
 }
-@media(max-width:760px){.objection-form-grid{grid-template-columns:1fr}.objection-document-actions{grid-template-columns:1fr 1fr}.objection-document-actions .v-select{max-width:none}}
+@media(max-width:760px){.objection-form-grid{grid-template-columns:1fr}.objection-document-actions{grid-template-columns:1fr 1fr}.objection-document-actions .v-select{max-width:none}.objection-patient-controls{grid-template-columns:1fr;gap:6px}}
 @media(max-width:460px){.objection-document-actions{grid-template-columns:1fr}}
 
 /* Selectores compartidos de períodos: reglas finales para prevalecer sobre estilos históricos. */
@@ -420,6 +423,9 @@ body{min-width:320px}
 .patient-documents-picker-row,.zip-download-picker-row{align-items:start}
 .patient-documents-picker-row>.v-btn,.zip-download-picker-row>.v-btn{width:48px;height:48px;min-width:48px;margin-top:4px}
 .workspace-picker:focus-within{min-width:0}
+.zip-readiness-alert p{margin:0 0 8px;font-size:15px;line-height:1.5}
+.zip-readiness-list{display:grid;gap:5px;margin:6px 0 0;padding-left:24px;font-size:14px;line-height:1.5;overflow-wrap:anywhere}
+.zip-readiness-list li{padding-left:2px}
 @media(max-width:900px){
   .workspace-picker-fields,.workspace-picker-fixed-type .workspace-picker-fields{grid-template-columns:repeat(2,minmax(0,1fr))}
   .workspace-picker-menu.v-overlay__content{min-width:min(440px,calc(100vw - 24px))!important}

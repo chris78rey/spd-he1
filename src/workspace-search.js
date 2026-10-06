@@ -18,6 +18,12 @@ export function workspaceMonthValue(workspace) {
   return String(workspace?.mes || String(workspace?.period || '').slice(5, 7)).padStart(2, '0')
 }
 
+export function workspaceFilterStatusValue(workspace) {
+  if (workspace?.ready_for_delivery === true) return 'READY_FOR_DELIVERY'
+  if (['PROCESSED', 'INCOMPLETE'].includes(workspace?.status) && workspace?.ready_for_delivery === false) return 'INCOMPLETE_PACKAGE'
+  return workspace?.status || ''
+}
+
 export function orderWorkspaceRecords(workspaces = []) {
   return [...workspaces].sort((left, right) => {
     const leftYear = Number(workspaceYearLabel(left)) || 0
@@ -40,7 +46,11 @@ export function filterWorkspaceRecords(workspaces = [], filters = {}, labels = {
     if (filters.service && filters.service !== 'ALL' && workspace.tipo_servicio !== filters.service) return false
     const year = workspaceYearLabel(workspace)
     if (filters.year && filters.year !== 'ALL' && year !== filters.year) return false
-    if (filters.status && filters.status !== 'ALL' && workspace.status !== filters.status) return false
+    if (filters.status && filters.status !== 'ALL') {
+      if (filters.status === 'READY_FOR_DELIVERY' && workspace.ready_for_delivery !== true) return false
+      if (filters.status === 'INCOMPLETE_PACKAGE' && (!['PROCESSED', 'INCOMPLETE'].includes(workspace.status) || workspace.ready_for_delivery === true)) return false
+      if (!['READY_FOR_DELIVERY', 'INCOMPLETE_PACKAGE'].includes(filters.status) && workspace.status !== filters.status) return false
+    }
     if (!queryTerms.length) return true
 
     const searchText = [
@@ -55,8 +65,10 @@ export function filterWorkspaceRecords(workspaces = [], filters = {}, labels = {
       workspace.creado_por,
       workspace.message,
       (labels.statusLabel || (value => value || ''))(workspace.status),
+      workspace.ready_for_delivery === true ? 'Listo para entrega' : workspace.ready_for_delivery === false ? 'Avance incompleto' : '',
       (labels.receivedAt || (value => value || ''))(workspace.received_at),
       ...(workspace.missing_documents || []),
+      ...(workspace.delivery_missing || []),
     ].filter(Boolean).join(' ')
     const normalizedText = normalizeWorkspaceSearch(searchText)
     return queryTerms.every(term => normalizedText.includes(term))
