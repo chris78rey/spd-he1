@@ -6,9 +6,9 @@
     "semantic_hash": ""
   },
   "src/App.vue": {
-    "mtime": 1791302372.7727747,
-    "seen": 1791302392.7108634,
-    "ast_hash": "098badb5e89b10b79ada663549a5123d",
+    "mtime": 1791304019.7546883,
+    "seen": 1791304044.9630158,
+    "ast_hash": "8dc6c8e3ac6ed401bdcc94197a53741f",
     "semantic_hash": ""
   },
   "src/main.js": {
@@ -30,9 +30,9 @@
     "semantic_hash": ""
   },
   "PRINCIPIOS_DE_PRODUCTO.md": {
-    "mtime": 1791302190.735674,
-    "seen": 1791302244.1385434,
-    "ast_hash": "c07cf60f769ba518fd05c6e377ddade0",
+    "mtime": 1791303517.5887175,
+    "seen": 1791303598.132296,
+    "ast_hash": "1c4cce3736738f0814e14805732e144c",
     "semantic_hash": ""
   },
   "index.html": {
@@ -279,6 +279,18 @@
     "mtime": 1791290149.0807476,
     "seen": 1791290156.664826,
     "ast_hash": "7aaacf338bb7fbb5db48a997a4e11ba9",
+    "semantic_hash": ""
+  },
+  "src/components/WorkspacePicker.vue": {
+    "mtime": 1791303865.173767,
+    "seen": 1791303954.392906,
+    "ast_hash": "0a94d55ea4d120dd3d42d124cde4cdb7",
+    "semantic_hash": ""
+  },
+  "src/workspace-search.js": {
+    "mtime": 1791303533.3068092,
+    "seen": 1791303598.1322868,
+    "ast_hash": "40996c280a89328ceea492857ae26bbe",
     "semantic_hash": ""
   }
 }

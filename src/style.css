@@ -365,3 +365,81 @@
 }
 @media(max-width:760px){.objection-form-grid{grid-template-columns:1fr}.objection-document-actions{grid-template-columns:1fr 1fr}.objection-document-actions .v-select{max-width:none}}
 @media(max-width:460px){.objection-document-actions{grid-template-columns:1fr}}
+
+/* Selectores compartidos de períodos: reglas finales para prevalecer sobre estilos históricos. */
+body{min-width:320px}
+.workspace-picker{display:grid;min-width:0;width:100%;gap:9px}
+.workspace-picker-fields{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.workspace-picker-fixed-type .workspace-picker-fields{grid-template-columns:repeat(3,minmax(0,1fr))}
+.workspace-picker-fields>.workspace-picker-search{grid-column:1/-1}
+.workspace-picker .v-field{font-size:16px!important}
+.workspace-picker .v-field__input{min-height:52px!important;font-size:16px!important;line-height:1.4}
+.workspace-picker .v-field__input input,.workspace-picker .v-select__selection-text{font-size:16px!important}
+.workspace-picker .v-label{font-size:14px!important}
+.workspace-picker .v-field__input input::placeholder{font-size:16px!important;opacity:1;color:#59685e}
+.workspace-picker-fields>.v-select .v-field__input{align-items:center;white-space:normal}
+.workspace-picker-fields .v-select__selection{min-width:0;max-width:100%}
+.workspace-picker-fields .v-select__selection-text{overflow-wrap:anywhere;white-space:normal;line-height:1.3}
+.workspace-picker-results{display:flex;min-height:42px;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px 12px;color:#405147;font-size:14px;line-height:1.45}
+.workspace-picker-results>.v-btn,.workspace-picker-selection-note>.v-btn{min-height:44px;font-size:14px}
+.workspace-picker-filter-menu .v-list-item,.saved-workspace-filter-menu .v-list-item{min-height:48px;padding-block:8px}
+.workspace-picker-filter-menu .v-list-item-title,.saved-workspace-filter-menu .v-list-item-title{overflow-wrap:anywhere;font-size:16px!important;line-height:1.4;white-space:normal}
+.workspace-picker-selection-note{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;padding:10px 12px;border:1px solid #d6e0d6;border-radius:9px;background:#f5f8f4;color:#34463a;font-size:14px;line-height:1.5}
+.workspace-picker-select .v-field__input{min-height:62px!important;white-space:normal;overflow:visible}
+.workspace-picker-selection{display:block;min-width:0;width:100%;overflow-wrap:anywhere;white-space:normal;color:#263a2d;font-size:16px;font-weight:600;line-height:1.4}
+.workspace-picker-menu.v-overlay__content{width:min(860px,calc(100vw - 24px))!important;min-width:min(600px,calc(100vw - 24px))!important;max-width:calc(100vw - 24px)!important}
+.workspace-picker-menu .v-list-item{min-height:104px!important;align-items:flex-start;padding-block:11px!important}
+.workspace-picker-menu .v-list-item:focus-visible,.workspace-picker-menu .v-list-item--active{outline:2px solid #3f7450;outline-offset:-2px}
+.workspace-picker-option .v-list-item__content{display:grid;min-width:0;gap:4px;white-space:normal}
+.workspace-picker-option .v-list-item__subtitle{display:grid;gap:3px;overflow:visible;opacity:1;white-space:normal;-webkit-box-orient:initial;-webkit-line-clamp:unset}
+.workspace-picker-option-title{display:block;overflow-wrap:anywhere;color:#263a2d;font-size:16px;font-weight:700;line-height:1.4;white-space:normal}
+.workspace-picker-option-details{display:block;overflow-wrap:anywhere;color:#405147;font-size:14px;line-height:1.45;white-space:normal}
+.workspace-picker-option-message{color:#53645a}
+.workspace-picker-no-results{display:grid;justify-items:start;gap:5px;padding:14px;color:#34463a;font-size:14px;line-height:1.5;white-space:normal}
+.workspace-picker-no-results>strong{font-size:16px}
+.workspace-picker-no-results>.v-btn{min-height:44px;font-size:14px}
+.saved-workspace-filters .v-field{font-size:16px!important}
+.saved-workspace-filters .v-field__input{min-height:50px!important;font-size:16px!important}
+.saved-workspace-filters .v-label{font-size:14px!important}
+.saved-workspace-results-toolbar p{color:#526256;font-size:14px}
+.saved-workspace-title-row h3{font-size:16px}
+.saved-workspace-title-row .v-chip{min-height:30px;font-size:14px}
+.saved-workspace-missing,.saved-workspace-message{font-size:14px;line-height:1.5}
+.saved-workspace-meta{color:#526256;font-size:14px;line-height:1.5}
+.saved-workspace-meta code{color:#526256}
+.saved-workspaces-empty strong{font-size:16px}
+.saved-workspaces-empty small{color:#53645a;font-size:14px;line-height:1.5}
+.coverage-picker-actions{display:grid;gap:10px;min-width:0;margin:4px 0 14px}
+.coverage-picker-buttons{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:10px}
+.coverage-picker-buttons>.v-btn,.objection-source-picker-row>.v-btn,.objection-workspace-picker-buttons>.v-btn{min-height:48px}
+.objection-source-picker-row,.objection-workspace-picker-row,.patient-documents-picker-row,.zip-download-picker-row{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:12px;min-width:0}
+.objection-source-picker-row>.v-btn{align-self:end}
+.objection-workspace-picker-buttons{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
+.objection-existing-choices .v-btn{height:auto;min-height:48px;max-width:100%;text-align:left;white-space:normal}
+.objection-existing-choices .v-btn__content{white-space:normal;overflow-wrap:anywhere}
+.patient-documents-picker-row,.zip-download-picker-row{align-items:start}
+.patient-documents-picker-row>.v-btn,.zip-download-picker-row>.v-btn{width:48px;height:48px;min-width:48px;margin-top:4px}
+.workspace-picker:focus-within{min-width:0}
+@media(max-width:900px){
+  .workspace-picker-fields,.workspace-picker-fixed-type .workspace-picker-fields{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .workspace-picker-menu.v-overlay__content{min-width:min(440px,calc(100vw - 24px))!important}
+}
+@media(max-width:640px){
+  .objection-source-picker-row,.objection-workspace-picker-row,.patient-documents-picker-row,.zip-download-picker-row{grid-template-columns:minmax(0,1fr)}
+  .objection-source-picker-row>.v-btn,.objection-workspace-picker-buttons>.v-btn{width:100%}
+  .objection-workspace-picker-buttons{display:grid;grid-template-columns:1fr 1fr}
+  .patient-documents-picker-row>.v-btn,.zip-download-picker-row>.v-btn{justify-self:end;margin-top:0}
+  .coverage-picker-buttons{display:grid;grid-template-columns:1fr}
+  .coverage-picker-buttons>.v-btn{width:100%}
+  .workspace-picker-results{align-items:flex-start;flex-direction:column}
+  .workspace-picker-results>.v-btn{align-self:flex-end}
+  .workspace-picker-selection-note{align-items:flex-start;flex-direction:column}
+  .workspace-picker-selection-note>.v-btn{align-self:flex-end}
+  .saved-workspace-meta{align-items:flex-start;flex-direction:column;gap:4px}
+}
+@media(max-width:380px){
+  .workspace-picker-fields,.workspace-picker-fixed-type .workspace-picker-fields{grid-template-columns:minmax(0,1fr)}
+  .workspace-picker-fields>.workspace-picker-search{grid-column:auto}
+  .workspace-picker-menu.v-overlay__content{width:calc(100vw - 16px)!important;min-width:calc(100vw - 16px)!important;max-width:calc(100vw - 16px)!important}
+  .objection-workspace-picker-buttons{grid-template-columns:1fr}
+}
