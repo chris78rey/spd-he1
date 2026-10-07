@@ -17,7 +17,7 @@ func TestDeleteObjectionWorkspaceLeavesSourceUntouched(t *testing.T) {
 	s := &server{
 		workspacesDir: workspacesDir,
 		sessions: map[string]session{
-			"test-session": {username: "tester", expiresAt: time.Now().Add(time.Hour)},
+			"test-session": {username: "tester", canDeleteWorkspaces: true, expiresAt: time.Now().Add(time.Hour)},
 		},
 	}
 
@@ -64,6 +64,62 @@ func TestDeleteObjectionWorkspaceLeavesSourceUntouched(t *testing.T) {
 	}
 	if !strings.Contains(response.Body.String(), "Oracle no se modificaron") {
 		t.Fatalf("delete response did not confirm Oracle/source isolation: %s", response.Body.String())
+	}
+}
+
+func TestDeleteWorkspaceForbiddenWithoutPermissionLeavesFilesUntouched(t *testing.T) {
+	for _, isObjections := range []bool{false, true} {
+		name := "reception"
+		if isObjections {
+			name = "objections"
+		}
+		t.Run(name, func(t *testing.T) {
+			workspacesDir := filepath.Join(t.TempDir(), "expedientes")
+			s := &server{
+				workspacesDir: workspacesDir,
+				sessions: map[string]session{
+					"test-session": {username: "externo", canDeleteWorkspaces: false, expiresAt: time.Now().Add(time.Hour)},
+				},
+			}
+			id := "JOB-20261007T163017-2e7af437885fb830"
+			if !isObjections {
+				id = "WORK-AMBULATORIO-202608"
+			}
+			job := stagedJob{ID: id, Status: "PROCESSED", IsObjections: isObjections}
+			if err := os.MkdirAll(s.jobRoot(id), 0700); err != nil {
+				t.Fatal(err)
+			}
+			metadata, err := json.Marshal(job)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(s.jobRoot(id), "job.json"), metadata, 0600); err != nil {
+				t.Fatal(err)
+			}
+			marker := filepath.Join(s.jobRoot(id), "trabajo", "marcador.pdf")
+			if err := os.MkdirAll(filepath.Dir(marker), 0700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(marker, []byte("preservar"), 0600); err != nil {
+				t.Fatal(err)
+			}
+
+			request := httptest.NewRequest(http.MethodDelete, "/api/v1/expedientes/eliminar/"+id,
+				bytes.NewBufferString(`{"confirmacion":"`+id+`"}`))
+			request.AddCookie(&http.Cookie{Name: "folio_session", Value: "test-session"})
+			response := httptest.NewRecorder()
+			s.deleteWorkspace(response, request)
+
+			if response.Code != http.StatusForbidden {
+				t.Fatalf("deleteWorkspace() status = %d, want 403, body = %s", response.Code, response.Body.String())
+			}
+			if content, err := os.ReadFile(marker); err != nil || string(content) != "preservar" {
+				t.Fatalf("workspace files changed after denied deletion: content = %q, error = %v", content, err)
+			}
+			if _, err := os.Stat(filepath.Join(s.jobRoot(id), "job.json")); err != nil {
+				t.Fatalf("workspace metadata changed after denied deletion: %v", err)
+			}
+		})
 	}
 }
 

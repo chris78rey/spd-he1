@@ -35,6 +35,7 @@ const oraclePassword = ref('')
 const showPassword = ref(false)
 const signingIn = ref(false)
 const currentUser = ref('')
+const canDeleteWorkspaces = ref(false)
 const displayUser = computed(() => currentUser.value.toLocaleUpperCase('es'))
 const activePage = ref('ingesta')
 const planillaPage = ref(1)
@@ -357,20 +358,23 @@ async function loadDocuments() {
 async function checkSession() {
   try {
     const response = await fetch('/api/session', { credentials: 'same-origin' })
-    if (!response.ok) { authStatus.value = 'anonymous'; return }
+    if (!response.ok) { canDeleteWorkspaces.value = false; authStatus.value = 'anonymous'; return }
     const data = await response.json()
     currentUser.value = data.username
+    canDeleteWorkspaces.value = data.can_delete_workspaces === true
     authStatus.value = 'authenticated'
     await loadDocuments()
     await validateCachedIngest()
     await loadSavedWorkspaces()
   } catch {
+    canDeleteWorkspaces.value = false
     authStatus.value = 'anonymous'
     authError.value = 'No se pudo conectar con el servicio de inicio de sesión.'
   }
 }
 async function signIn() {
   authError.value = ''
+  canDeleteWorkspaces.value = false
   signingIn.value = true
   try {
     const response = await fetch('/api/login', {
@@ -382,12 +386,14 @@ async function signIn() {
     const data = await response.json().catch(() => ({}))
     if (!response.ok) throw new Error(data.error || 'No se pudo iniciar sesión.')
     currentUser.value = data.username
+    canDeleteWorkspaces.value = data.can_delete_workspaces === true
     oraclePassword.value = ''
     authStatus.value = 'authenticated'
     await loadDocuments()
     await validateCachedIngest()
     await loadSavedWorkspaces()
   } catch (error) {
+    canDeleteWorkspaces.value = false
     authError.value = error.message || 'No se pudo conectar con Oracle.'
   } finally {
     signingIn.value = false
@@ -397,6 +403,7 @@ async function signOut() {
   try { await fetch('/api/logout', { method: 'POST', credentials: 'same-origin' }) } catch { /* La sesión local se cierra aunque falle la petición. */ }
   authStatus.value = 'anonymous'
   currentUser.value = ''
+  canDeleteWorkspaces.value = false
   oraclePassword.value = ''
 }
 async function openPlanilla() {
@@ -913,7 +920,7 @@ function requestDeleteWorkspacePDF(path) {
   deletePDFDialog.value = true
 }
 function requestDeleteWorkspace(jobId = ingestResult.value?.job_id) {
-  if (!jobId || workspaceDeleting.value) return
+  if (!canDeleteWorkspaces.value || !jobId || workspaceDeleting.value) return
   workspaceDeleteTargetID.value = jobId
   workspaceDeleteTargetName.value = jobId === ingestResult.value?.job_id
     ? ingestResult.value.workspace?.split('/').at(-1) || jobId
@@ -938,7 +945,7 @@ function closeWorkspaceDeleteDialog() {
 async function deleteWholeWorkspace() {
   const jobId = workspaceDeleteTargetID.value
   const deletedFolder = workspaceDeleteTargetName.value
-  if (!workspaceDeleteConfirmationMatches() || workspaceDeleting.value) return
+  if (!canDeleteWorkspaces.value || !workspaceDeleteConfirmationMatches() || workspaceDeleting.value) return
   workspaceDeleteError.value = ''
   workspaceDeleting.value = true
   try {
@@ -2075,7 +2082,7 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
               />
               <div class="objection-workspace-picker-buttons">
                 <v-btn type="button" color="primary" variant="tonal" prepend-icon="mdi-folder-open-outline" :disabled="!objectionSelectedWorkspace || objectionBusy || workspaceDeleting" @click="loadObjectionWorkspace(objectionSelectedWorkspace)">Abrir</v-btn>
-                <v-btn type="button" color="error" variant="tonal" prepend-icon="mdi-delete-outline" :disabled="!objectionSelectedWorkspace || objectionBusy || workspaceDeleting" @click="requestDeleteWorkspace(objectionSelectedWorkspace)">Eliminar</v-btn>
+                <v-btn v-if="canDeleteWorkspaces" type="button" color="error" variant="tonal" prepend-icon="mdi-delete-outline" :disabled="!objectionSelectedWorkspace || objectionBusy || workspaceDeleting" @click="requestDeleteWorkspace(objectionSelectedWorkspace)">Eliminar</v-btn>
               </div>
             </div>
             <div v-if="!objectionWorkspaceItems.length && !savedWorkspacesLoading" class="planilla-state"><v-icon icon="mdi-folder-search-outline" size="24"/><span>Aún no hay espacios de objeciones.</span></div>
@@ -2253,7 +2260,7 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
                         <div class="saved-workspace-meta"><span v-if="workspaceReceivedAt(workspace.received_at)"><v-icon icon="mdi-clock-outline" size="14"/> {{ workspaceReceivedAt(workspace.received_at) }}</span><span><v-icon icon="mdi-account-outline" size="14"/> {{ workspace.creado_por || 'Usuario anterior' }}</span><code>{{ workspace.job_id }}</code></div>
                       </div>
                     </div>
-                    <div class="saved-workspace-card-actions"><v-btn type="button" color="primary" prepend-icon="mdi-folder-open-outline" :loading="openingSavedWorkspace && selectedSavedWorkspace === workspace.job_id" :disabled="openingSavedWorkspace || workspaceDeleting" @click="openSavedWorkspace(workspace.job_id)">Continuar</v-btn><v-btn type="button" icon="mdi-delete-outline" variant="text" color="error" :aria-label="`Eliminar período ${workspace.job_id}`" title="Eliminar período" :disabled="openingSavedWorkspace || workspaceDeleting" @click="requestDeleteWorkspace(workspace.job_id)"/></div>
+                    <div class="saved-workspace-card-actions"><v-btn type="button" color="primary" prepend-icon="mdi-folder-open-outline" :loading="openingSavedWorkspace && selectedSavedWorkspace === workspace.job_id" :disabled="openingSavedWorkspace || workspaceDeleting" @click="openSavedWorkspace(workspace.job_id)">Continuar</v-btn><v-btn v-if="canDeleteWorkspaces" type="button" icon="mdi-delete-outline" variant="text" color="error" :aria-label="`Eliminar período ${workspace.job_id}`" title="Eliminar período" :disabled="openingSavedWorkspace || workspaceDeleting" @click="requestDeleteWorkspace(workspace.job_id)"/></div>
                   </article>
                 </div>
               </template>
@@ -2482,7 +2489,7 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
           <v-alert v-if="workspaceDeleteError" type="error" variant="tonal" density="comfortable">{{ workspaceDeleteError }}</v-alert>
           <v-alert v-if="workspaceDeleting" type="info" variant="tonal" density="comfortable">La eliminación ya fue enviada. Cerrar esta ventana no la cancela; espera el resultado antes de volver a intentarlo.</v-alert>
         </v-card-text>
-        <v-card-actions><v-spacer/><v-btn type="button" variant="text" @click="closeWorkspaceDeleteDialog">{{ workspaceDeleting ? 'Cerrar ventana' : 'Cancelar' }}</v-btn><v-btn type="button" color="error" prepend-icon="mdi-delete-forever-outline" :loading="workspaceDeleting" :disabled="!workspaceDeleteConfirmationMatches() || workspaceDeleting" @click="deleteWholeWorkspace">Eliminar definitivamente</v-btn></v-card-actions>
+        <v-card-actions><v-spacer/><v-btn type="button" variant="text" @click="closeWorkspaceDeleteDialog">{{ workspaceDeleting ? 'Cerrar ventana' : 'Cancelar' }}</v-btn><v-btn v-if="canDeleteWorkspaces" type="button" color="error" prepend-icon="mdi-delete-forever-outline" :loading="workspaceDeleting" :disabled="!workspaceDeleteConfirmationMatches() || workspaceDeleting" @click="deleteWholeWorkspace">Eliminar definitivamente</v-btn></v-card-actions>
       </v-card>
     </v-dialog>
     <v-dialog v-model="createSpaceDialog" max-width="420"><v-card class="action-dialog"><v-card-title>Crear un espacio</v-card-title><v-card-text><p>Organiza tus archivos en un espacio nuevo.</p><v-text-field v-model="newSpaceName" label="Nombre del espacio" placeholder="Ej. Clientes" prepend-inner-icon="mdi-folder-outline" maxlength="36" autofocus @keyup.enter="createSpace"/></v-card-text><v-card-actions><v-spacer/><v-btn variant="text" @click="createSpaceDialog=false">Cancelar</v-btn><v-btn color="primary" :disabled="!newSpaceName.trim()" @click="createSpace">Crear espacio</v-btn></v-card-actions></v-card></v-dialog>

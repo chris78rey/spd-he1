@@ -133,9 +133,13 @@ func (s *server) deleteWorkspace(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusMethodNotAllowed, "Método no permitido.")
 		return
 	}
-	_, ok := s.getSession(r)
+	entry, ok := s.getSession(r)
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "Inicia sesión para continuar.")
+		return
+	}
+	if !entry.canDeleteWorkspaces {
+		writeError(w, http.StatusForbidden, "Tu usuario no tiene asignado el rol Oracle SPD_BORRA_EXPEDIENTE.")
 		return
 	}
 	id := strings.TrimPrefix(r.URL.Path, "/api/v1/expedientes/eliminar/")

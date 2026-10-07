@@ -26,13 +26,15 @@ import (
 
 const sessionDuration = 8 * time.Hour
 const requiredOracleRole = "SPD_EXTERNOS"
+const deleteWorkspaceOracleRole = "SPD_BORRA_EXPEDIENTE"
 const planillaPageSize = 10
 
 var oracleIdentifierPattern = regexp.MustCompile(`^[A-Z][A-Z0-9_$#]{0,127}$`)
 
 type session struct {
-	username  string
-	expiresAt time.Time
+	username            string
+	canDeleteWorkspaces bool
+	expiresAt           time.Time
 }
 
 type server struct {
@@ -154,7 +156,7 @@ func (s *server) login(w http.ResponseWriter, r *http.Request) {
 
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
-	hasRequiredRole, err := oracleHasRole(ctx, db)
+	hasRequiredRole, err := oracleHasRole(ctx, db, requiredOracleRole)
 	if err != nil {
 		log.Printf("No fue posible comprobar el rol requerido de Oracle (%T)", err)
 		writeError(w, http.StatusServiceUnavailable, "No se pudo comprobar el rol de Oracle. Inténtalo de nuevo más tarde.")
@@ -164,6 +166,11 @@ func (s *server) login(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, "Tu usuario Oracle no tiene asignado el rol SPD_EXTERNOS.")
 		return
 	}
+	canDeleteWorkspaces, permissionErr := oracleHasRole(ctx, db, deleteWorkspaceOracleRole)
+	if permissionErr != nil {
+		log.Printf("No fue posible comprobar el permiso de borrado de períodos en Oracle (%T); se denegará ese permiso", permissionErr)
+		canDeleteWorkspaces = false
+	}
 
 	sid, err := newSessionID()
 	if err != nil {
@@ -172,14 +179,14 @@ func (s *server) login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.mu.Lock()
-	s.sessions[sid] = session{username: strings.TrimSpace(input.Username), expiresAt: time.Now().Add(sessionDuration)}
+	s.sessions[sid] = session{username: strings.TrimSpace(input.Username), canDeleteWorkspaces: canDeleteWorkspaces, expiresAt: time.Now().Add(sessionDuration)}
 	s.mu.Unlock()
 	http.SetCookie(w, &http.Cookie{
 		Name: "folio_session", Value: sid, Path: "/api", HttpOnly: true,
 		Secure: s.cookieSecure || r.TLS != nil, SameSite: http.SameSiteStrictMode,
 		Expires: time.Now().Add(sessionDuration), MaxAge: int(sessionDuration.Seconds()),
 	})
-	writeJSON(w, http.StatusOK, map[string]string{"username": strings.TrimSpace(input.Username)})
+	writeJSON(w, http.StatusOK, map[string]any{"username": strings.TrimSpace(input.Username), "can_delete_workspaces": canDeleteWorkspaces})
 }
 
 func (s *server) openOracle(username, password string) (*sql.DB, error) {
@@ -206,11 +213,11 @@ func (s *server) openOracle(username, password string) (*sql.DB, error) {
 	return db, nil
 }
 
-func oracleHasRole(ctx context.Context, db *sql.DB) (bool, error) {
+func oracleHasRole(ctx context.Context, db *sql.DB, role string) (bool, error) {
 	var count int
 	err := db.QueryRowContext(ctx,
 		"SELECT COUNT(*) FROM USER_ROLE_PRIVS WHERE GRANTED_ROLE = :role",
-		sql.Named("role", requiredOracleRole),
+		sql.Named("role", role),
 	).Scan(&count)
 	return count > 0, err
 }
@@ -314,7 +321,7 @@ func (s *server) currentSession(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "Inicia sesión para continuar.")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"username": entry.username})
+	writeJSON(w, http.StatusOK, map[string]any{"username": entry.username, "can_delete_workspaces": entry.canDeleteWorkspaces})
 }
 
 func (s *server) logout(w http.ResponseWriter, r *http.Request) {
