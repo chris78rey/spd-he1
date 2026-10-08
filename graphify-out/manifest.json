@@ -30,9 +30,9 @@
     "semantic_hash": ""
   },
   "PRINCIPIOS_DE_PRODUCTO.md": {
-    "mtime": 1791489719.605501,
-    "seen": 1791489750.1382902,
-    "ast_hash": "1aafa92d3a58428140ae7a3f6b82b141",
+    "mtime": 1791491023.1172924,
+    "seen": 1791491052.802505,
+    "ast_hash": "18a92df72ce6980e77cc46456b4cef59",
     "semantic_hash": ""
   },
   "index.html": {
@@ -144,9 +144,9 @@
     "semantic_hash": ""
   },
   "cmd/server/workspace.go": {
-    "mtime": 1791489727.598551,
-    "seen": 1791489750.1382024,
-    "ast_hash": "2de7aab98d193f874f11b97841befa26",
+    "mtime": 1791491023.1162925,
+    "seen": 1791491052.8024123,
+    "ast_hash": "7fc412a67f914eb708fb41ca04a01312",
     "semantic_hash": ""
   },
   "catalogos/codigos_msp.json": {
@@ -294,9 +294,9 @@
     "semantic_hash": ""
   },
   "cmd/server/workspace_download_test.go": {
-    "mtime": 1791386149.262115,
-    "seen": 1791386176.904157,
-    "ast_hash": "002d590f91da4ed4440d63a45a7a24f6",
+    "mtime": 1791491023.1172924,
+    "seen": 1791491052.8024287,
+    "ast_hash": "95f73fa3261643c741a43ef47e0aed6e",
     "semantic_hash": ""
   },
   "cmd/server/objeciones_sync.go": {

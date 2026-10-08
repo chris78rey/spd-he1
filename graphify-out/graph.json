@@ -16207,7 +16207,7 @@
       "file_type": "code",
       "norm_label": "listworkspacepdfs()",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L720"
+      "source_location": "L734"
     },
     {
       "id": "cmd_server_workspace_nextmsppdfname",
@@ -16229,7 +16229,7 @@
       "file_type": "code",
       "norm_label": "safeworkspacepath()",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L923"
+      "source_location": "L937"
     },
     {
       "id": "go_type_mime_multipart_fileheader",
@@ -16284,7 +16284,7 @@
       "file_type": "code",
       "norm_label": ".addworkspacepdfs()",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L1396"
+      "source_location": "L1410"
     },
     {
       "id": "server_server_buildpatientfolders",
@@ -16493,7 +16493,7 @@
       "file_type": "code",
       "norm_label": ".mergeworkspacepdfs()",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L1159"
+      "source_location": "L1173"
     },
     {
       "id": "server_server_migratetoperiodworkspace",
@@ -16592,7 +16592,7 @@
       "file_type": "code",
       "norm_label": ".renameworkspacepdf()",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L1015"
+      "source_location": "L1029"
     },
     {
       "id": "server_server_replaceheaderfile",
@@ -16636,7 +16636,7 @@
       "file_type": "code",
       "norm_label": ".serveworkspacepdf()",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L968"
+      "source_location": "L982"
     },
     {
       "id": "server_server_setingesttramitemapping",
@@ -20975,7 +20975,7 @@
       "file_type": "code",
       "norm_label": "testdownloadobjectionzipkeepsrepeatedpatienttransactionsinseparatenumberedfolders()",
       "source_file": "cmd/server/workspace_download_test.go",
-      "source_location": "L238"
+      "source_location": "L241"
     },
     {
       "id": "cmd_server_workspace_download_test_testdownloadworkspacezipmarksincompleteprogresswithoutchangingworkspace",
@@ -20997,7 +20997,7 @@
       "file_type": "code",
       "norm_label": "testdownloadworkspacezipnamescompletepackagefordelivery()",
       "source_file": "cmd/server/workspace_download_test.go",
-      "source_location": "L308"
+      "source_location": "L321"
     },
     {
       "id": "cmd_server_workspace_download_test_withrepositoryworkingdirectory",
@@ -21008,7 +21008,7 @@
       "file_type": "code",
       "norm_label": "withrepositoryworkingdirectory()",
       "source_file": "cmd/server/workspace_download_test.go",
-      "source_location": "L366"
+      "source_location": "L379"
     },
     {
       "id": "go_type_net_http_httptest_responserecorder",
@@ -21833,7 +21833,7 @@
       "file_type": "code",
       "norm_label": "testnormalizearchivepatientname()",
       "source_file": "cmd/server/workspace_download_test.go",
-      "source_location": "L178"
+      "source_location": "L181"
     },
     {
       "id": "cmd_server_workspace_download_test_testworkspacearchivepatientfolderssortsandkeepstransactionsseparate",
@@ -21844,7 +21844,7 @@
       "file_type": "code",
       "norm_label": "testworkspacearchivepatientfolderssortsandkeepstransactionsseparate()",
       "source_file": "cmd/server/workspace_download_test.go",
-      "source_location": "L185"
+      "source_location": "L188"
     },
     {
       "id": "cmd_server_workspace_isarchivenumericidentifier",
@@ -22592,7 +22592,7 @@
       "file_type": "code",
       "norm_label": "iscoveragepdfname()",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L768"
+      "source_location": "L782"
     },
     {
       "id": "cmd_server_workspace_workspacecoveragemetadataforpaths",
@@ -22603,7 +22603,7 @@
       "file_type": "code",
       "norm_label": "workspacecoveragemetadataforpaths()",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L871"
+      "source_location": "L885"
     },
     {
       "id": "server_coveragedateindex",
@@ -24448,7 +24448,7 @@
       "file_type": "code",
       "norm_label": "copyreplaceprivatefile()",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L939"
+      "source_location": "L953"
     },
     {
       "id": "cmd_server_workspace_loadmsppdfcodeset",
@@ -24481,7 +24481,7 @@
       "file_type": "code",
       "norm_label": "workspacecoverageplanillaid()",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L776"
+      "source_location": "L790"
     },
     {
       "id": "cmd_server_workspace_workspacefusiongroups",
@@ -24492,7 +24492,7 @@
       "file_type": "code",
       "norm_label": "workspacefusiongroups()",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L803"
+      "source_location": "L817"
     },
     {
       "id": "cmd_server_workspace_workspacefusiongroupswithcodes",
@@ -24503,7 +24503,7 @@
       "file_type": "code",
       "norm_label": "workspacefusiongroupswithcodes()",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L811"
+      "source_location": "L825"
     },
     {
       "id": "server_objectionpackagepdf",
@@ -24635,7 +24635,7 @@
       "file_type": "code",
       "norm_label": ".workspacedeliverymissing()",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L680"
+      "source_location": "L694"
     },
     {
       "id": "server_stagedjob",
@@ -24668,7 +24668,7 @@
       "file_type": "code",
       "norm_label": "workspacefusiongroup",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L759"
+      "source_location": "L773"
     },
     {
       "id": "requerimientos_09_estado_real_implementacion_n015",
@@ -27477,7 +27477,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "cmd/server/workspace_download_test.go",
-      "source_location": "L239",
+      "source_location": "L242",
       "weight": 1.0
     },
     {
@@ -27501,7 +27501,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "cmd/server/workspace_download_test.go",
-      "source_location": "L309",
+      "source_location": "L322",
       "weight": 1.0
     },
     {
@@ -27537,7 +27537,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L897",
+      "source_location": "L911",
       "weight": 1.0
     },
     {
@@ -27549,7 +27549,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L804",
+      "source_location": "L818",
       "weight": 1.0
     },
     {
@@ -27561,7 +27561,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L808",
+      "source_location": "L822",
       "weight": 1.0
     },
     {
@@ -27573,7 +27573,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L812",
+      "source_location": "L826",
       "weight": 1.0
     },
     {
@@ -27585,7 +27585,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L838",
+      "source_location": "L852",
       "weight": 1.0
     },
     {
@@ -62181,7 +62181,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L1424",
+      "source_location": "L1438",
       "weight": 1.0
     },
     {
@@ -62193,7 +62193,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L1440",
+      "source_location": "L1454",
       "weight": 1.0
     },
     {
@@ -62205,7 +62205,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L1527",
+      "source_location": "L1541",
       "weight": 1.0
     },
     {
@@ -62217,7 +62217,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L1530",
+      "source_location": "L1544",
       "weight": 1.0
     },
     {
@@ -62229,7 +62229,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L1555",
+      "source_location": "L1569",
       "weight": 1.0
     },
     {
@@ -62241,7 +62241,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L1610",
+      "source_location": "L1624",
       "weight": 1.0
     },
     {
@@ -62901,7 +62901,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L620",
+      "source_location": "L624",
       "weight": 1.0
     },
     {
@@ -63645,7 +63645,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L1193",
+      "source_location": "L1207",
       "weight": 1.0
     },
     {
@@ -63657,7 +63657,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L1241",
+      "source_location": "L1255",
       "weight": 1.0
     },
     {
@@ -63669,7 +63669,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L1312",
+      "source_location": "L1326",
       "weight": 1.0
     },
     {
@@ -63681,7 +63681,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L1314",
+      "source_location": "L1328",
       "weight": 1.0
     },
     {
@@ -63693,7 +63693,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L1315",
+      "source_location": "L1329",
       "weight": 1.0
     },
     {
@@ -63705,7 +63705,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L1388",
+      "source_location": "L1402",
       "weight": 1.0
     },
     {
@@ -64317,7 +64317,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L1056",
+      "source_location": "L1070",
       "weight": 1.0
     },
     {
@@ -64329,7 +64329,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L1067",
+      "source_location": "L1081",
       "weight": 1.0
     },
     {
@@ -64341,7 +64341,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L1076",
+      "source_location": "L1090",
       "weight": 1.0
     },
     {
@@ -64545,7 +64545,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L993",
+      "source_location": "L1007",
       "weight": 1.0
     },
     {
@@ -65049,7 +65049,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L709",
+      "source_location": "L723",
       "weight": 1.0
     },
     {
@@ -71913,7 +71913,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "cmd/server/workspace_download_test.go",
-      "source_location": "L238",
+      "source_location": "L241",
       "weight": 1.0
     },
     {
@@ -71937,7 +71937,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "cmd/server/workspace_download_test.go",
-      "source_location": "L308",
+      "source_location": "L321",
       "weight": 1.0
     },
     {
@@ -71949,7 +71949,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "cmd/server/workspace_download_test.go",
-      "source_location": "L178",
+      "source_location": "L181",
       "weight": 1.0
     },
     {
@@ -71961,7 +71961,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "cmd/server/workspace_download_test.go",
-      "source_location": "L185",
+      "source_location": "L188",
       "weight": 1.0
     },
     {
@@ -71973,7 +71973,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "cmd/server/workspace_download_test.go",
-      "source_location": "L366",
+      "source_location": "L379",
       "weight": 1.0
     },
     {
@@ -72009,7 +72009,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L871",
+      "source_location": "L885",
       "weight": 1.0
     },
     {
@@ -72021,7 +72021,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L776",
+      "source_location": "L790",
       "weight": 1.0
     },
     {
@@ -72033,7 +72033,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L803",
+      "source_location": "L817",
       "weight": 1.0
     },
     {
@@ -72045,7 +72045,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L811",
+      "source_location": "L825",
       "weight": 1.0
     },
     {
@@ -72081,7 +72081,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L1396",
+      "source_location": "L1410",
       "weight": 1.0
     },
     {
@@ -72093,7 +72093,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L1396",
+      "source_location": "L1410",
       "weight": 1.0
     },
     {
@@ -72105,7 +72105,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L1396",
+      "source_location": "L1410",
       "weight": 1.0
     },
     {
@@ -72873,7 +72873,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L1159",
+      "source_location": "L1173",
       "weight": 1.0
     },
     {
@@ -72885,7 +72885,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L1159",
+      "source_location": "L1173",
       "weight": 1.0
     },
     {
@@ -73101,7 +73101,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L1015",
+      "source_location": "L1029",
       "weight": 1.0
     },
     {
@@ -73113,7 +73113,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L1015",
+      "source_location": "L1029",
       "weight": 1.0
     },
     {
@@ -73185,7 +73185,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L968",
+      "source_location": "L982",
       "weight": 1.0
     },
     {
@@ -73197,7 +73197,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L968",
+      "source_location": "L982",
       "weight": 1.0
     },
     {
@@ -73401,7 +73401,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L680",
+      "source_location": "L694",
       "weight": 1.0
     },
     {
@@ -73677,7 +73677,7 @@
       "confidence_score": 1.0,
       "context": "return_type",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L720",
+      "source_location": "L734",
       "weight": 1.0
     },
     {
@@ -73689,7 +73689,7 @@
       "confidence_score": 1.0,
       "context": "return_type",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L871",
+      "source_location": "L885",
       "weight": 1.0
     },
     {
@@ -73701,7 +73701,7 @@
       "confidence_score": 1.0,
       "context": "return_type",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L803",
+      "source_location": "L817",
       "weight": 1.0
     },
     {
@@ -73713,7 +73713,7 @@
       "confidence_score": 1.0,
       "context": "return_type",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L811",
+      "source_location": "L825",
       "weight": 1.0
     },
     {
@@ -76244,7 +76244,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L720",
+      "source_location": "L734",
       "weight": 1.0
     },
     {
@@ -76255,7 +76255,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L759",
+      "source_location": "L773",
       "weight": 1.0
     },
     {
@@ -76266,7 +76266,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L768",
+      "source_location": "L782",
       "weight": 1.0
     },
     {
@@ -76277,7 +76277,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L776",
+      "source_location": "L790",
       "weight": 1.0
     },
     {
@@ -76288,7 +76288,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L803",
+      "source_location": "L817",
       "weight": 1.0
     },
     {
@@ -76299,7 +76299,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L811",
+      "source_location": "L825",
       "weight": 1.0
     },
     {
@@ -76310,7 +76310,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L871",
+      "source_location": "L885",
       "weight": 1.0
     },
     {
@@ -76321,7 +76321,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L923",
+      "source_location": "L937",
       "weight": 1.0
     },
     {
@@ -76332,7 +76332,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L939",
+      "source_location": "L953",
       "weight": 1.0
     },
     {
@@ -76420,7 +76420,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "cmd/server/workspace_download_test.go",
-      "source_location": "L178",
+      "source_location": "L181",
       "weight": 1.0
     },
     {
@@ -76431,7 +76431,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "cmd/server/workspace_download_test.go",
-      "source_location": "L185",
+      "source_location": "L188",
       "weight": 1.0
     },
     {
@@ -76442,7 +76442,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "cmd/server/workspace_download_test.go",
-      "source_location": "L238",
+      "source_location": "L241",
       "weight": 1.0
     },
     {
@@ -76453,7 +76453,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "cmd/server/workspace_download_test.go",
-      "source_location": "L308",
+      "source_location": "L321",
       "weight": 1.0
     },
     {
@@ -76464,7 +76464,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "cmd/server/workspace_download_test.go",
-      "source_location": "L366",
+      "source_location": "L379",
       "weight": 1.0
     },
     {
@@ -94427,7 +94427,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L1015",
+      "source_location": "L1029",
       "weight": 1.0
     },
     {
@@ -94438,7 +94438,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L1159",
+      "source_location": "L1173",
       "weight": 1.0
     },
     {
@@ -94449,7 +94449,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L1396",
+      "source_location": "L1410",
       "weight": 1.0
     },
     {
@@ -94515,7 +94515,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L680",
+      "source_location": "L694",
       "weight": 1.0
     },
     {
@@ -94526,7 +94526,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L968",
+      "source_location": "L982",
       "weight": 1.0
     },
     {
@@ -102169,7 +102169,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "cmd/server/workspace_download_test.go",
-      "source_location": "L259",
+      "source_location": "L262",
       "weight": 1.0
     },
     {
@@ -102205,7 +102205,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "cmd/server/workspace_download_test.go",
-      "source_location": "L320",
+      "source_location": "L333",
       "weight": 1.0
     },
     {
@@ -102217,7 +102217,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "cmd/server/workspace_download_test.go",
-      "source_location": "L329",
+      "source_location": "L342",
       "weight": 1.0
     },
     {
@@ -102229,7 +102229,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "cmd/server/workspace_download_test.go",
-      "source_location": "L329",
+      "source_location": "L342",
       "weight": 1.0
     },
     {
@@ -102241,7 +102241,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "cmd/server/workspace_download_test.go",
-      "source_location": "L179",
+      "source_location": "L182",
       "weight": 1.0
     },
     {
@@ -102253,7 +102253,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "cmd/server/workspace_download_test.go",
-      "source_location": "L192",
+      "source_location": "L195",
       "weight": 1.0
     },
     {
@@ -102325,7 +102325,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L1398",
+      "source_location": "L1412",
       "weight": 1.0
     },
     {
@@ -102337,7 +102337,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L1410",
+      "source_location": "L1424",
       "weight": 1.0
     },
     {
@@ -102349,7 +102349,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L1438",
+      "source_location": "L1452",
       "weight": 1.0
     },
     {
@@ -102361,7 +102361,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L1490",
+      "source_location": "L1504",
       "weight": 1.0
     },
     {
@@ -102373,7 +102373,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L1496",
+      "source_location": "L1510",
       "weight": 1.0
     },
     {
@@ -102385,7 +102385,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L1512",
+      "source_location": "L1526",
       "weight": 1.0
     },
     {
@@ -102397,7 +102397,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L1539",
+      "source_location": "L1553",
       "weight": 1.0
     },
     {
@@ -102409,7 +102409,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L1560",
+      "source_location": "L1574",
       "weight": 1.0
     },
     {
@@ -102901,7 +102901,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L617",
+      "source_location": "L621",
       "weight": 1.0
     },
     {
@@ -103237,7 +103237,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L1161",
+      "source_location": "L1175",
       "weight": 1.0
     },
     {
@@ -103249,7 +103249,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L1169",
+      "source_location": "L1183",
       "weight": 1.0
     },
     {
@@ -103261,7 +103261,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L1192",
+      "source_location": "L1206",
       "weight": 1.0
     },
     {
@@ -103273,7 +103273,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L1243",
+      "source_location": "L1257",
       "weight": 1.0
     },
     {
@@ -103285,7 +103285,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L1266",
+      "source_location": "L1280",
       "weight": 1.0
     },
     {
@@ -103297,7 +103297,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L1382",
+      "source_location": "L1396",
       "weight": 1.0
     },
     {
@@ -103309,7 +103309,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L1383",
+      "source_location": "L1397",
       "weight": 1.0
     },
     {
@@ -103321,7 +103321,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L1393",
+      "source_location": "L1407",
       "weight": 1.0
     },
     {
@@ -103597,7 +103597,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L1017",
+      "source_location": "L1031",
       "weight": 1.0
     },
     {
@@ -103609,7 +103609,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L1026",
+      "source_location": "L1040",
       "weight": 1.0
     },
     {
@@ -103621,7 +103621,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L1066",
+      "source_location": "L1080",
       "weight": 1.0
     },
     {
@@ -103633,7 +103633,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L1088",
+      "source_location": "L1102",
       "weight": 1.0
     },
     {
@@ -103645,7 +103645,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L1096",
+      "source_location": "L1110",
       "weight": 1.0
     },
     {
@@ -103657,7 +103657,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L1097",
+      "source_location": "L1111",
       "weight": 1.0
     },
     {
@@ -103669,7 +103669,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L1127",
+      "source_location": "L1141",
       "weight": 1.0
     },
     {
@@ -103698,6 +103698,18 @@
     },
     {
       "source": "server_server_serveworkspacepdf",
+      "target": "cmd_server_ingesta_packagefoldername",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "context": "call",
+      "source_file": "cmd/server/workspace.go",
+      "source_location": "L1006",
+      "weight": 1.0
+    },
+    {
+      "source": "server_server_serveworkspacepdf",
       "target": "cmd_server_main_writeerror",
       "relation": "calls",
       "_origin": "ast",
@@ -103705,7 +103717,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L970",
+      "source_location": "L984",
       "weight": 1.0
     },
     {
@@ -103717,19 +103729,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L979",
-      "weight": 1.0
-    },
-    {
-      "source": "server_server_serveworkspacepdf",
-      "target": "cmd_server_ingesta_packagefoldername",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "INFERRED",
-      "confidence_score": 0.85,
-      "context": "call",
-      "source_file": "cmd/server/workspace.go",
-      "source_location": "L992",
+      "source_location": "L993",
       "weight": 1.0
     },
     {
@@ -104269,7 +104269,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L684",
+      "source_location": "L698",
       "weight": 1.0
     },
     {
@@ -104281,7 +104281,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L691",
+      "source_location": "L705",
       "weight": 1.0
     },
     {
@@ -104293,7 +104293,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L698",
+      "source_location": "L712",
       "weight": 1.0
     },
     {
@@ -104305,7 +104305,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L698",
+      "source_location": "L712",
       "weight": 1.0
     },
     {
@@ -104317,7 +104317,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "cmd/server/workspace.go",
-      "source_location": "L703",
+      "source_location": "L717",
       "weight": 1.0
     },
     {
@@ -112230,5 +112230,5 @@
     }
   ],
   "hyperedges": [],
-  "built_at_commit": "f8f94321911b23e1b969a0b567bf5f6c5a2198da"
+  "built_at_commit": "81c69f02ced8b77d01a3923bd1607a28a0007666"
 }

@@ -614,6 +614,10 @@ func (s *server) downloadWorkspaceZIP(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			return err
 		}
+		relativeSlash := filepath.ToSlash(relative)
+		if file.IsDir() && job.IsObjections && (relativeSlash == "5. ANEXOS" || strings.HasPrefix(relativeSlash, "5. ANEXOS/")) {
+			return nil
+		}
 		if !file.IsDir() && !objectionZIPIncludesFile(job, relative) {
 			return nil
 		}
@@ -628,6 +632,19 @@ func (s *server) downloadWorkspaceZIP(w http.ResponseWriter, r *http.Request) {
 		}
 		if !file.Type().IsRegular() {
 			return nil
+		}
+		if job.IsObjections {
+			relativeParts := strings.Split(relativeSlash, "/")
+			if len(relativeParts) > 1 && relativeParts[0] == "5. ANEXOS" {
+				archiveParts := strings.Split(archiveRelative, "/")
+				directory := packageFolderName(&job)
+				for _, part := range archiveParts[:len(archiveParts)-1] {
+					directory = filepath.Join(directory, part)
+					if err := writeEmptyDirectory(directory); err != nil {
+						return err
+					}
+				}
+			}
 		}
 		info, err := file.Info()
 		if err != nil {
@@ -655,19 +672,16 @@ func (s *server) downloadWorkspaceZIP(w http.ResponseWriter, r *http.Request) {
 		return closeErr
 	})
 	if walkErr == nil && job.IsObjections {
-		for _, parent := range []string{"4. EXPEDIENTES", "5. ANEXOS"} {
-			if err := writeEmptyDirectory(filepath.Join(packageFolderName(&job), parent)); err != nil {
-				walkErr = err
-				break
-			}
-			for _, name := range orderedFolderNames {
-				if err := writeEmptyDirectory(filepath.Join(packageFolderName(&job), parent, name)); err != nil {
-					walkErr = err
-					break
-				}
-			}
+		parent := "4. EXPEDIENTES"
+		if err := writeEmptyDirectory(filepath.Join(packageFolderName(&job), parent)); err != nil {
+			walkErr = err
+		}
+		for _, name := range orderedFolderNames {
 			if walkErr != nil {
 				break
+			}
+			if err := writeEmptyDirectory(filepath.Join(packageFolderName(&job), parent, name)); err != nil {
+				walkErr = err
 			}
 		}
 	}

@@ -133,6 +133,9 @@ func TestDownloadObjectionProgressZIPAllowsMissingCloseoutDocuments(t *testing.T
 			t.Fatal(err)
 		}
 	}
+	if err := os.MkdirAll(filepath.Join(packageRoot, "5. ANEXOS", patientFolder), 0700); err != nil {
+		t.Fatal(err)
+	}
 	metadata, err := json.Marshal(job)
 	if err != nil {
 		t.Fatal(err)
@@ -160,15 +163,15 @@ func TestDownloadObjectionProgressZIPAllowsMissingCloseoutDocuments(t *testing.T
 	}
 	markedEntry := filepath.ToSlash(filepath.Join(packageFolderName(&job), "4. EXPEDIENTES", "1. PACIENTE FICTICIO", "HCU_008.pdf"))
 	unmarkedEntry := filepath.ToSlash(filepath.Join(packageFolderName(&job), "4. EXPEDIENTES", "1. PACIENTE FICTICIO", "HCU_006.pdf"))
-	annexFolder := filepath.ToSlash(filepath.Join(packageFolderName(&job), "5. ANEXOS", "1. PACIENTE FICTICIO")) + "/"
-	foundMarked, foundUnmarked, foundAnnexFolder := false, false, false
+	annexRoot := filepath.ToSlash(filepath.Join(packageFolderName(&job), "5. ANEXOS")) + "/"
+	foundMarked, foundUnmarked, foundAnnex := false, false, false
 	for _, entry := range archive.File {
 		foundMarked = foundMarked || entry.Name == markedEntry
 		foundUnmarked = foundUnmarked || entry.Name == unmarkedEntry
-		foundAnnexFolder = foundAnnexFolder || entry.Name == annexFolder
+		foundAnnex = foundAnnex || strings.HasPrefix(entry.Name, annexRoot)
 	}
-	if !foundMarked || foundUnmarked || !foundAnnexFolder {
-		t.Fatalf("objection progress ZIP selection/symmetry: marked=%v unmarked=%v annexFolder=%v", foundMarked, foundUnmarked, foundAnnexFolder)
+	if !foundMarked || foundUnmarked || foundAnnex {
+		t.Fatalf("objection progress ZIP selection/optional annexes: marked=%v unmarked=%v annexEntries=%v", foundMarked, foundUnmarked, foundAnnex)
 	}
 	if after, err := os.ReadFile(filepath.Join(s.jobRoot(id), "job.json")); err != nil || !bytes.Equal(after, metadata) {
 		t.Fatalf("progress download changed objection workspace metadata: err=%v", err)
@@ -266,6 +269,13 @@ func TestDownloadObjectionZIPKeepsRepeatedPatientTransactionsInSeparateNumberedF
 			t.Fatal(err)
 		}
 	}
+	annexPath := filepath.Join(packageRoot, "5. ANEXOS", secondFolder, "FACTURA_COMPRA.pdf")
+	if err := os.MkdirAll(filepath.Dir(annexPath), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(annexPath, []byte("%PDF-1.4\nfactura de respaldo\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
 	metadata, err := json.Marshal(job)
 	if err != nil {
 		t.Fatal(err)
@@ -294,9 +304,12 @@ func TestDownloadObjectionZIPKeepsRepeatedPatientTransactionsInSeparateNumberedF
 		if !entries[root+"4. EXPEDIENTES/"+name+"/HCU_008.pdf"] {
 			t.Errorf("ZIP omitted transaction folder %q", name)
 		}
-		if !entries[root+"5. ANEXOS/"+name+"/"] {
-			t.Errorf("ZIP omitted matching annex folder %q", name)
-		}
+	}
+	if entries[root+"5. ANEXOS/1. PEREZ GOMEZ JUAN/"] {
+		t.Error("ZIP included an empty annex folder for the transaction without a justification")
+	}
+	if !entries[root+"5. ANEXOS/2. PEREZ GOMEZ JUAN/FACTURA_COMPRA.pdf"] {
+		t.Error("ZIP omitted the annex or failed to preserve the matching patient/trámite number")
 	}
 	for _, folder := range []string{firstFolder, secondFolder} {
 		if _, err := os.Stat(filepath.Join(packageRoot, "4. EXPEDIENTES", folder, "HCU_008.pdf")); err != nil {
