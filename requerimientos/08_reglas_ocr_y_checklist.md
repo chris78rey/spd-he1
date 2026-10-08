@@ -4,14 +4,14 @@
 
 ## 1. Entrada, extracción y clasificación
 
-- Ignorar por completo el nombre del PDF de entrada para clasificarlo: puede ser aleatorio (`tmp_a1.pdf`, `doc_99.pdf`).
+- Ignorar el nombre del PDF como señal general: puede ser aleatorio (`tmp_a1.pdf`, `doc_99.pdf`). Excepción confirmada: reconocer únicamente las bases `08` y `008` como `HCU_008.pdf`, y `007` como `HCU_007.pdf`; se admite un sufijo numérico de duplicado (`007_2.pdf`, `08_1.pdf`) y el prefijo generado `PENDIENTE_tmp_`. Un texto identificable del PDF tiene prioridad; si contradice una regla textual o existe empate, conservar pendiente.
 - Analizar primero el texto vectorial de las páginas 1 y 2.
 - Si no hay texto digital utilizable, renderizar la página 1 en escala de grises a 200–300 DPI y aplicar Tesseract en español (`spa`).
 - Texto vectorial con coincidencia exacta de una regla: confianza operativa 100% según el criterio recibido; no representa una probabilidad calibrada estadísticamente.
 - En OCR, una coincidencia positiva de palabra/frase del catálogo habilita clasificación. Si varias reglas coinciden, gana la de mayor cantidad de frases exactas coincidentes en el encabezado.
 - Si hay empate entre reglas, coincidencia parcial, buffer vacío o ilegible, conservar el archivo para revisión; el lote continúa.
 - Nombre pendiente: `PENDIENTE_tmp_[nombre_original].pdf`, saneando el nombre para que sea seguro como archivo. Estado Oracle previsto: `PDI_ESTADO_DIGITALIZACION='REQUIERE_VALIDACION'`.
-- Normalizar texto de comparación a mayúsculas y ASCII para comparar tildes con tolerancia. El nombre de entrada no participa como señal.
+- Normalizar texto de comparación a mayúsculas y ASCII para comparar tildes con tolerancia. Fuera de las bases numéricas confirmadas arriba, el nombre de entrada no participa como señal.
 - Toda salida PDF lleva `.pdf` en minúsculas.
 - Los alias de entrada/salida `HCU_53` y `HCU_053` se normalizan al nombre canónico `HCU_053.pdf`.
 
@@ -43,7 +43,7 @@ La fuente ejecutable del catálogo es [`../reglas_clasificacion.yaml`](../reglas
 
 | Código canónico | Señales discriminatorias y patrones OCR confirmados |
 | --- | --- |
-| `HCU_008.pdf` | `FORMULARIO 008` (señal específica; no usar `EMERGENCIA` ni `MOTIVO DE CONSULTA` por sí solas) |
+| `HCU_008.pdf` | `FORMULARIO 008`, `HCU FORM.008` (señales específicas; no usar `EMERGENCIA` ni `MOTIVO DE CONSULTA` por sí solas) |
 | `HCU_053.pdf` | `FORMULARIO 053`, `REFERENCIA`, `DERIVACION`, `CONTRARREFERENCIA`; discriminador adicional `ESTABLECIMIENTO QUE DERIVA` |
 | `HCU_006.pdf` | `FORMULARIO 006`, `EPICRISIS`, `RESUMEN DE ALTA`, `CUADRO CLINICO DE EGRESO` |
 | `HCU_017.pdf` | `FORMULARIO 017`, `PROTOCOLO QUIRURGICO`, `CIRUGIA` |
@@ -58,7 +58,7 @@ La fuente ejecutable del catálogo es [`../reglas_clasificacion.yaml`](../reglas
 
 La separación HCU 006 / HCU 053 se basa especialmente en EPICRISIS, RESUMEN DE ALTA y CUADRO CLINICO DE EGRESO frente a REFERENCIA, DERIVACION, CONTRARREFERENCIA y ESTABLECIMIENTO QUE DERIVA.
 
-Para los demás códigos conocidos de nombres de archivo no se recibieron todavía patrones OCR. Hasta que se agreguen señales confirmadas, no clasificarlos automáticamente: enviarlos a revisión manual.
+Para `HCU_007.pdf` se reconoce el nombre base numérico confirmado `007`, pero no hay todavía una frase OCR confirmada. Para los demás códigos conocidos de nombres de archivo no se recibieron patrones OCR: enviarlos a revisión manual.
 
 ## 3. Catálogo de nombres de archivo conocidos
 

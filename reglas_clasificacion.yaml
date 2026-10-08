@@ -2,6 +2,13 @@ version: 1
 estado: reglas_confirmadas_para_integracion_pendiente
 entrada:
   ignorar_nombre_archivo: true
+  codigos_nombre_archivo_confirmados:
+    - base: "08"
+      codigo: HCU_008.pdf
+    - base: "008"
+      codigo: HCU_008.pdf
+    - base: "007"
+      codigo: HCU_007.pdf
   paginas_texto_vectorial: [1, 2]
   ocr_respaldo:
     pagina: 1
@@ -28,7 +35,7 @@ alias:
   HCU_053.pdf: HCU_053.pdf
 reglas:
   - codigo: HCU_008.pdf
-    palabras_clave: ["FORMULARIO 008"]
+    palabras_clave: ["FORMULARIO 008", "HCU FORM.008"]
   - codigo: HCU_002.pdf
     palabras_clave: ["REPORTE DE NOTAS DE EVOLUCION", "NOTAS DE EVOLUCION DE"]
   - codigo: HCU_053.pdf

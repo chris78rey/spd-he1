@@ -19,6 +19,12 @@ import (
 )
 
 type classificationRules struct {
+	Input struct {
+		ConfirmedFilenameCodes []struct {
+			Base string `yaml:"base"`
+			Code string `yaml:"codigo"`
+		} `yaml:"codigos_nombre_archivo_confirmados"`
+	} `yaml:"entrada"`
 	Rules []struct {
 		Code     string   `yaml:"codigo"`
 		Keywords []string `yaml:"palabras_clave"`
@@ -73,6 +79,7 @@ func loadClassificationRules(path string) (classificationRules, error) {
 
 func classifyPDF(ctx context.Context, filePath, originalName string, rules classificationRules, periodMonth, periodYear string) classificationResult {
 	result := classificationResult{Original: originalName, BilledPeriod: formatBilledPeriod(periodMonth, periodYear)}
+	filenameCode := matchFilenameClassification(originalName, rules)
 	text, err := extractPDFText(filePath)
 	if err == nil && strings.TrimSpace(text) != "" {
 		result.Method = "VECTORIAL"
@@ -82,6 +89,11 @@ func classifyPDF(ctx context.Context, filePath, originalName string, rules class
 			text = ocrText
 			result.Method = "OCR_TESSERACT"
 		} else {
+			if filenameCode != "" {
+				result.Code = filenameCode
+				result.Reason = "CODIGO_RECONOCIDO_POR_NOMBRE"
+				return result
+			}
 			result.Code = pendingPDFName(originalName)
 			if ocrErr != nil {
 				result.Reason = "OCR_NO_DISPONIBLE_O_FALLIDO"
@@ -95,10 +107,35 @@ func classifyPDF(ctx context.Context, filePath, originalName string, rules class
 	if code, matches, tie := matchClassification(text, rules); code != "" && !tie {
 		result.Code, result.Matches = code, matches
 		return result
+	} else if matches == 0 && !tie && filenameCode != "" {
+		result.Code = filenameCode
+		result.Reason = "CODIGO_RECONOCIDO_POR_NOMBRE"
+		return result
 	}
 	result.Code = pendingPDFName(originalName)
 	result.Reason = "SIN_COINCIDENCIA_O_AMBIGUO"
 	return result
+}
+
+func matchFilenameClassification(originalName string, rules classificationRules) string {
+	base := strings.TrimSuffix(filepath.Base(originalName), filepath.Ext(originalName))
+	base = strings.ToUpper(strings.TrimSpace(base))
+	base = strings.TrimPrefix(base, "PENDIENTE_TMP_")
+	if separator := strings.LastIndex(base, "_"); separator > 0 {
+		suffix := base[separator+1:]
+		if suffix != "" {
+			if _, err := strconv.Atoi(suffix); err == nil {
+				base = base[:separator]
+			}
+		}
+	}
+	base = normalizeOCRText(base)
+	for _, hint := range rules.Input.ConfirmedFilenameCodes {
+		if base != "" && base == normalizeOCRText(hint.Base) && strings.TrimSpace(hint.Code) != "" {
+			return strings.TrimSpace(hint.Code)
+		}
+	}
+	return ""
 }
 
 func formatBilledPeriod(month, year string) string {
