@@ -65,6 +65,7 @@ type stagedJob struct {
 	ObjectionSourceID     string                    `json:"expediente_origen,omitempty"`
 	ObjectionRows         []objectionRecord         `json:"objeciones,omitempty"`
 	ObjectionPDFSelection map[string]bool           `json:"objecion_pdf_selection,omitempty"`
+	PlanillaProvisioning  *pdiProvisioningReport    `json:"pdi_provisioning,omitempty"`
 	StatusDetail          string                    `json:"status_detail"`
 }
 
@@ -180,6 +181,7 @@ type ingestPreview struct {
 	FoldersWithoutPatient int                     `json:"tramites_sin_paciente_oracle"`
 	InvalidEntries        int                     `json:"entradas_invalidas"`
 	InvalidPaths          []string                `json:"rutas_invalidas,omitempty"`
+	PlanillaProvisioning  *pdiProvisioningReport  `json:"pdi_provisioning,omitempty"`
 	Folders               []ingestFolderPreview   `json:"carpetas"`
 }
 
@@ -214,12 +216,12 @@ func (s *server) loadPlanillaIdentities(ctx context.Context, job stagedJob) (map
 }
 
 func (s *server) inspectIngestZIP(ctx context.Context, job stagedJob) (ingestPreview, error) {
-	preview := ingestPreview{Service: job.Service, Month: job.Month, Year: job.Year, Folders: []ingestFolderPreview{}}
-	identities, err := s.loadPlanillaIdentities(ctx, job)
+	preview := ingestPreview{Service: job.Service, Month: job.Month, Year: job.Year, PlanillaProvisioning: job.PlanillaProvisioning, Folders: []ingestFolderPreview{}}
+	periodIdentities, err := s.loadPlanillaIdentities(ctx, job)
 	if err != nil {
 		return preview, err
 	}
-	preview.OraclePlanillas = len(identities)
+	preview.OraclePlanillas = len(periodIdentities)
 	archive, err := zip.OpenReader(filepath.Join(s.jobSourcesDir(job.ID), "lote.zip"))
 	if err != nil {
 		return preview, errors.New("No se pudo abrir el ZIP guardado para generar la vista previa.")
@@ -273,6 +275,19 @@ func (s *server) inspectIngestZIP(ctx context.Context, job stagedJob) (ingestPre
 		}
 	}
 	preview.TramiteFolders = len(folders)
+	lookupTramites := make([]string, 0, len(folders)+len(job.TramiteMappings))
+	for sourceTramite, folder := range folders {
+		lookupTramites = append(lookupTramites, sourceTramite)
+		targetTramite := strings.TrimSpace(job.TramiteMappings[sourceTramite])
+		if targetTramite != "" {
+			folder.OracleTramite = targetTramite
+			lookupTramites = append(lookupTramites, targetTramite)
+		}
+	}
+	identities, err := s.loadPlanillaIdentitiesByTramites(ctx, lookupTramites)
+	if err != nil {
+		return preview, err
+	}
 	usedOracleTramites := make(map[string]string, len(folders))
 	for source, folder := range folders {
 		target := strings.TrimSpace(job.TramiteMappings[source])
@@ -309,7 +324,7 @@ func (s *server) inspectIngestZIP(ctx context.Context, job stagedJob) (ingestPre
 		}
 		preview.Folders = append(preview.Folders, *folder)
 	}
-	for tramite, identity := range identities {
+	for tramite, identity := range periodIdentities {
 		if _, included := usedOracleTramites[tramite]; included {
 			continue
 		}
@@ -563,6 +578,7 @@ func (s *server) replaceStagedZIP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	job.Status = "STAGED"
+	job.PlanillaProvisioning = nil
 	job.StatusDetail = "ZIP actualizado en el mismo espacio. Revisa el cruce con Oracle antes de preparar los expedientes."
 	if err := s.saveStagedJob(job); err != nil {
 		_ = os.Remove(currentPath)
@@ -570,6 +586,9 @@ func (s *server) replaceStagedZIP(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "No se pudo registrar el ZIP corregido; se restauró el anterior.")
 		return
 	}
+	provisionCtx, cancel := context.WithTimeout(r.Context(), time.Minute)
+	s.applyPlanillaProvisioning(provisionCtx, &job)
+	cancel()
 	writeJSON(w, http.StatusOK, jobResponse(s, job, "", nil))
 }
 
@@ -1049,16 +1068,30 @@ func (s *server) listWorkspaces(w http.ResponseWriter, r *http.Request) {
 
 func (s *server) buildPatientFolders(ctx context.Context, job *stagedJob, outputRoot string) (classificationReport, error) {
 	var report classificationReport
-	identities, err := s.loadPlanillaIdentities(ctx, *job)
+	stage := s.jobSourcesDir(job.ID)
+	zipPath := filepath.Join(stage, "lote.zip")
+	tramites, err := collectZIPPlanillaNumbers(zipPath)
+	if err != nil {
+		return report, err
+	}
+	lookupTramites := append([]string(nil), tramites...)
+	zipTramites := make(map[string]bool, len(tramites))
+	for _, tramite := range tramites {
+		zipTramites[tramite] = true
+	}
+	for sourceTramite, targetTramite := range job.TramiteMappings {
+		if zipTramites[sourceTramite] && tramitePattern.MatchString(strings.TrimSpace(targetTramite)) {
+			lookupTramites = append(lookupTramites, strings.TrimSpace(targetTramite))
+		}
+	}
+	identities, err := s.loadPlanillaIdentitiesByTramites(ctx, lookupTramites)
 	if err != nil {
 		return report, err
 	}
 	if len(identities) == 0 {
-		return report, errors.New("Oracle no devolvió planillas MSP del período seleccionado con PDI_PLANILLADO = 'S'.")
+		return report, errors.New("Ninguna planilla del ZIP aparece registrada en Oracle por su número de trámite.")
 	}
 
-	stage := s.jobSourcesDir(job.ID)
-	zipPath := filepath.Join(stage, "lote.zip")
 	archive, err := zip.OpenReader(zipPath)
 	if err != nil {
 		return report, errors.New("No se pudo abrir el ZIP del lote.")
@@ -1710,6 +1743,9 @@ func (s *server) receiveDualUpload(w http.ResponseWriter, r *http.Request) {
 			storedDigest, _ = sha256Path(filepath.Join(s.jobSourcesDir(existing.ID), storedZip))
 		}
 		if storedDigest == incomingDigest {
+			provisionCtx, cancel := context.WithTimeout(r.Context(), time.Minute)
+			s.applyPlanillaProvisioning(provisionCtx, existing)
+			cancel()
 			output := ""
 			if existing.Status == "PROCESSED" || existing.Status == "INCOMPLETE" {
 				output = filepath.Join(s.jobRoot(existing.ID), "trabajo", packageFolderName(existing))
@@ -1791,6 +1827,9 @@ func (s *server) receiveDualUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	committed = true
+	provisionCtx, cancel := context.WithTimeout(r.Context(), time.Minute)
+	s.applyPlanillaProvisioning(provisionCtx, &job)
+	cancel()
 	writeJSON(w, http.StatusAccepted, map[string]any{
 		"status": job.Status, "job_id": job.ID, "message": job.StatusDetail,
 		"timestamp": job.ReceivedAt, "workspace": s.jobRoot(job.ID), "missing_documents": missingHeaders(job), "files": job.Files,

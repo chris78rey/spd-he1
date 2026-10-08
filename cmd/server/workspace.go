@@ -69,18 +69,35 @@ func (s *server) planillaForPatient(ctx context.Context, job stagedJob, patient 
 		}
 		return 0, errors.New("No se encontró un trámite objetado para esta carpeta.")
 	}
-	identities, err := s.loadPlanillaIdentities(ctx, job)
-	if err != nil {
-		return 0, err
-	}
 	ids := make(map[int64]bool)
-	for _, identity := range identities {
-		if normalizePatientFolder(identity.Patient) == patient {
-			ids[identity.PlanillaID] = true
+	for relative, id := range job.DocumentPlanillas {
+		parts := strings.Split(filepath.ToSlash(filepath.Clean(filepath.FromSlash(relative))), "/")
+		if id > 0 && len(parts) >= 3 && parts[0] == "4. EXPEDIENTES" && parts[1] == patient {
+			ids[id] = true
+		}
+	}
+	for _, document := range job.ExternalPDFs {
+		parts := strings.Split(filepath.ToSlash(filepath.Clean(filepath.FromSlash(document.RelativePath))), "/")
+		if document.PlanillaID > 0 && len(parts) >= 3 && parts[0] == "4. EXPEDIENTES" && parts[1] == patient {
+			ids[document.PlanillaID] = true
 		}
 	}
 	if len(ids) == 0 {
-		return 0, errors.New("No se encontró una planilla MSP de Oracle para esta carpeta de paciente.")
+		tramites, zipErr := collectZIPPlanillaNumbers(filepath.Join(s.jobSourcesDir(job.ID), "lote.zip"))
+		if zipErr == nil {
+			identities, lookupErr := s.loadPlanillaIdentitiesByTramites(ctx, tramites)
+			if lookupErr != nil {
+				return 0, lookupErr
+			}
+			for _, identity := range identities {
+				if normalizePatientFolder(identity.Patient) == patient {
+					ids[identity.PlanillaID] = true
+				}
+			}
+		}
+	}
+	if len(ids) == 0 {
+		return 0, errors.New("No se encontró una planilla Oracle asociada a esta carpeta de paciente.")
 	}
 	if len(ids) > 1 {
 		return 0, errors.New("Esta carpeta corresponde a más de un PDI_TRAMITE. Para evitar asociar el PDF a una planilla incorrecta, se necesita elegir el trámite antes de añadirlo.")

@@ -2322,6 +2322,15 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
               <v-alert v-else-if="ingestPreviewError" type="warning" variant="tonal" density="comfortable">{{ ingestPreviewError }}<v-btn type="button" size="small" variant="text" @click="loadIngestPreview(ingestResult.job_id)">Reintentar</v-btn></v-alert>
               <template v-else-if="ingestPreview">
                 <v-alert v-if="ingestPreviewNotice" :type="ingestPreviewNotice.includes('no se pudo') || ingestPreviewNotice.includes('No se pudo') ? 'warning' : 'success'" variant="tonal" density="compact" class="ingest-preview-notice">{{ ingestPreviewNotice }}</v-alert>
+                <v-alert v-if="ingestPreview.pdi_provisioning?.creados?.length" type="success" variant="tonal" density="comfortable" prepend-icon="mdi-database-check-outline">
+                  Se crearon {{ ingestPreview.pdi_provisioning.creados.length }} registro(s) faltantes en PLANILLA_DIGITAL a partir de este ZIP. Las filas existentes no se modificaron.
+                </v-alert>
+                <v-alert v-if="ingestPreview.pdi_provisioning?.pendientes?.length" type="warning" variant="tonal" density="comfortable" prepend-icon="mdi-database-alert-outline">
+                  No se pudo completar Oracle para estas planillas: <code>{{ ingestPreview.pdi_provisioning.pendientes.join(', ') }}</code>. Se requiere una coincidencia única en SIS para MSP, período y servicio.
+                </v-alert>
+                <v-alert v-if="ingestPreview.pdi_provisioning?.error" type="warning" variant="tonal" density="comfortable" prepend-icon="mdi-database-alert-outline">
+                  El ZIP quedó guardado, pero no se pudieron completar los registros Oracle: {{ ingestPreview.pdi_provisioning.error }}
+                </v-alert>
                 <div class="ingest-preview-stats">
                   <div><strong>{{ ingestPreview.carpetas_tramite }}</strong><span>carpetas de trámites</span></div>
                   <div><strong>{{ ingestPreview.pdfs }}</strong><span>PDFs en el ZIP</span></div>
@@ -2331,7 +2340,7 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
                   <div><strong>{{ ingestPreview.entradas_invalidas }}</strong><span>rutas o archivos inválidos</span></div>
                 </div>
                 <v-alert v-if="ingestPreview.tramites_sin_oracle || ingestPreview.entradas_invalidas || ingestPreview.tramites_sin_paciente_oracle" type="warning" variant="tonal" density="comfortable" prepend-icon="mdi-alert-outline">
-                  Revisa la tabla antes de preparar. El cruce se hace con <code>PDI_TRAMITE</code> dentro de las planillas marcadas para {{ ingestPreview.mes }}/{{ ingestPreview.anio }}. Las fechas de atención y <code>PDI_SERVICIO</code> se muestran para que confirmes que el contenido corresponde al lote; no se excluyen automáticamente por esas columnas.
+                  Revisa la tabla antes de preparar. El cruce de cada carpeta se hace únicamente por su número <code>PDI_TRAMITE</code>. El servicio y las fechas que devuelve Oracle se muestran como referencia; no se excluye una planilla por diferencias en esos campos.
                   <span v-if="ingestPreview.tramites_sin_paciente_oracle"> {{ ingestPreview.tramites_sin_paciente_oracle }} trámites encontrados no tienen nombre de paciente en Oracle.</span>
                   <span v-if="ingestPreview.rutas_invalidas?.length"> Rutas con problemas: {{ ingestPreview.rutas_invalidas.join(', ') }}<span v-if="ingestPreview.entradas_invalidas > ingestPreview.rutas_invalidas.length"> y otras {{ ingestPreview.entradas_invalidas - ingestPreview.rutas_invalidas.length }}.</span></span>
                 </v-alert>

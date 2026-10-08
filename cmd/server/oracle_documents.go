@@ -84,29 +84,27 @@ func (s *server) syncOracleWorkspace(ctx context.Context, job *stagedJob, packag
 	if err := json.Unmarshal(data, &report); err != nil {
 		return fmt.Errorf("reporte de PDFs inválido: %w", err)
 	}
-	identities, err := s.loadPlanillaIdentities(ctx, *job)
-	if err != nil {
-		return err
-	}
 	patientIDs := make(map[string]map[int64]bool)
-	for _, identity := range identities {
-		folder := normalizePatientFolder(identity.Patient)
-		if folder == "" {
-			continue
-		}
-		if patientIDs[folder] == nil {
-			patientIDs[folder] = make(map[int64]bool)
-		}
-		patientIDs[folder][identity.PlanillaID] = true
-	}
+	planillas := make(map[int64]string)
 	planillaByPath := make(map[string]int64)
 	originalByPath := make(map[string]string)
 	for _, item := range report.Files {
 		if item.Output == "" || item.PlanillaID <= 0 {
 			continue
 		}
-		planillaByPath[filepath.ToSlash(item.Output)] = item.PlanillaID
-		originalByPath[filepath.ToSlash(item.Output)] = item.Original
+		path := filepath.ToSlash(item.Output)
+		parts := strings.Split(path, "/")
+		if len(parts) < 3 || parts[0] != "4. EXPEDIENTES" {
+			continue
+		}
+		folder := parts[1]
+		if patientIDs[folder] == nil {
+			patientIDs[folder] = make(map[int64]bool)
+		}
+		patientIDs[folder][item.PlanillaID] = true
+		planillas[item.PlanillaID] = filepath.Join(packageRoot, "4. EXPEDIENTES", folder)
+		planillaByPath[path] = item.PlanillaID
+		originalByPath[path] = item.Original
 	}
 	for path, id := range job.DocumentPlanillas {
 		if id > 0 {
@@ -157,14 +155,6 @@ func (s *server) syncOracleWorkspace(ctx context.Context, job *stagedJob, packag
 		return fmt.Errorf("no se pudo iniciar la transacción Oracle: %w", err)
 	}
 	defer tx.Rollback()
-	planillas := make(map[int64]string)
-	for _, identity := range identities {
-		patientFolder := normalizePatientFolder(identity.Patient)
-		if patientFolder == "" {
-			continue
-		}
-		planillas[identity.PlanillaID] = filepath.Join(packageRoot, "4. EXPEDIENTES", patientFolder)
-	}
 	touchedPlanillas := make(map[int64]bool)
 	for _, id := range planillaByPath {
 		touchedPlanillas[id] = true
