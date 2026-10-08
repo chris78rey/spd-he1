@@ -16,14 +16,20 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/pdfcpu/pdfcpu/pkg/api"
+	"golang.org/x/text/unicode/norm"
 )
 
 type workspacePDF struct {
-	Path string `json:"path"`
-	Name string `json:"name"`
-	Size int64  `json:"size_bytes"`
+	Path           string                     `json:"path"`
+	Name           string                     `json:"name"`
+	Size           int64                      `json:"size_bytes"`
+	PlanillaID     int64                      `json:"pdi_id,omitempty"`
+	CoverageDate   string                     `json:"fecha_cobertura,omitempty"`
+	CoverageCedula string                     `json:"cedula_cobertura,omitempty"`
+	CoverageItems  []coverageDocumentMetadata `json:"coberturas,omitempty"`
 }
 
 type mspPDFCode struct {
@@ -281,6 +287,28 @@ func (s *server) workspaceDocuments(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "No se pudieron listar los PDFs del expediente.")
 		return
 	}
+	coverageByPath := make(map[string]workspaceDocument, len(job.ExternalPDFs))
+	planillaByPath := make(map[string]int64, len(job.DocumentPlanillas)+len(job.ExternalPDFs))
+	for relative, planillaID := range job.DocumentPlanillas {
+		planillaByPath[filepath.ToSlash(filepath.Clean(filepath.FromSlash(relative)))] = planillaID
+	}
+	for _, document := range job.ExternalPDFs {
+		path := filepath.ToSlash(filepath.Clean(filepath.FromSlash(document.RelativePath)))
+		if document.CoverageDate != "" || document.CoverageCedula != "" || len(document.CoverageItems) > 0 {
+			coverageByPath[path] = document
+		}
+		if document.PlanillaID > 0 {
+			planillaByPath[path] = document.PlanillaID
+		}
+	}
+	for index := range documents {
+		documents[index].PlanillaID = planillaByPath[documents[index].Path]
+		if coverage, ok := coverageByPath[documents[index].Path]; ok {
+			documents[index].CoverageDate = coverage.CoverageDate
+			documents[index].CoverageCedula = coverage.CoverageCedula
+			documents[index].CoverageItems = append([]coverageDocumentMetadata(nil), coverage.CoverageItems...)
+		}
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"job_id": job.ID, "documents": documents, "patients": patients})
 }
 
@@ -357,6 +385,136 @@ func (s *server) deleteWorkspacePDF(w http.ResponseWriter, r *http.Request, job 
 	writeJSON(w, http.StatusOK, map[string]any{"job_id": job.ID, "documents": documents, "patients": patients, "removed": cleanRelative})
 }
 
+type archivePatientFolder struct {
+	sourceName  string
+	displayName string
+	tieBreak    string
+}
+
+func compareArchivePatientTieBreak(left, right string) int {
+	if isArchiveNumericIdentifier(left) && isArchiveNumericIdentifier(right) {
+		leftNumber := strings.TrimLeft(left, "0")
+		rightNumber := strings.TrimLeft(right, "0")
+		if leftNumber == "" {
+			leftNumber = "0"
+		}
+		if rightNumber == "" {
+			rightNumber = "0"
+		}
+		if len(leftNumber) != len(rightNumber) {
+			if len(leftNumber) < len(rightNumber) {
+				return -1
+			}
+			return 1
+		}
+		if compared := strings.Compare(leftNumber, rightNumber); compared != 0 {
+			return compared
+		}
+	}
+	return strings.Compare(left, right)
+}
+
+func isArchiveNumericIdentifier(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, character := range value {
+		if character < '0' || character > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+func normalizeArchivePatientName(value string) string {
+	value = norm.NFD.String(strings.ToUpper(strings.TrimSpace(value)))
+	var normalized strings.Builder
+	spacePending := false
+	for _, character := range value {
+		if unicode.Is(unicode.M, character) {
+			continue
+		}
+		isASCIIAlpha := character >= 'A' && character <= 'Z'
+		isASCIIDigit := character >= '0' && character <= '9'
+		if character == '_' || unicode.IsSpace(character) {
+			spacePending = normalized.Len() > 0
+			continue
+		}
+		if !isASCIIAlpha && !isASCIIDigit {
+			continue
+		}
+		if spacePending {
+			normalized.WriteByte(' ')
+			spacePending = false
+		}
+		normalized.WriteRune(character)
+	}
+	return strings.TrimSpace(normalized.String())
+}
+
+func workspaceArchivePatientFolders(job stagedJob, packageRoot string) (map[string]string, []string, error) {
+	folders := make([]archivePatientFolder, 0)
+	seen := make(map[string]bool)
+	if job.IsObjections {
+		for _, row := range job.ObjectionRows {
+			sourceName := strings.TrimSpace(row.PatientFolder)
+			if sourceName == "" || seen[sourceName] {
+				continue
+			}
+			seen[sourceName] = true
+			displayName := normalizeArchivePatientName(row.Patient)
+			if displayName == "" {
+				displayName = "PACIENTE"
+			}
+			folders = append(folders, archivePatientFolder{sourceName: sourceName, displayName: displayName, tieBreak: row.Tramite})
+		}
+	} else {
+		patientRoot := filepath.Join(packageRoot, "4. EXPEDIENTES")
+		entries, err := os.ReadDir(patientRoot)
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return nil, nil, err
+		}
+		for _, entry := range entries {
+			if !entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
+				continue
+			}
+			displayName := normalizeArchivePatientName(entry.Name())
+			if displayName == "" {
+				displayName = "PACIENTE"
+			}
+			folders = append(folders, archivePatientFolder{sourceName: entry.Name(), displayName: displayName, tieBreak: entry.Name()})
+		}
+	}
+	sort.Slice(folders, func(i, j int) bool {
+		if folders[i].displayName != folders[j].displayName {
+			return folders[i].displayName < folders[j].displayName
+		}
+		if compared := compareArchivePatientTieBreak(folders[i].tieBreak, folders[j].tieBreak); compared != 0 {
+			return compared < 0
+		}
+		return folders[i].sourceName < folders[j].sourceName
+	})
+	bySource := make(map[string]string, len(folders))
+	orderedNames := make([]string, 0, len(folders))
+	for index, folder := range folders {
+		name := fmt.Sprintf("%d. %s", index+1, folder.displayName)
+		bySource[folder.sourceName] = name
+		orderedNames = append(orderedNames, name)
+	}
+	return bySource, orderedNames, nil
+}
+
+func archiveRelativePatientPath(job stagedJob, relative string, folderNames map[string]string) string {
+	parts := strings.Split(filepath.ToSlash(relative), "/")
+	if len(parts) < 2 || (parts[0] != "4. EXPEDIENTES" && !(job.IsObjections && parts[0] == "5. ANEXOS")) {
+		return filepath.ToSlash(relative)
+	}
+	if name, ok := folderNames[parts[1]]; ok {
+		parts[1] = name
+	}
+	return strings.Join(parts, "/")
+}
+
 func (s *server) downloadWorkspaceZIP(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeError(w, http.StatusMethodNotAllowed, "Método no permitido.")
@@ -387,6 +545,11 @@ func (s *server) downloadWorkspaceZIP(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "No se encontró la carpeta preparada del expediente.")
 		return
 	}
+	folderNames, orderedFolderNames, err := workspaceArchivePatientFolders(job, root)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "No se pudieron preparar los nombres numerados de las carpetas de pacientes.")
+		return
+	}
 	_, readyForDelivery := s.workspaceDeliveryMissing(job)
 	archiveState := "READY"
 	archiveName := packageFolderName(&job) + ".zip"
@@ -399,14 +562,35 @@ func (s *server) downloadWorkspaceZIP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Folio-Archive-State", archiveState)
 	w.Header().Set("Cache-Control", "no-store")
 	archive := zip.NewWriter(w)
+	writtenDirectories := make(map[string]bool)
 	writeDirectory := func(name string, info os.FileInfo) error {
+		zipName := strings.TrimSuffix(filepath.ToSlash(name), "/") + "/"
+		if writtenDirectories[zipName] {
+			return nil
+		}
 		header, err := zip.FileInfoHeader(info)
 		if err != nil {
 			return err
 		}
-		header.Name = filepath.ToSlash(name) + "/"
+		header.Name = zipName
 		header.Method = zip.Store
 		_, err = archive.CreateHeader(header)
+		if err == nil {
+			writtenDirectories[zipName] = true
+		}
+		return err
+	}
+	writeEmptyDirectory := func(name string) error {
+		zipName := strings.TrimSuffix(filepath.ToSlash(name), "/") + "/"
+		if writtenDirectories[zipName] {
+			return nil
+		}
+		header := &zip.FileHeader{Name: zipName, Method: zip.Store}
+		header.SetMode(os.ModeDir | 0755)
+		_, err := archive.CreateHeader(header)
+		if err == nil {
+			writtenDirectories[zipName] = true
+		}
 		return err
 	}
 	if err := writeDirectory(packageFolderName(&job), rootInfo); err != nil {
@@ -433,7 +617,8 @@ func (s *server) downloadWorkspaceZIP(w http.ResponseWriter, r *http.Request) {
 		if !file.IsDir() && !objectionZIPIncludesFile(job, relative) {
 			return nil
 		}
-		archivePath := filepath.ToSlash(filepath.Join(packageFolderName(&job), relative))
+		archiveRelative := archiveRelativePatientPath(job, relative, folderNames)
+		archivePath := filepath.ToSlash(filepath.Join(packageFolderName(&job), archiveRelative))
 		if file.IsDir() {
 			info, err := file.Info()
 			if err != nil {
@@ -469,6 +654,23 @@ func (s *server) downloadWorkspaceZIP(w http.ResponseWriter, r *http.Request) {
 		}
 		return closeErr
 	})
+	if walkErr == nil && job.IsObjections {
+		for _, parent := range []string{"4. EXPEDIENTES", "5. ANEXOS"} {
+			if err := writeEmptyDirectory(filepath.Join(packageFolderName(&job), parent)); err != nil {
+				walkErr = err
+				break
+			}
+			for _, name := range orderedFolderNames {
+				if err := writeEmptyDirectory(filepath.Join(packageFolderName(&job), parent, name)); err != nil {
+					walkErr = err
+					break
+				}
+			}
+			if walkErr != nil {
+				break
+			}
+		}
+	}
 	closeErr := archive.Close()
 	if walkErr != nil || closeErr != nil {
 		log.Printf("expediente %s: falló exportación ZIP (walk=%v close=%v)", job.ID, walkErr, closeErr)
@@ -504,7 +706,7 @@ func (s *server) workspaceDeliveryMissing(job stagedJob) ([]string, bool) {
 			}
 		}
 	}
-	fusionGroups, err := workspaceFusionGroups(packageRoot)
+	fusionGroups, err := workspaceFusionGroups(job, packageRoot)
 	if err != nil {
 		missing = append(missing, "No se pudieron comprobar las fusiones de PDFs pendientes.")
 	} else {
@@ -558,15 +760,55 @@ type workspaceFusionGroup struct {
 	Code          string   `json:"codigo"`
 	CanonicalPath string   `json:"ruta_canonica"`
 	Paths         []string `json:"rutas"`
+	PlanillaID    int64    `json:"pdi_id,omitempty"`
 }
 
 var numberedMSPName = regexp.MustCompile(`^(.*)_([1-9][0-9]*)\.pdf$`)
 
-func workspaceFusionGroups(packageRoot string) ([]workspaceFusionGroup, error) {
+func isCoveragePDFName(name string) bool {
+	canonical := name
+	if match := numberedMSPName.FindStringSubmatch(name); match != nil {
+		canonical = match[1] + ".pdf"
+	}
+	return strings.EqualFold(canonical, "C_COBERTURA.pdf")
+}
+
+func workspaceCoveragePlanillaID(job stagedJob, relative string) int64 {
+	relative = filepath.ToSlash(filepath.Clean(filepath.FromSlash(relative)))
+	for _, document := range job.ExternalPDFs {
+		if filepath.ToSlash(filepath.Clean(filepath.FromSlash(document.RelativePath))) != relative {
+			continue
+		}
+		if len(document.CoverageItems) == 0 {
+			if document.PlanillaID > 0 {
+				return document.PlanillaID
+			}
+			break
+		}
+		var planillaID int64
+		for _, item := range document.CoverageItems {
+			if item.PlanillaID <= 0 {
+				continue
+			}
+			if planillaID != 0 && planillaID != item.PlanillaID {
+				return 0
+			}
+			planillaID = item.PlanillaID
+		}
+		return planillaID
+	}
+	return job.DocumentPlanillas[relative]
+}
+
+func workspaceFusionGroups(job stagedJob, packageRoot string) ([]workspaceFusionGroup, error) {
 	codes, err := loadMSPPDFCodeSet()
 	if err != nil {
 		return nil, err
 	}
+	return workspaceFusionGroupsWithCodes(job, packageRoot, codes)
+}
+
+func workspaceFusionGroupsWithCodes(job stagedJob, packageRoot string, codes map[string]struct{}) ([]workspaceFusionGroup, error) {
 	documents, _, err := listWorkspacePDFs(packageRoot)
 	if err != nil {
 		return nil, err
@@ -589,10 +831,20 @@ func workspaceFusionGroups(packageRoot string) ([]workspaceFusionGroup, error) {
 		}
 		directory := filepath.ToSlash(filepath.Dir(filepath.FromSlash(document.Path)))
 		key := directory + "/" + code
+		planillaID := int64(0)
+		canonicalPath := filepath.ToSlash(filepath.Join(directory, code))
+		isCoverage := strings.EqualFold(code, "C_COBERTURA.pdf")
+		if isCoverage {
+			planillaID = workspaceCoveragePlanillaID(job, document.Path)
+			key += fmt.Sprintf("|PDI:%d", planillaID)
+			canonicalPath = document.Path
+		}
 		group := groups[key]
 		if group == nil {
-			group = &workspaceFusionGroup{Code: code, CanonicalPath: filepath.ToSlash(filepath.Join(directory, code))}
+			group = &workspaceFusionGroup{Code: code, CanonicalPath: canonicalPath, PlanillaID: planillaID}
 			groups[key] = group
+		} else if isCoverage && document.Path == filepath.ToSlash(filepath.Join(directory, code)) {
+			group.CanonicalPath = document.Path
 		}
 		group.Paths = append(group.Paths, document.Path)
 	}
@@ -614,6 +866,58 @@ func workspaceFusionGroups(packageRoot string) ([]workspaceFusionGroup, error) {
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].CanonicalPath < result[j].CanonicalPath })
 	return result, nil
+}
+
+func workspaceCoverageMetadataForPaths(job stagedJob, paths []string) []coverageDocumentMetadata {
+	selected := make(map[string]bool, len(paths))
+	for _, path := range paths {
+		selected[filepath.ToSlash(filepath.Clean(filepath.FromSlash(path)))] = true
+	}
+	itemsByKey := make(map[string]coverageDocumentMetadata)
+	metadataPaths := make(map[string]bool)
+	add := func(item coverageDocumentMetadata) {
+		if item.PlanillaID <= 0 && item.Cedula == "" && item.Date == "" {
+			return
+		}
+		key := fmt.Sprintf("%d|%s|%s", item.PlanillaID, item.Cedula, item.Date)
+		itemsByKey[key] = item
+	}
+	for _, document := range job.ExternalPDFs {
+		path := filepath.ToSlash(filepath.Clean(filepath.FromSlash(document.RelativePath)))
+		if !selected[path] {
+			continue
+		}
+		metadataPaths[path] = true
+		if len(document.CoverageItems) > 0 {
+			for _, item := range document.CoverageItems {
+				add(item)
+			}
+			continue
+		}
+		if isCoveragePDFName(filepath.Base(path)) {
+			add(coverageDocumentMetadata{PlanillaID: document.PlanillaID, Cedula: document.CoverageCedula, Date: document.CoverageDate})
+		}
+	}
+	for path, planillaID := range job.DocumentPlanillas {
+		path = filepath.ToSlash(filepath.Clean(filepath.FromSlash(path)))
+		if selected[path] && !metadataPaths[path] {
+			add(coverageDocumentMetadata{PlanillaID: planillaID})
+		}
+	}
+	items := make([]coverageDocumentMetadata, 0, len(itemsByKey))
+	for _, item := range itemsByKey {
+		items = append(items, item)
+	}
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].PlanillaID != items[j].PlanillaID {
+			return items[i].PlanillaID < items[j].PlanillaID
+		}
+		if items[i].Date != items[j].Date {
+			return items[i].Date < items[j].Date
+		}
+		return items[i].Cedula < items[j].Cedula
+	})
+	return items
 }
 
 func safeWorkspacePath(root, relative string) (string, error) {
@@ -790,6 +1094,7 @@ func (s *server) renameWorkspacePDF(w http.ResponseWriter, r *http.Request) {
 	}
 	oldRelative := filepath.ToSlash(filepath.Clean(filepath.FromSlash(input.Path)))
 	previousObjectionSelection := cloneBoolMap(job.ObjectionPDFSelection)
+	previousObjectionSourcePDFs := cloneObjectionSourcePDFs(job.ObjectionSourcePDFs)
 	if included, exists := job.ObjectionPDFSelection[oldRelative]; exists {
 		delete(job.ObjectionPDFSelection, oldRelative)
 		if job.ObjectionPDFSelection == nil {
@@ -818,6 +1123,12 @@ func (s *server) renameWorkspacePDF(w http.ResponseWriter, r *http.Request) {
 			job.DocumentPlanillas[newRelative] = planillaID
 		}
 	}
+	for sourcePath, document := range job.ObjectionSourcePDFs {
+		if normalizedWorkspaceRelativePath(document.TargetPath) == oldRelative {
+			document.TargetPath = newRelative
+			job.ObjectionSourcePDFs[sourcePath] = document
+		}
+	}
 	for index := range job.ExternalPDFs {
 		if filepath.ToSlash(job.ExternalPDFs[index].RelativePath) == oldRelative {
 			job.ExternalPDFs[index].RelativePath = newRelative
@@ -832,6 +1143,7 @@ func (s *server) renameWorkspacePDF(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := s.saveStagedJob(job); err != nil {
 		job.ObjectionPDFSelection = previousObjectionSelection
+		job.ObjectionSourcePDFs = previousObjectionSourcePDFs
 		_ = os.Rename(newPath, oldPath)
 		writeError(w, http.StatusInternalServerError, "El PDF se renombró, pero no se pudo guardar el cambio.")
 		return
@@ -878,7 +1190,7 @@ func (s *server) mergeWorkspacePDFs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	packageRoot := filepath.Join(s.jobRoot(job.ID), "trabajo", packageFolderName(&job))
-	groups, err := workspaceFusionGroups(packageRoot)
+	groups, err := workspaceFusionGroups(job, packageRoot)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "No se pudieron revisar los PDFs repetidos.")
 		return
@@ -997,6 +1309,11 @@ func (s *server) mergeWorkspacePDFs(w http.ResponseWriter, r *http.Request) {
 		previousMerged[path] = append([]string(nil), duplicates...)
 	}
 	canonicalRelative := group.CanonicalPath
+	canonicalID := planillaForPath(job, canonicalRelative)
+	var coverageItems []coverageDocumentMetadata
+	if isCoveragePDFName(group.Code) {
+		coverageItems = workspaceCoverageMetadataForPaths(job, group.Paths)
+	}
 	if job.Replacements == nil {
 		job.Replacements = make(map[string]string)
 	}
@@ -1011,7 +1328,6 @@ func (s *server) mergeWorkspacePDFs(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	job.MergedDuplicates[canonicalRelative] = duplicates
-	canonicalID := job.DocumentPlanillas[canonicalRelative]
 	activeExternal := job.ExternalPDFs[:0]
 	for _, external := range job.ExternalPDFs {
 		if filepath.ToSlash(filepath.Clean(filepath.FromSlash(external.RelativePath))) != canonicalRelative {
@@ -1019,7 +1335,12 @@ func (s *server) mergeWorkspacePDFs(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	job.ExternalPDFs = activeExternal
-	job.ExternalPDFs = append(job.ExternalPDFs, workspaceDocument{ID: strings.TrimSuffix(storedName, ".pdf"), StoredName: storedName, OriginalName: group.Code, RelativePath: canonicalRelative, PlanillaID: canonicalID})
+	mergedDocument := workspaceDocument{ID: strings.TrimSuffix(storedName, ".pdf"), StoredName: storedName, OriginalName: group.Code, RelativePath: canonicalRelative, PlanillaID: canonicalID, CoverageItems: coverageItems}
+	if len(coverageItems) == 1 {
+		mergedDocument.CoverageCedula = coverageItems[0].Cedula
+		mergedDocument.CoverageDate = coverageItems[0].Date
+	}
+	job.ExternalPDFs = append(job.ExternalPDFs, mergedDocument)
 	if err := s.saveStagedJob(job); err != nil {
 		_ = os.Remove(canonical)
 		for path, saved := range backupPaths {

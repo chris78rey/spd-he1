@@ -337,7 +337,9 @@
 .objection-patient-controls{display:grid;grid-template-columns:minmax(260px,1fr) auto;align-items:center;gap:14px;margin-top:18px;color:#526257;font-size:14px}
 .objection-patient-controls .v-input{max-width:560px}
 .objection-patient-pagination{margin-top:8px}
-.objection-header-row .coverage-manual-upload{flex:1;min-width:220px}
+.objection-header-row .coverage-manual-upload{position:relative;display:flex;min-height:56px;flex:1;min-width:220px;flex-direction:column;align-items:flex-start;justify-content:center;gap:4px;padding:9px 12px;white-space:normal}
+.objection-header-row .objection-header-label{color:#365848;font-size:16px;line-height:1.35}
+.objection-header-row .coverage-manual-upload .objection-header-detail,.objection-header-row .coverage-manual-upload .objection-header-status{max-width:100%;color:#68776b;font-size:14px;font-weight:400;line-height:1.4;white-space:normal;overflow-wrap:anywhere}
 .objection-patient-list>.saved-workspace-card{align-items:flex-start;flex-direction:column}
 .objection-document-actions{display:grid;width:100%;grid-template-columns:repeat(3,minmax(0,1fr));align-items:center;gap:10px}
 .objection-document-actions .v-select{max-width:200px}
@@ -353,7 +355,16 @@
 .objection-scan-hint{grid-column:1/-1;color:#78857b;font-size:.78rem}
 .objection-existing-choices{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
 .objection-pdf-error-row{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.objection-sync-card .planilla-toolbar{align-items:flex-start;flex-wrap:wrap}
+.objection-sync-card .planilla-toolbar p{max-width:760px;color:#66766a;font-size:14px;line-height:1.5}
+.objection-sync-card .planilla-toolbar h3{margin:0 0 6px;color:#34453b;font-size:18px}
+.objection-sync-intro{margin:0 0 12px;font-size:14px;line-height:1.5}
+.objection-sync-conflict{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:12px 0;border-top:1px solid #d8c991}
+.objection-sync-conflict>div{display:flex;min-width:0;flex-direction:column;gap:4px}
+.objection-sync-conflict strong{font-size:15px;overflow-wrap:anywhere}
+.objection-sync-conflict small{font-size:14px;line-height:1.45;overflow-wrap:anywhere}
 @media(max-width:600px){.objection-pdf-error-row{align-items:stretch;flex-direction:column}}
+@media(max-width:700px){.objection-sync-conflict{align-items:stretch;flex-direction:column}.objection-sync-conflict .v-btn{align-self:flex-start;white-space:normal}}
 @media(max-width:900px){
   .patient-documents-launch{align-items:stretch;flex-direction:column}
   .patient-documents-dialog>.v-overlay__content{width:100vw!important;max-width:100vw!important;max-height:100dvh!important;margin:0!important}
@@ -463,4 +474,25 @@ body{min-width:320px}
   .workspace-picker-fields>.workspace-picker-search{grid-column:auto}
   .workspace-picker-menu.v-overlay__content{width:calc(100vw - 16px)!important;min-width:calc(100vw - 16px)!important;max-width:calc(100vw - 16px)!important}
   .objection-workspace-picker-buttons{grid-template-columns:1fr}
+}
+.patient-coverage-panel{display:grid;gap:10px;margin:12px 0;padding:14px;border:1px solid #dce7df;border-radius:14px;background:#f7faf7}
+.patient-coverage-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.patient-coverage-heading h3{margin:0;color:#304738;font-size:16px;line-height:1.4}
+.patient-coverage-heading p,.patient-coverage-help,.patient-coverage-row-detail,.patient-coverage-empty,.patient-coverage-manual{margin:0;color:#526256;font-size:14px;line-height:1.5;overflow-wrap:anywhere}
+.patient-coverage-help{max-width:1000px}
+.patient-coverage-controls{display:grid;grid-template-columns:minmax(170px,1fr) minmax(180px,1fr) auto;align-items:end;gap:10px}
+.patient-coverage-controls>.v-btn{min-height:48px}
+.patient-coverage-tramite{display:flex;min-height:56px;align-items:center;padding:0 12px;border:1px solid #d2ded4;border-radius:8px;background:#fff;color:#344b3a;font-size:15px;font-weight:650}
+.patient-coverage-row-detail{display:flex;flex-wrap:wrap;gap:5px 18px}
+.patient-coverage-loading{display:flex;align-items:center;gap:9px;color:#526256;font-size:14px}
+.patient-coverage-alert{margin:0}
+.patient-coverage-manual{display:grid;gap:7px;padding:12px;border:1px solid #e5d6c4;border-radius:10px;background:#fffaf4}
+.patient-coverage-manual strong{color:#714b29}
+.patient-coverage-manual ul{display:grid;gap:3px;margin:0;padding-left:22px}
+.patient-coverage-manual a{width:max-content;color:#365848;font-weight:650}
+.patient-coverage-manual .coverage-manual-upload{width:max-content;position:relative;min-height:44px;font-size:14px}
+@media(max-width:700px){
+  .patient-coverage-heading{flex-direction:column}
+  .patient-coverage-controls{grid-template-columns:minmax(0,1fr)}
+  .patient-coverage-controls>.v-btn,.patient-coverage-manual .coverage-manual-upload{width:100%}
 }

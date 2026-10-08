@@ -28,6 +28,7 @@ func TestObjectionZIPSelectionOnlyFiltersObjectionPatientPDFs(t *testing.T) {
 	for _, path := range []string{
 		"4. EXPEDIENTES/PACIENTE/P_INDIVIDUAL.pdf",
 		"1. OFICIO DE PAGO.pdf",
+		"OFICIO_LIQUIDACION_MSP.pdf",
 		"5. ANEXOS/PACIENTE/FACTURA.pdf",
 	} {
 		if !objectionZIPIncludesFile(job, path) {
@@ -245,7 +246,7 @@ func TestDownloadObjectionZIPIncludesOnlyMarkedClinicalPDFs(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	for _, name := range []string{"I_LIQUIDACION.pdf", "1. OFICIO DE PAGO.pdf", "2. PLANILLA CONSOLIDADA.pdf"} {
+	for _, name := range []string{"OFICIO_LIQUIDACION_MSP.pdf", "I_LIQUIDACION.pdf", "1. OFICIO DE PAGO.pdf", "2. PLANILLA CONSOLIDADA.pdf"} {
 		if err := os.WriteFile(filepath.Join(packageRoot, name), []byte("%PDF-1.4\ncabecera\n"), 0600); err != nil {
 			t.Fatal(err)
 		}
@@ -292,17 +293,60 @@ func TestDownloadObjectionZIPIncludesOnlyMarkedClinicalPDFs(t *testing.T) {
 	}
 	root := packageFolderName(&job) + "/"
 	for _, path := range []string{
-		root + "4. EXPEDIENTES/" + patientFolder + "/P_INDIVIDUAL.pdf",
-		root + "4. EXPEDIENTES/" + patientFolder + "/C_COBERTURA.pdf",
-		root + "4. EXPEDIENTES/" + patientFolder + "/HCU_006.pdf",
-		root + "5. ANEXOS/" + patientFolder + "/FACTURA.pdf",
+		root + "OFICIO_LIQUIDACION_MSP.pdf",
+		root + "4. EXPEDIENTES/1. PACIENTE/P_INDIVIDUAL.pdf",
+		root + "4. EXPEDIENTES/1. PACIENTE/C_COBERTURA.pdf",
+		root + "4. EXPEDIENTES/1. PACIENTE/HCU_006.pdf",
+		root + "5. ANEXOS/1. PACIENTE/FACTURA.pdf",
 	} {
 		if !entries[path] {
 			t.Errorf("expected ZIP entry %q", path)
 		}
 	}
-	if entries[root+"4. EXPEDIENTES/"+patientFolder+"/HCU_008.pdf"] {
+	if entries[root+"4. EXPEDIENTES/1. PACIENTE/HCU_008.pdf"] {
 		t.Fatal("unmarked clinical PDF was included in objection ZIP")
+	}
+}
+
+func TestObjectionHeaderNameSeparatesMSPOfficeFromHospitalResponse(t *testing.T) {
+	job := stagedJob{Service: "AMBULATORIO", Month: "08", Year: "2026"}
+	cases := []struct {
+		kind, wantName, wantField string
+	}{
+		{"oficio_liquidacion_msp", "OFICIO_LIQUIDACION_MSP.pdf", "objection_oficio_liquidacion_msp"},
+		{"liquidacion", "I_LIQUIDACION.pdf", "objection_liquidacion"},
+		{"oficio", "1. OFICIO DE PAGO.pdf", "objection_oficio"},
+	}
+	for _, test := range cases {
+		name, field, err := objectionHeaderName(job, test.kind)
+		if err != nil {
+			t.Fatalf("objectionHeaderName(%q): %v", test.kind, err)
+		}
+		if name != test.wantName || field != test.wantField {
+			t.Errorf("objectionHeaderName(%q) = (%q, %q), want (%q, %q)", test.kind, name, field, test.wantName, test.wantField)
+		}
+	}
+}
+
+func TestObjectionHeaderStatusesShowsMSPOfficeFirstAndDistinguishesHospitalResponse(t *testing.T) {
+	s := &server{workspacesDir: t.TempDir()}
+	job := stagedJob{ID: "JOB-20261007T140000-abcdef0123456789", Service: "AMBULATORIO", Month: "08", Year: "2026"}
+	statuses := objectionHeaderStatuses(s, job)
+	if len(statuses) < 3 {
+		t.Fatalf("header statuses returned %d entries, want at least 3", len(statuses))
+	}
+	want := []struct{ kind, label string }{
+		{"oficio_liquidacion_msp", "Oficio de liquidación del MSP"},
+		{"liquidacion", "Informe de liquidación del MSP"},
+		{"oficio", "Oficio de pago del hospital"},
+	}
+	for index, expected := range want {
+		if got := statuses[index]["tipo"]; got != expected.kind {
+			t.Errorf("header %d type = %v, want %q", index, got, expected.kind)
+		}
+		if got := statuses[index]["etiqueta"]; got != expected.label {
+			t.Errorf("header %d label = %v, want %q", index, got, expected.label)
+		}
 	}
 }
 
@@ -473,7 +517,7 @@ func TestAppendObjectionRowsPreservesWorkAndInvalidatesExistingMatrix(t *testing
 	if err := os.MkdirAll(filepath.Dir(newSourcePDF), 0700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(newSourcePDF, []byte("PDF nuevo ficticio"), 0600); err != nil {
+	if err := os.WriteFile(newSourcePDF, []byte("%PDF-1.4\nPDF nuevo ficticio\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	source.DocumentPlanillas = map[string]int64{"4. EXPEDIENTES/PACIENTE_FICTICIO_DOS/HCU_006.pdf": 502}
@@ -634,7 +678,7 @@ func TestInstallObjectionWorkspaceCopiesOnlyObjectedPlanillaFiles(t *testing.T) 
 	if _, err := os.Stat(filepath.Join(packageRoot, "5. ANEXOS")); !os.IsNotExist(err) {
 		t.Fatalf("optional annex directory should not be created before an attachment: %v", err)
 	}
-	for _, name := range []string{"I_LIQUIDACION.pdf", "1. OFICIO DE PAGO.pdf", "2. PLANILLA CONSOLIDADA.pdf", objectionMatrixFilename(job)} {
+	for _, name := range []string{"OFICIO_LIQUIDACION_MSP.pdf", "I_LIQUIDACION.pdf", "1. OFICIO DE PAGO.pdf", "2. PLANILLA CONSOLIDADA.pdf", objectionMatrixFilename(job)} {
 		if _, err := os.Stat(filepath.Join(packageRoot, name)); !os.IsNotExist(err) {
 			t.Fatalf("header %s should be uploaded after creation: %v", name, err)
 		}
@@ -645,6 +689,189 @@ func TestInstallObjectionWorkspaceCopiesOnlyObjectedPlanillaFiles(t *testing.T) 
 	if job.DocumentPlanillas[filepath.ToSlash(filepath.Join("4. EXPEDIENTES", folder, "objetado.pdf"))] != 501 {
 		t.Fatal("derived document lost its PDI_ID mapping")
 	}
+}
+
+func TestSyncObjectionDocumentsAddsNewPDFsAndPreservesObjectionWork(t *testing.T) {
+	root := t.TempDir()
+	s := &server{workspacesDir: filepath.Join(root, "expedientes"), sessions: map[string]session{"sync-test": {expiresAt: time.Now().Add(time.Hour)}}}
+	source, job, sourcePatient, targetPatient := objectionSyncFixture(t, s, "9900711")
+	newSourcePDF := filepath.Join(sourcePatient, "HCU_010.pdf")
+	currentSourcePDF := filepath.Join(sourcePatient, "HCU_006.pdf")
+	newContents := []byte("%PDF-1.4\nformulario cargado después\n")
+	if err := os.WriteFile(newSourcePDF, newContents, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(newSourcePDF, currentSourcePDF); err != nil {
+		t.Fatal(err)
+	}
+	delete(source.DocumentPlanillas, "4. EXPEDIENTES/PACIENTE_SINCRONIZACION/HCU_010.pdf")
+	source.DocumentPlanillas["4. EXPEDIENTES/PACIENTE_SINCRONIZACION/HCU_006.pdf"] = 711
+	source.Renames = map[string]string{"4. EXPEDIENTES/PACIENTE_SINCRONIZACION/HCU_010.pdf": "4. EXPEDIENTES/PACIENTE_SINCRONIZACION/HCU_006.pdf"}
+	persistTestObjectionJob(t, s, source)
+
+	job, err := s.loadStagedJob(job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	job.ObjectionRows[0].Posture = "RECHAZA"
+	selectedPath := filepath.ToSlash(filepath.Join("4. EXPEDIENTES", targetPatient, "HCU_008.pdf"))
+	job.ObjectionPDFSelection = map[string]bool{selectedPath: true}
+	annex := filepath.Join(s.jobRoot(job.ID), "trabajo", packageFolderName(&job), "5. ANEXOS", targetPatient, "FACTURA_COMPRA.pdf")
+	annexContents := []byte("anexo guardado en Objeciones")
+	if err := atomicWritePrivateFile(annex, annexContents); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.saveStagedJob(job); err != nil {
+		t.Fatal(err)
+	}
+
+	response := callObjectionSync(t, s, job.ID, "{}")
+	if response.Code != http.StatusOK {
+		t.Fatalf("sync status = %d, body = %s", response.Code, response.Body.String())
+	}
+	var result struct {
+		Added     int                     `json:"documentos_agregados"`
+		Conflicts []objectionSyncConflict `json:"conflictos"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Added != 1 || len(result.Conflicts) != 0 {
+		t.Fatalf("sync result = %+v; want one added PDF and no conflicts", result)
+	}
+	updated, err := s.loadStagedJob(job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.ObjectionRows[0].Posture != "RECHAZA" || !updated.ObjectionPDFSelection[selectedPath] {
+		t.Fatalf("sync changed saved posture or PDF selection: %+v", updated.ObjectionRows[0])
+	}
+	newTargetPDF := filepath.Join(s.jobRoot(job.ID), "trabajo", packageFolderName(&updated), "4. EXPEDIENTES", targetPatient, "HCU_006.pdf")
+	got, err := os.ReadFile(newTargetPDF)
+	if err != nil || !bytes.Equal(got, newContents) {
+		t.Fatalf("new PDF was not copied correctly: contents=%q error=%v", got, err)
+	}
+	if objectionZIPIncludesFile(updated, filepath.ToSlash(filepath.Join("4. EXPEDIENTES", targetPatient, "HCU_010.pdf"))) {
+		t.Fatal("new optional clinical PDF should remain unselected for the objection ZIP")
+	}
+	if got, err := os.ReadFile(annex); err != nil || !bytes.Equal(got, annexContents) {
+		t.Fatalf("sync changed the objection annex: contents=%q error=%v", got, err)
+	}
+	if got, err := os.ReadFile(currentSourcePDF); err != nil || !bytes.Equal(got, newContents) {
+		t.Fatalf("sync changed the first-ingress source: contents=%q error=%v", got, err)
+	}
+}
+
+func TestSyncObjectionDocumentsRequiresChoiceBeforeUpdatingChangedPDF(t *testing.T) {
+	root := t.TempDir()
+	s := &server{workspacesDir: filepath.Join(root, "expedientes"), sessions: map[string]session{"sync-test": {expiresAt: time.Now().Add(time.Hour)}}}
+	source, job, sourcePatient, targetPatient := objectionSyncFixture(t, s, "9900712")
+	sourcePDF := filepath.Join(sourcePatient, "HCU_008.pdf")
+	newContents := []byte("%PDF-1.4\nversión corregida en primer ingreso\n")
+	if err := os.WriteFile(sourcePDF, newContents, 0600); err != nil {
+		t.Fatal(err)
+	}
+	persistTestObjectionJob(t, s, source)
+
+	targetPDF := filepath.Join(s.jobRoot(job.ID), "trabajo", packageFolderName(&job), "4. EXPEDIENTES", targetPatient, "HCU_008.pdf")
+	oldContents, err := os.ReadFile(targetPDF)
+	if err != nil {
+		t.Fatal(err)
+	}
+	job, err = s.loadStagedJob(job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	selectedPath := filepath.ToSlash(filepath.Join("4. EXPEDIENTES", targetPatient, "HCU_008.pdf"))
+	job.ObjectionRows[0].Posture = "ACEPTA"
+	job.ObjectionPDFSelection = map[string]bool{selectedPath: true}
+	if err := s.saveStagedJob(job); err != nil {
+		t.Fatal(err)
+	}
+
+	response := callObjectionSync(t, s, job.ID, "{}")
+	if response.Code != http.StatusOK {
+		t.Fatalf("detect changed source status = %d, body = %s", response.Code, response.Body.String())
+	}
+	var conflicts struct {
+		Items []objectionSyncConflict `json:"conflictos"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &conflicts); err != nil {
+		t.Fatal(err)
+	}
+	if len(conflicts.Items) != 1 || conflicts.Items[0].SourcePath != "4. EXPEDIENTES/PACIENTE_SINCRONIZACION/HCU_008.pdf" {
+		t.Fatalf("sync conflicts = %+v; want the changed HCU_008.pdf", conflicts.Items)
+	}
+	if got, err := os.ReadFile(targetPDF); err != nil || !bytes.Equal(got, oldContents) {
+		t.Fatalf("detection overwrote the objection copy: contents=%q error=%v", got, err)
+	}
+
+	body, _ := json.Marshal(map[string]any{"source_path": conflicts.Items[0].SourcePath, "actualizar_version": true})
+	response = callObjectionSync(t, s, job.ID, string(body))
+	if response.Code != http.StatusOK {
+		t.Fatalf("explicit update status = %d, body = %s", response.Code, response.Body.String())
+	}
+	if got, err := os.ReadFile(targetPDF); err != nil || !bytes.Equal(got, newContents) {
+		t.Fatalf("explicit update did not copy the new source: contents=%q error=%v", got, err)
+	}
+	updated, err := s.loadStagedJob(job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.ObjectionRows[0].Posture != "ACEPTA" || !updated.ObjectionPDFSelection[selectedPath] {
+		t.Fatalf("explicit update changed saved posture or selection: %+v", updated.ObjectionRows[0])
+	}
+	versions, err := os.ReadDir(filepath.Join(s.jobRoot(job.ID), "fuentes", "versiones"))
+	if err != nil || len(versions) != 1 {
+		t.Fatalf("previous objection PDF was not backed up: entries=%v error=%v", versions, err)
+	}
+	backup, err := os.ReadFile(filepath.Join(s.jobRoot(job.ID), "fuentes", "versiones", versions[0].Name()))
+	if err != nil || !bytes.Equal(backup, oldContents) {
+		t.Fatalf("backup does not contain previous objection PDF: contents=%q error=%v", backup, err)
+	}
+}
+
+func objectionSyncFixture(t *testing.T, s *server, tramite string) (stagedJob, stagedJob, string, string) {
+	t.Helper()
+	source := stagedJob{
+		ID: "JOB-20261007T100000-abcdef0123456789", Status: "PROCESSED", Service: "AMBULATORIO", Month: "08", Year: "2026",
+		DocumentPlanillas: map[string]int64{
+			"4. EXPEDIENTES/PACIENTE_SINCRONIZACION/HCU_008.pdf":     711,
+			"4. EXPEDIENTES/PACIENTE_SINCRONIZACION/C_COBERTURA.pdf": 711,
+		},
+	}
+	job := stagedJob{
+		ID: "JOB-20261007T100001-abcdef0123456789", Status: "PROCESSED", Service: source.Service, Month: source.Month, Year: source.Year,
+		IsObjections: true, ObjectionSourceID: source.ID,
+		ObjectionRows: []objectionRecord{{Tramite: tramite, PlanillaID: 711, Cedula: "0000000711", Patient: "PACIENTE SINCRONIZACION", PatientFolder: objectionPatientFolder("0000000711", "PACIENTE SINCRONIZACION", tramite), SourcePatientFolder: "PACIENTE_SINCRONIZACION", Matched: true}},
+	}
+	sourcePackage := filepath.Join(s.jobRoot(source.ID), "trabajo", packageFolderName(&source))
+	sourcePatient := filepath.Join(sourcePackage, "4. EXPEDIENTES", "PACIENTE_SINCRONIZACION")
+	if err := os.MkdirAll(sourcePatient, 0700); err != nil {
+		t.Fatal(err)
+	}
+	for name, content := range map[string][]byte{
+		"HCU_008.pdf":     []byte("%PDF-1.4\nversión inicial\n"),
+		"C_COBERTURA.pdf": []byte("%PDF-1.4\ncobertura\n"),
+	} {
+		if err := os.WriteFile(filepath.Join(sourcePatient, name), content, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	persistTestObjectionJob(t, s, source)
+	if err := s.installObjectionWorkspace(&job, source, job.ObjectionRows); err != nil {
+		t.Fatalf("installObjectionWorkspace() error = %v", err)
+	}
+	return source, job, sourcePatient, job.ObjectionRows[0].PatientFolder
+}
+
+func callObjectionSync(t *testing.T, s *server, id, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/objeciones/sincronizar/"+id, strings.NewReader(body))
+	request.AddCookie(&http.Cookie{Name: "folio_session", Value: "sync-test"})
+	response := httptest.NewRecorder()
+	s.syncObjectionDocuments(response, request)
+	return response
 }
 
 func TestInstallObjectionRowsAppendsForgottenTransactionWithoutChangingExistingRows(t *testing.T) {
@@ -716,10 +943,10 @@ func TestObjectionCloseoutRequiresHeadersResponseAndCoverageButNotAnnex(t *testi
 		IsObjections: true, Service: "AMBULATORIO", Month: "08", Year: "2026",
 		ObjectionRows: []objectionRecord{{Tramite: "9900201", Patient: "PACIENTE FICTICIO", PatientFolder: "PACIENTE_FICTICIO_9900201", Matched: true}},
 	}
-	if err := validateObjectionCloseout(job, root); err == nil || !strings.Contains(err.Error(), "I_LIQUIDACION.pdf") {
+	if err := validateObjectionCloseout(job, root); err == nil || !strings.Contains(err.Error(), "OFICIO_LIQUIDACION_MSP.pdf") {
 		t.Fatalf("expected missing header to block ZIP; got %v", err)
 	}
-	for _, name := range []string{"I_LIQUIDACION.pdf", "1. OFICIO DE PAGO.pdf", "2. PLANILLA CONSOLIDADA.pdf"} {
+	for _, name := range []string{"OFICIO_LIQUIDACION_MSP.pdf", "I_LIQUIDACION.pdf", "1. OFICIO DE PAGO.pdf", "2. PLANILLA CONSOLIDADA.pdf"} {
 		if err := os.WriteFile(filepath.Join(root, name), []byte("%PDF-1.4\nficticio\n"), 0600); err != nil {
 			t.Fatal(err)
 		}

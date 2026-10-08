@@ -31,6 +31,7 @@ type coveragePlanilla struct {
 	ID               int64                  `json:"pdi_id"`
 	Tramite          string                 `json:"pdi_tramite"`
 	Patient          string                 `json:"paciente"`
+	PatientFolder    string                 `json:"carpeta_paciente"`
 	CareUntil        string                 `json:"fecha_hasta"`
 	Cedula           string                 `json:"cedula"`
 	Minor            string                 `json:"menor_edad"`
@@ -762,6 +763,7 @@ func (s *server) coverageRows(ctx context.Context, job stagedJob) ([]coveragePla
 			continue
 		}
 		row.Patient, row.CareUntil = strings.TrimSpace(patient.String), strings.TrimSpace(date.String)
+		row.PatientFolder = normalizePatientFolder(row.Patient)
 		row.Cedula, row.Minor = strings.TrimSpace(cedula.String), strings.ToUpper(strings.TrimSpace(minor.String))
 		row.Dependent1, row.Dependent2 = strings.TrimSpace(dep1.String), strings.TrimSpace(dep2.String)
 		row.CoverageStatus = strings.ToUpper(strings.TrimSpace(coverage.String))
@@ -871,6 +873,16 @@ func coverageDocumentDate(doc workspaceDocument, row coveragePlanilla) string {
 	return date
 }
 
+func coverageDocumentMetadataItems(doc workspaceDocument) []coverageDocumentMetadata {
+	if len(doc.CoverageItems) > 0 {
+		return doc.CoverageItems
+	}
+	if doc.PlanillaID > 0 || doc.CoverageCedula != "" || doc.CoverageDate != "" {
+		return []coverageDocumentMetadata{{PlanillaID: doc.PlanillaID, Cedula: doc.CoverageCedula, Date: doc.CoverageDate}}
+	}
+	return nil
+}
+
 func coverageHasDate(row coveragePlanilla, date string) bool {
 	date, ok := normalizeCoverageDate(date)
 	if !ok {
@@ -919,7 +931,17 @@ func (s *server) indexCoverageDocuments(job stagedJob) map[int64]*coverageDateIn
 		}
 	}
 	for _, doc := range job.ExternalPDFs {
-		add(doc.PlanillaID, doc.RelativePath, doc.CoverageDate)
+		if !isCoveragePDFName(filepath.Base(doc.RelativePath)) {
+			continue
+		}
+		items := coverageDocumentMetadataItems(doc)
+		if len(items) == 0 {
+			add(doc.PlanillaID, doc.RelativePath, doc.CoverageDate)
+			continue
+		}
+		for _, item := range items {
+			add(item.PlanillaID, doc.RelativePath, item.Date)
+		}
 	}
 	data, err := os.ReadFile(filepath.Join(s.jobRoot(job.ID), "reportes", "classification_report.json"))
 	if err == nil {
@@ -936,8 +958,26 @@ func (s *server) indexCoverageDocuments(job stagedJob) map[int64]*coverageDateIn
 func (s *server) coverageDocumentsForPlanilla(job stagedJob, pdiID int64) []workspaceDocument {
 	documents := make([]workspaceDocument, 0)
 	for _, doc := range job.ExternalPDFs {
-		if doc.PlanillaID == pdiID && strings.HasPrefix(filepath.Base(doc.RelativePath), "C_COBERTURA") {
-			documents = append(documents, doc)
+		if !isCoveragePDFName(filepath.Base(doc.RelativePath)) {
+			continue
+		}
+		items := coverageDocumentMetadataItems(doc)
+		if len(items) == 0 {
+			if doc.PlanillaID == pdiID {
+				documents = append(documents, doc)
+			}
+			continue
+		}
+		for _, item := range items {
+			if item.PlanillaID != pdiID {
+				continue
+			}
+			copy := doc
+			copy.PlanillaID = item.PlanillaID
+			copy.CoverageCedula = item.Cedula
+			copy.CoverageDate = item.Date
+			copy.CoverageItems = nil
+			documents = append(documents, copy)
 		}
 	}
 	data, err := os.ReadFile(filepath.Join(s.jobRoot(job.ID), "reportes", "classification_report.json"))

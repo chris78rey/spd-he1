@@ -120,6 +120,7 @@ func main() {
 	mux.HandleFunc("/api/v1/objeciones/previsualizar", s.previewObjections)
 	mux.HandleFunc("/api/v1/objeciones/crear", s.createObjectionWorkspace)
 	mux.HandleFunc("/api/v1/objeciones/agregar/", s.addObjectionPatients)
+	mux.HandleFunc("/api/v1/objeciones/sincronizar/", s.syncObjectionDocuments)
 	mux.HandleFunc("/api/v1/objeciones/cabeceras/", s.uploadObjectionHeader)
 	mux.HandleFunc("/api/v1/objeciones/documentos/", s.uploadObjectionDocument)
 	mux.HandleFunc("/api/v1/objeciones/pdfs/seleccion/", s.objectionPDFSelection)

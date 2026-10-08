@@ -11,6 +11,13 @@ Rules:
 - Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
 - After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).
 
+## Runtime build freshness
+
+- When a user asks to verify a change in the running application, identify the active service process and the executable it has loaded. Do not infer that the running application uses the current source or `bin/folio-server` from file timestamps alone.
+- Build the current source to a temporary candidate and compare its SHA-256 with `/proc/<MainPID>/exe`; also compare with `bin/folio-server` when that is the service executable. If the hashes differ, state that the running instance is stale.
+- Before replacing an ignored or otherwise untracked executable, back it up and confirm a rollback path. Check that no child job is active before restarting the service.
+- Replacing the service executable or restarting the service is a deployment. Do it only with explicit user authorization. After an authorized restart, verify the service is active and the loaded executable hash matches the candidate; if startup fails, restore the backup and verify the previous service is active.
+
 ## Product decisions
 
 - Before proposing or implementing a product or interface change, read `PRINCIPIOS_DE_PRODUCTO.md` and check the relevant nodes in `graphify-out/graph.json` with Graphify.

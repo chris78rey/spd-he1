@@ -607,6 +607,7 @@ func (s *server) appendObjectionRows(job *stagedJob, source stagedJob, rows []ob
 	for path, planillaID := range job.DocumentPlanillas {
 		previousMappings[path] = planillaID
 	}
+	previousSourcePDFs := cloneObjectionSourcePDFs(job.ObjectionSourcePDFs)
 	matrixName := objectionMatrixFilename(*job)
 	matrixPath := filepath.Join(packageRoot, matrixName)
 	previousMatrix, matrixErr := os.ReadFile(matrixPath)
@@ -616,18 +617,19 @@ func (s *server) appendObjectionRows(job *stagedJob, source stagedJob, rows []ob
 	}
 	if err := installObjectionRows(packageRoot, patientRoot, source, newRows, job); err != nil {
 		job.DocumentPlanillas = previousMappings
+		job.ObjectionSourcePDFs = previousSourcePDFs
 		return 0, false, err
 	}
 	job.ObjectionRows = append(job.ObjectionRows, newRows...)
 	if matrixExisted {
 		if err := saveObjectionVersion(s.jobRoot(job.ID), matrixName, previousMatrix); err != nil {
 			cleanupObjectionRows(packageRoot, newRows)
-			job.ObjectionRows, job.Files, job.DocumentPlanillas = previousRows, previousFiles, previousMappings
+			job.ObjectionRows, job.Files, job.DocumentPlanillas, job.ObjectionSourcePDFs = previousRows, previousFiles, previousMappings, previousSourcePDFs
 			return 0, false, errors.New("No se pudo conservar la matriz anterior antes de agregar los trámites.")
 		}
 		if err := os.Remove(matrixPath); err != nil {
 			cleanupObjectionRows(packageRoot, newRows)
-			job.ObjectionRows, job.Files, job.DocumentPlanillas = previousRows, previousFiles, previousMappings
+			job.ObjectionRows, job.Files, job.DocumentPlanillas, job.ObjectionSourcePDFs = previousRows, previousFiles, previousMappings, previousSourcePDFs
 			return 0, false, errors.New("No se pudo invalidar la matriz anterior.")
 		}
 	}
@@ -639,7 +641,7 @@ func (s *server) appendObjectionRows(job *stagedJob, source stagedJob, rows []ob
 	job.StatusDetail += " Los documentos de cabecera se solicitan al preparar el ZIP. Oracle permanece sin cambios."
 	if err := s.saveStagedJob(*job); err != nil {
 		cleanupObjectionRows(packageRoot, newRows)
-		job.ObjectionRows, job.Files, job.DocumentPlanillas, job.StatusDetail = previousRows, previousFiles, previousMappings, previousStatusDetail
+		job.ObjectionRows, job.Files, job.DocumentPlanillas, job.ObjectionSourcePDFs, job.StatusDetail = previousRows, previousFiles, previousMappings, previousSourcePDFs, previousStatusDetail
 		if matrixExisted {
 			_ = atomicWritePrivateFile(matrixPath, previousMatrix)
 		}
@@ -774,6 +776,8 @@ func objectionMatrixFilename(job stagedJob) string {
 
 func objectionHeaderName(job stagedJob, kind string) (string, string, error) {
 	switch kind {
+	case "oficio_liquidacion_msp":
+		return "OFICIO_LIQUIDACION_MSP.pdf", "objection_oficio_liquidacion_msp", nil
 	case "liquidacion":
 		return "I_LIQUIDACION.pdf", "objection_liquidacion", nil
 	case "oficio":
@@ -912,11 +916,12 @@ func validXLSMFile(filename string) bool {
 
 func objectionHeaderStatuses(s *server, job stagedJob) []map[string]any {
 	packageRoot := filepath.Join(s.jobRoot(job.ID), "trabajo", packageFolderName(&job))
-	headers := []struct{ kind, name string }{
-		{"liquidacion", "I_LIQUIDACION.pdf"},
-		{"oficio", "1. OFICIO DE PAGO.pdf"},
-		{"consolidada", "2. PLANILLA CONSOLIDADA.pdf"},
-		{"matriz", objectionMatrixFilename(job)},
+	headers := []struct{ kind, name, label, detail string }{
+		{"oficio_liquidacion_msp", "OFICIO_LIQUIDACION_MSP.pdf", "Oficio de liquidación del MSP", "Documento emitido por el MSP; distinto del oficio de pago que presenta el hospital."},
+		{"liquidacion", "I_LIQUIDACION.pdf", "Informe de liquidación del MSP", "Informe detallado identificado como I_LIQUIDACION.pdf."},
+		{"oficio", "1. OFICIO DE PAGO.pdf", "Oficio de pago del hospital", "Respuesta que prepara el hospital; se conserva como 1. OFICIO DE PAGO.pdf."},
+		{"consolidada", "2. PLANILLA CONSOLIDADA.pdf", "Planilla consolidada rectificada", "Se conserva como 2. PLANILLA CONSOLIDADA.pdf."},
+		{"matriz", objectionMatrixFilename(job), "Matriz oficial de objeciones", "Detalle de la respuesta para cada trámite objetado."},
 	}
 	result := make([]map[string]any, 0, len(headers))
 	for _, header := range headers {
@@ -925,7 +930,7 @@ func objectionHeaderStatuses(s *server, job stagedJob) []map[string]any {
 		if header.kind == "matriz" {
 			present = validXLSMFile(filename)
 		}
-		result = append(result, map[string]any{"tipo": header.kind, "nombre": header.name, "cargado": present})
+		result = append(result, map[string]any{"tipo": header.kind, "nombre": header.name, "etiqueta": header.label, "detalle": header.detail, "cargado": present})
 	}
 	return result
 }
@@ -1048,6 +1053,8 @@ func objectionPatientFolder(cedula, patient, tramite string) string {
 }
 
 func installObjectionRows(packageRoot, patientRoot string, source stagedJob, rows []objectionRecord, job *stagedJob) error {
+	previousMappings := clonePlanillaMappings(job.DocumentPlanillas)
+	previousSourcePDFs := cloneObjectionSourcePDFs(job.ObjectionSourcePDFs)
 	if job.DocumentPlanillas == nil {
 		job.DocumentPlanillas = make(map[string]int64)
 	}
@@ -1057,6 +1064,8 @@ func installObjectionRows(packageRoot, patientRoot string, source stagedJob, row
 			_ = os.RemoveAll(folder)
 			_ = os.RemoveAll(filepath.Join(packageRoot, "5. ANEXOS", filepath.Base(folder)))
 		}
+		job.DocumentPlanillas = previousMappings
+		job.ObjectionSourcePDFs = previousSourcePDFs
 	}
 	seen := make(map[string]bool, len(rows))
 	for _, row := range rows {
@@ -1087,7 +1096,7 @@ func installObjectionRows(packageRoot, patientRoot string, source stagedJob, row
 			return errors.New("No se pudo crear el expediente objetado.")
 		}
 		installed = append(installed, destination)
-		copied, mappings, err := copyObjectionPDFTree(filepath.Join(patientRoot, sourceFolder), destination, sourceFolder, destinationFolder, source, map[int64]bool{row.PlanillaID: true})
+		copied, mappings, sourceDocuments, err := copyObjectionPDFTree(filepath.Join(patientRoot, sourceFolder), destination, sourceFolder, destinationFolder, source, map[int64]bool{row.PlanillaID: true})
 		if err != nil || copied == 0 {
 			rollback()
 			return fmt.Errorf("No se pudieron copiar los PDFs asociados al trámite %s desde el expediente de origen.", row.Tramite)
@@ -1095,13 +1104,18 @@ func installObjectionRows(packageRoot, patientRoot string, source stagedJob, row
 		for relative, planillaID := range mappings {
 			job.DocumentPlanillas[relative] = planillaID
 		}
+		job.ObjectionSourcePDFs = ensureObjectionSourcePDFMap(job.ObjectionSourcePDFs)
+		for sourcePath, document := range sourceDocuments {
+			job.ObjectionSourcePDFs[sourcePath] = document
+		}
 	}
 	return nil
 }
 
-func copyObjectionPDFTree(source, destination, sourcePatientFolder, destinationPatientFolder string, sourceJob stagedJob, allowedPlanillas map[int64]bool) (int, map[string]int64, error) {
+func copyObjectionPDFTree(source, destination, sourcePatientFolder, destinationPatientFolder string, sourceJob stagedJob, allowedPlanillas map[int64]bool) (int, map[string]int64, map[string]objectionSourcePDF, error) {
 	copied := 0
 	mappings := make(map[string]int64)
+	sourceDocuments := make(map[string]objectionSourcePDF)
 	err := filepath.WalkDir(source, func(current string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
@@ -1153,10 +1167,15 @@ func copyObjectionPDFTree(source, destination, sourcePatientFolder, destinationP
 		}
 		destinationRelative := filepath.ToSlash(filepath.Join("4. EXPEDIENTES", destinationPatientFolder, destinationPath))
 		mappings[destinationRelative] = planillaID
+		hash, _, err := objectionSourceDocumentHash(target)
+		if err != nil {
+			return err
+		}
+		sourceDocuments[sourceRelative] = objectionSourcePDF{TargetPath: destinationRelative, SHA256: hash}
 		copied++
 		return nil
 	})
-	return copied, mappings, err
+	return copied, mappings, sourceDocuments, err
 }
 
 func (s *server) uploadObjectionDocument(w http.ResponseWriter, r *http.Request) {
@@ -1332,9 +1351,10 @@ func validateObjectionCloseout(job stagedJob, packageRoot string) error {
 func objectionCloseoutMissing(job stagedJob, packageRoot string) []string {
 	missing := make([]string, 0)
 	requiredPDFs := []struct{ name, label string }{
-		{"I_LIQUIDACION.pdf", "I_LIQUIDACION.pdf"},
-		{"1. OFICIO DE PAGO.pdf", "1. OFICIO DE PAGO.pdf"},
-		{"2. PLANILLA CONSOLIDADA.pdf", "2. PLANILLA CONSOLIDADA.pdf"},
+		{"OFICIO_LIQUIDACION_MSP.pdf", "el Oficio de liquidación del MSP (OFICIO_LIQUIDACION_MSP.pdf)"},
+		{"I_LIQUIDACION.pdf", "el Informe de liquidación del MSP (I_LIQUIDACION.pdf)"},
+		{"1. OFICIO DE PAGO.pdf", "el Oficio de pago del hospital (1. OFICIO DE PAGO.pdf)"},
+		{"2. PLANILLA CONSOLIDADA.pdf", "la Planilla consolidada rectificada (2. PLANILLA CONSOLIDADA.pdf)"},
 	}
 	for _, item := range requiredPDFs {
 		if !validPDFFile(filepath.Join(packageRoot, item.name)) {

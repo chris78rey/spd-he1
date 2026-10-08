@@ -107,6 +107,22 @@ const pickerItems = computed(() => filteredWorkspaces.value.map(workspace => {
     workspace,
   }
 }))
+
+// Vuetify 4 passes the original item to the item and selection slots. Keep
+// accepting Vuetify 3's internal-item shape as well, so the labels stay visible
+// if a caller renders this shared picker with either slot payload.
+function pickerRawItem(item) {
+  if (item?.workspace) return item
+  if (item?.raw?.workspace) return item.raw
+  return item || {}
+}
+
+function pickerOptionTitle(item) {
+  const option = pickerRawItem(item)
+  if (!option.workspace) return option.title || ''
+  return `${option.typeName} · ${option.serviceName} · ${option.periodName}`
+}
+
 const hasFilters = computed(() => Boolean(String(search.value ?? '').trim())
   || service.value !== 'ALL'
   || year.value !== 'ALL'
@@ -171,17 +187,19 @@ function clearFilters() {
       @update:model-value="emit('update:modelValue', $event || '')"
     >
       <template #selection="{ item }">
-        <span class="workspace-picker-selection">{{ item.raw?.title || item.title }}</span>
+        <span class="workspace-picker-selection">{{ pickerRawItem(item).title || item?.title || '' }}</span>
       </template>
       <template #item="{ props: itemProps, item }">
         <v-list-item v-bind="itemProps" class="workspace-picker-option">
           <template #title>
-            <span class="workspace-picker-option-title">{{ item.raw.typeName }} · {{ item.raw.serviceName }} · {{ item.raw.periodName }}</span>
+            <span class="workspace-picker-option-title">{{ pickerOptionTitle(item) }}</span>
           </template>
           <template #subtitle>
-            <span class="workspace-picker-option-details"><strong>Estado:</strong> {{ item.raw.statusName }} <span aria-hidden="true">·</span> <strong>ID:</strong> {{ item.raw.workspace.job_id }}</span>
-            <span class="workspace-picker-option-details"><strong>Usuario:</strong> {{ item.raw.userLabel }}<template v-if="item.raw.receivedLabel"> <span aria-hidden="true">·</span> <strong>Fecha:</strong> {{ item.raw.receivedLabel }}</template></span>
-            <span class="workspace-picker-option-details workspace-picker-option-message">{{ item.raw.detailLabel }}</span>
+            <template v-if="pickerRawItem(item).workspace">
+              <span class="workspace-picker-option-details"><strong>Estado:</strong> {{ pickerRawItem(item).statusName }} <span aria-hidden="true">·</span> <strong>ID:</strong> {{ pickerRawItem(item).workspace.job_id }}</span>
+              <span class="workspace-picker-option-details"><strong>Usuario:</strong> {{ pickerRawItem(item).userLabel }}<template v-if="pickerRawItem(item).receivedLabel"> <span aria-hidden="true">·</span> <strong>Fecha:</strong> {{ pickerRawItem(item).receivedLabel }}</template></span>
+              <span class="workspace-picker-option-details workspace-picker-option-message">{{ pickerRawItem(item).detailLabel }}</span>
+            </template>
           </template>
         </v-list-item>
       </template>

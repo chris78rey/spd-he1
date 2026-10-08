@@ -77,6 +77,7 @@ const ingestPreviewPage = ref(1)
 const ingestPreviewPageSize = 10
 const savedWorkspaces = ref([])
 const selectedSavedWorkspace = ref('')
+const patientDocumentsWorkspaceID = ref('')
 const savedWorkspacesLoading = ref(false)
 const savedWorkspacesError = ref('')
 const showWorkspaceDetails = ref(false)
@@ -134,6 +135,8 @@ const objectionPackagePDFs = ref([])
 const objectionPDFLoading = ref(false)
 const objectionPDFError = ref('')
 const objectionPDFSavingPath = ref('')
+const objectionSyncConflicts = ref([])
+const objectionSyncLoading = ref(false)
 const objectionPostureSaving = ref('')
 const objectionAnnexTypeByPatient = ref({})
 const objectionAnnexNameByPatient = ref({})
@@ -254,6 +257,13 @@ const workspaceBusy = ref(false)
 const workspaceMutationBusy = ref(false)
 const workspaceSending = ref(false)
 const workspaceNotice = ref('')
+const patientCoverageRows = ref([])
+const patientCoverageLoading = ref(false)
+const patientCoverageSelectedID = ref(null)
+const patientCoverageDate = ref('')
+const patientCoverageGenerating = ref(false)
+const patientCoverageError = ref('')
+const patientCoverageNotice = ref('')
 const workspacePDFInput = ref(null)
 const replacePDFInput = ref(null)
 const replacePDFFile = ref(null)
@@ -299,11 +309,29 @@ const workspacePatientPDFs = computed(() => {
   const prefix = workspacePatient.value ? `4. EXPEDIENTES/${workspacePatient.value}/` : ''
   return prefix ? workspacePDFs.value.filter(document => document.path.startsWith(prefix)) : []
 })
+const patientCoverageRowsForFolder = computed(() => workspacePatient.value
+  ? patientCoverageRows.value.filter(row => row.carpeta_paciente === workspacePatient.value)
+  : [])
+const patientCoverageSelectedRow = computed(() => patientCoverageRowsForFolder.value.find(row => Number(row.pdi_id) === Number(patientCoverageSelectedID.value)) || patientCoverageRowsForFolder.value[0] || null)
+const patientCoverageTramiteItems = computed(() => patientCoverageRowsForFolder.value.map(row => ({
+  title: `Trámite ${row.pdi_tramite}${row.fechas_cobertura?.length ? ` · ${row.fechas_cobertura.length} fecha(s) guardada(s)` : ''}`,
+  value: row.pdi_id,
+})))
+watch([workspacePatient, patientCoverageRows], () => {
+  const matching = patientCoverageRowsForFolder.value
+  if (!matching.some(row => Number(row.pdi_id) === Number(patientCoverageSelectedID.value))) {
+    patientCoverageSelectedID.value = matching[0]?.pdi_id ?? null
+  }
+  patientCoverageError.value = ''
+  patientCoverageNotice.value = ''
+})
 const workspaceFusionGroups = computed(() => {
   const allowed = new Set(mspPdfCodes.map(option => option.value.toLowerCase()))
   const groups = new Map()
   for (const document of workspacePDFs.value) {
     if (!document.path.startsWith('4. EXPEDIENTES/')) continue
+    const coverageCode = document.name.replace(/_[1-9]\d*(?=\.pdf$)/i, '').toLowerCase()
+    const isCoverage = coverageCode === 'c_cobertura.pdf'
     let code = document.name
     if (!allowed.has(code.toLowerCase())) {
       const match = code.match(/^(.*)_([1-9]\d*)\.pdf$/i)
@@ -311,8 +339,9 @@ const workspaceFusionGroups = computed(() => {
       code = `${match[1]}.pdf`
       if (!allowed.has(code.toLowerCase())) continue
     }
-    const key = `${document.path.slice(0, document.path.lastIndexOf('/') + 1)}${code.toLowerCase()}`
-    const group = groups.get(key) || { code, paths: [] }
+    const planillaID = isCoverage ? Number(document.pdi_id) || 0 : 0
+    const key = `${document.path.slice(0, document.path.lastIndexOf('/') + 1)}${code.toLowerCase()}${isCoverage ? `|PDI:${planillaID}` : ''}`
+    const group = groups.get(key) || { code, paths: [], pdi_id: planillaID }
     group.paths.push(document.path)
     groups.set(key, group)
   }
@@ -328,7 +357,8 @@ const workspacePatientFusionGroups = computed(() => {
 })
 const workspaceFusionQueue = computed(() => workspaceFusionGroups.value.map(group => {
   const patient = group.paths[0]?.split('/')[1] || ''
-  return { ...group, patient, value: group.paths[0], title: `${patient} · ${group.code} · ${group.paths.length} PDFs` }
+  const planilla = group.pdi_id ? ` · Trámite PDI_ID ${group.pdi_id}` : ''
+  return { ...group, patient, value: group.paths[0], title: `${patient} · ${group.code}${planilla} · ${group.paths.length} PDFs` }
 }))
 const pendingFusionSelection = ref('')
 const selectedPendingFusionGroup = computed(() => workspaceFusionQueue.value.find(group => group.value === pendingFusionSelection.value) || null)
@@ -449,11 +479,43 @@ async function loadCoveragePlanillas(jobId = selectedCoverageWorkspace.value) {
     coverageError.value = error.message || 'No se pudieron cargar las planillas de cobertura.'
   } finally { coverageLoading.value = false }
 }
+async function loadPatientCoveragePlanillas(jobId = ingestResult.value?.job_id) {
+  patientCoverageRows.value = []
+  patientCoverageSelectedID.value = null
+  patientCoverageError.value = ''
+  patientCoverageNotice.value = ''
+  if (!jobId || ingestResult.value?.es_objeciones) return
+  patientCoverageLoading.value = true
+  try {
+    const { response, data } = await fetchWorkspaceJSON(`/api/v1/coberturas/planillas/${encodeURIComponent(jobId)}`, { credentials: 'same-origin' }, 30000, 'cargar las planillas del paciente')
+    if (response.status === 401) { await signOut(); return }
+    if (!response.ok) throw new Error(data.error || 'No se pudieron identificar los trámites de esta carpeta.')
+    if (ingestResult.value?.job_id !== jobId) return
+    patientCoverageRows.value = data.planillas || []
+  } catch (error) {
+    patientCoverageError.value = error.message || 'No se pudieron identificar los trámites de esta carpeta.'
+  } finally { patientCoverageLoading.value = false }
+}
 function coverageServiceLabel(service) {
   return ingestServices.find(item => item.value === service)?.title || service || 'Servicio'
 }
 function coverageMonthLabel(month) {
   return ingestMonths.find(item => item.value === String(month).padStart(2, '0'))?.title || month || ''
+}
+function coverageDateLabel(value) {
+  const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  return match ? `${match[3]}/${match[2]}/${match[1]}` : value || ''
+}
+function coverageDocumentSummary(document) {
+  const details = []
+  const entries = document?.coberturas || []
+  const cedulas = [...new Set(entries.map(item => item.cedula).filter(Boolean))]
+  const dates = [...new Set(entries.map(item => item.fecha).filter(Boolean))]
+  if (cedulas.length) details.push(`Cédula${cedulas.length > 1 ? 's' : ''} ${cedulas.join(', ')}`)
+  else if (document?.cedula_cobertura) details.push(`Cédula ${document.cedula_cobertura}`)
+  if (dates.length) details.push(`Consulta${dates.length > 1 ? 's' : ''} ${dates.map(coverageDateLabel).join(', ')}`)
+  else if (document?.fecha_cobertura) details.push(`Consulta ${coverageDateLabel(document.fecha_cobertura)}`)
+  return details.join(' · ')
 }
 function toggleCoveragePlanilla(row) {
   if (!row || (coverageMode.value === 'standard' && row.pdi_cobertura === 'S' && !row.hoja_generada)) return
@@ -526,6 +588,38 @@ async function generateCoverageSheetsForDate(queryDate) {
     coverageError.value = error.message || 'No se pudieron generar las hojas seleccionadas.'
   } finally { coverageProgress.value = ''; coverageGenerating.value = false }
 }
+async function generatePatientCoverageAtChosenDate() {
+  const jobId = ingestResult.value?.job_id
+  const row = patientCoverageSelectedRow.value
+  if (!jobId || !row || patientCoverageGenerating.value || workspaceMutationBusy.value) return
+  if (!patientCoverageDate.value) {
+    patientCoverageError.value = 'Elige la fecha que consultará el portal MSP.'
+    return
+  }
+  patientCoverageGenerating.value = true
+  patientCoverageError.value = ''
+  patientCoverageNotice.value = ''
+  try {
+    const { response, data } = await fetchWorkspaceJSON(`/api/v1/coberturas/generar-fecha/${encodeURIComponent(jobId)}`, {
+      method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pdi_ids: [row.pdi_id], fecha_consulta: patientCoverageDate.value }),
+    }, 15 * 60 * 1000, 'consultar las coberturas del paciente')
+    if (response.status === 401) { await signOut(); return }
+    if (!response.ok) throw new Error(data.error || 'No se pudieron consultar las coberturas del paciente.')
+    const failure = (data.errores || []).find(item => item.pdi_id === row.pdi_id)
+    if (failure && !failure.manual) throw new Error(failure.motivo || 'No se pudieron generar las coberturas.')
+    await Promise.all([
+      loadPatientCoveragePlanillas(jobId),
+      loadWorkspaceDocuments(jobId, selectedWorkspacePDF.value),
+    ])
+    selectLatestPatientCoveragePDF()
+    patientCoverageNotice.value = failure?.manual
+      ? `El portal no entregó todas las hojas para ${patientCoverageDate.value}. Puedes adjuntar las pendientes aquí.`
+      : `Consulta terminada para el trámite ${row.pdi_tramite} con fecha ${patientCoverageDate.value}. Las coberturas se guardaron en esta carpeta; Oracle conserva el estado anterior.`
+  } catch (error) {
+    patientCoverageError.value = error.message || 'No se pudieron consultar las coberturas del paciente.'
+  } finally { patientCoverageGenerating.value = false }
+}
 async function downloadSelectedCoverageSheets() {
   const ids = coverageDownloadableSelectedIds.value
   if (!selectedCoverageWorkspace.value || !ids.length || coverageGenerating.value) return
@@ -553,27 +647,43 @@ async function downloadSelectedCoverageSheets() {
     coverageError.value = error.message || 'No se pudo descargar el ZIP.'
   } finally { coverageGenerating.value = false }
 }
-async function uploadManualCoverageSheets(row, event) {
+async function uploadManualCoverageSheets(row, event, options = {}) {
   const files = [...(event.target.files || [])]
   event.target.value = ''
-  if (!files.length || !selectedCoverageWorkspace.value) return
+  const fromPatientDocuments = options.fromPatientDocuments === true
+  const jobId = options.jobId || selectedCoverageWorkspace.value
+  if (!files.length || !jobId) return
   coverageManualUploadingId.value = row.pdi_id
-  coverageError.value = ''
+  if (fromPatientDocuments) patientCoverageError.value = ''
+  else coverageError.value = ''
   try {
     const form = new FormData()
     form.append('pdi_id', String(row.pdi_id))
     files.forEach(file => form.append('pdf_files', file, file.name))
-    const response = await fetch(`/api/v1/coberturas/manual/${encodeURIComponent(selectedCoverageWorkspace.value)}`, { method: 'POST', credentials: 'same-origin', body: form })
+    const response = await fetch(`/api/v1/coberturas/manual/${encodeURIComponent(jobId)}`, { method: 'POST', credentials: 'same-origin', body: form })
     if (response.status === 401) { await signOut(); return }
     const result = await response.json().catch(() => ({}))
     if (!response.ok) throw new Error(result.error || 'No se pudieron adjuntar las hojas manuales.')
-    await loadCoveragePlanillas(selectedCoverageWorkspace.value)
-    coverageNotice.value = result.oracle_actualizado === false
-      ? `Se adjuntaron ${result.adjuntadas} hojas consultadas con fecha ${result.fecha_consulta}; quedaron guardadas en el expediente. Oracle conserva el estado anterior de cobertura.`
-      : `Se adjuntaron ${result.adjuntadas} hojas descargadas del portal MSP y se actualizaron en Oracle.`
+    if (fromPatientDocuments) {
+      await Promise.all([
+        loadPatientCoveragePlanillas(jobId),
+        loadWorkspaceDocuments(jobId, selectedWorkspacePDF.value),
+      ])
+      selectLatestPatientCoveragePDF()
+      patientCoverageNotice.value = `Se adjuntaron ${result.adjuntadas} coberturas de la fecha ${result.fecha_consulta}. Oracle conserva el estado anterior.`
+    } else {
+      await loadCoveragePlanillas(jobId)
+      coverageNotice.value = result.oracle_actualizado === false
+        ? `Se adjuntaron ${result.adjuntadas} hojas consultadas con fecha ${result.fecha_consulta}; quedaron guardadas en el expediente. Oracle conserva el estado anterior de cobertura.`
+        : `Se adjuntaron ${result.adjuntadas} hojas descargadas del portal MSP y se actualizaron en Oracle.`
+    }
   } catch (error) {
-    coverageError.value = error.message || 'No se pudieron adjuntar las hojas manuales.'
+    if (fromPatientDocuments) patientCoverageError.value = error.message || 'No se pudieron adjuntar las hojas manuales.'
+    else coverageError.value = error.message || 'No se pudieron adjuntar las hojas manuales.'
   } finally { coverageManualUploadingId.value = null }
+}
+function uploadPatientManualCoverageSheets(row, event) {
+  return uploadManualCoverageSheets(row, event, { fromPatientDocuments: true, jobId: ingestResult.value?.job_id })
 }
 async function loadPlanilla(page = planillaPage.value) {
   planillaPage.value = page
@@ -682,6 +792,17 @@ async function fetchWorkspaceJSON(url, options, timeoutMs, operation) {
 function selectWorkspacePDF(path) {
   selectedWorkspacePDF.value = path
   workspaceRename.value = standardCodeForFilename(selectedWorkspaceDocument.value?.name || '')
+}
+function selectLatestPatientCoveragePDF() {
+  const documents = workspacePatientPDFs.value
+    .filter(document => /^C_COBERTURA(?:_[1-9]\d*)?\.pdf$/i.test(document.name))
+    .sort((a, b) => coverageDocumentSequence(a.name) - coverageDocumentSequence(b.name))
+  const latest = documents.at(-1)
+  if (latest) selectWorkspacePDF(latest.path)
+}
+function coverageDocumentSequence(name = '') {
+  const match = name.match(/^C_COBERTURA(?:_([1-9]\d*))?\.pdf$/i)
+  return match?.[1] ? Number(match[1]) : 0
 }
 function selectWorkspacePatient(patient) {
   workspacePatient.value = patient
@@ -1328,6 +1449,17 @@ async function clearIngestTramiteMapping(folder) {
   } finally { ingestMappingSaving.value = '' }
 }
 const orderedSavedWorkspaces = computed(() => orderWorkspaceRecords(savedWorkspaces.value))
+function ensurePatientDocumentsWorkspaceSelection() {
+  if (savedWorkspaces.value.some(workspace => workspace.job_id === patientDocumentsWorkspaceID.value)) return
+  const currentlySelected = savedWorkspaces.value.find(workspace => workspace.job_id === selectedSavedWorkspace.value)
+  const preferredID = currentlySelected?.es_objeciones
+    ? currentlySelected.expediente_origen
+    : currentlySelected?.job_id
+  const preferred = savedWorkspaces.value.find(workspace => workspace.job_id === preferredID)
+  const fallback = orderedSavedWorkspaces.value.find(workspace => !workspace.es_objeciones)
+    || orderedSavedWorkspaces.value[0]
+  patientDocumentsWorkspaceID.value = preferred?.job_id || fallback?.job_id || ''
+}
 const coverageWorkspaceCandidates = computed(() => orderedSavedWorkspaces.value
   .filter(workspace => !workspace.es_objeciones && ['PROCESSED', 'INCOMPLETE'].includes(workspace.status)))
 const objectionSourceWorkspaces = computed(() => {
@@ -1448,6 +1580,7 @@ async function loadSavedWorkspaces() {
     savedWorkspaces.value = data.workspaces || []
     if (!ingestModeTouched.value && !ingestResult.value) ingestMode.value = savedWorkspaces.value.length ? 'resume' : 'new'
     if (!savedWorkspaces.value.some(workspace => workspace.job_id === selectedSavedWorkspace.value)) selectedSavedWorkspace.value = savedWorkspaces.value[0]?.job_id || ''
+    ensurePatientDocumentsWorkspaceSelection()
   } catch (error) { savedWorkspacesError.value = error.message || 'No se pudieron cargar los períodos guardados.' }
   finally { savedWorkspacesLoading.value = false }
 }
@@ -1491,7 +1624,7 @@ async function openPatientDocumentsPage() {
   patientDocumentsError.value = ''
   await loadSavedWorkspaces()
 }
-async function openPatientDocumentsWorkspace(jobId = selectedSavedWorkspace.value) {
+async function openPatientDocumentsWorkspace(jobId = patientDocumentsWorkspaceID.value) {
   if (!jobId || openingSavedWorkspace.value) return
   patientDocumentsError.value = ''
   await openSavedWorkspace(jobId)
@@ -1504,6 +1637,7 @@ async function openPatientDocumentsWorkspace(jobId = selectedSavedWorkspace.valu
     return
   }
   patientDocumentsDialog.value = true
+  void loadPatientCoveragePlanillas(jobId)
 }
 async function openZipDownloadPage() {
   activePage.value = 'zip-download'
@@ -1621,6 +1755,7 @@ async function loadObjectionWorkspace(jobId = objectionSelectedWorkspace.value) 
     objectionAddSelectedTramites.value = []
     objectionUploadFiles.value = {}
     objectionPackagePDFs.value = []
+    objectionSyncConflicts.value = []
   }
   objectionBusy.value = true
   objectionError.value = ''
@@ -1651,6 +1786,61 @@ async function loadObjectionPDFSelection(jobId) {
   } catch (error) {
     objectionPDFError.value = error.message || 'No se pudieron cargar los PDFs del paquete.'
   } finally { objectionPDFLoading.value = false }
+}
+async function syncObjectionWorkspaceDocuments() {
+  const jobId = objectionSelectedWorkspace.value
+  if (!jobId || objectionBusy.value) return
+  objectionBusy.value = true
+  objectionSyncLoading.value = true
+  objectionError.value = ''
+  objectionNotice.value = ''
+  try {
+    const response = await fetch(`/api/v1/objeciones/sincronizar/${encodeURIComponent(jobId)}`, {
+      method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: '{}',
+    })
+    if (response.status === 401) { await signOut(); return }
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok) throw new Error(data.error || 'No se pudieron sincronizar los documentos del primer ingreso.')
+    if (objectionSelectedWorkspace.value === jobId) {
+      objectionCurrentWorkspace.value = data
+      objectionSyncConflicts.value = data.conflictos || []
+      objectionNotice.value = data.message || 'Se revisaron los documentos del primer ingreso.'
+      await loadObjectionPDFSelection(jobId)
+    }
+  } catch (error) {
+    objectionError.value = error.message || 'No se pudieron sincronizar los documentos del primer ingreso.'
+  } finally {
+    objectionSyncLoading.value = false
+    objectionBusy.value = false
+  }
+}
+async function updateObjectionSourceVersion(conflict) {
+  const jobId = objectionSelectedWorkspace.value
+  if (!jobId || !conflict?.source_path || objectionBusy.value) return
+  objectionBusy.value = true
+  objectionSyncLoading.value = true
+  objectionError.value = ''
+  objectionNotice.value = ''
+  try {
+    const response = await fetch(`/api/v1/objeciones/sincronizar/${encodeURIComponent(jobId)}`, {
+      method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ source_path: conflict.source_path, actualizar_version: true }),
+    })
+    if (response.status === 401) { await signOut(); return }
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok) throw new Error(data.error || 'No se pudo actualizar el PDF desde el primer ingreso.')
+    if (objectionSelectedWorkspace.value === jobId) {
+      objectionCurrentWorkspace.value = data
+      objectionSyncConflicts.value = objectionSyncConflicts.value.filter(item => item.source_path !== conflict.source_path)
+      objectionNotice.value = data.message || `${conflict.name} se actualizó desde el primer ingreso.`
+      await loadObjectionPDFSelection(jobId)
+    }
+  } catch (error) {
+    objectionError.value = error.message || 'No se pudo actualizar el PDF desde el primer ingreso.'
+  } finally {
+    objectionSyncLoading.value = false
+    objectionBusy.value = false
+  }
 }
 async function setObjectionPDFIncluded(document, included) {
   if (!document || document.obligatorio || !objectionSelectedWorkspace.value || objectionPDFSavingPath.value) return
@@ -2138,10 +2328,28 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
             <div v-if="!objectionWorkspaceItems.length && !savedWorkspacesLoading" class="planilla-state"><v-icon icon="mdi-folder-search-outline" size="24"/><span>Aún no hay espacios de objeciones.</span></div>
             <template v-if="objectionCurrentWorkspace">
               <v-alert class="mt-3" type="info" variant="tonal" density="comfortable">El ZIP se llamará {{ objectionCurrentWorkspace.job_id }}_OBJECIONES. Los PDFs del primer ingreso se copiaron a este espacio; marca aquí cuáles enviar. P_INDIVIDUAL.pdf y C_COBERTURA.pdf son obligatorios. Para reemplazar o renombrar documentos, abre «Revisar y corregir expediente». Los anexos son opcionales.</v-alert>
+              <v-card class="planilla-card mt-4 objection-sync-card" rounded="xl" elevation="0">
+                <div class="planilla-toolbar">
+                  <div><h3>Actualizar documentos desde el primer ingreso</h3><p>Si agregaste PDFs al expediente original después de crear Objeciones, sincronízalos aquí. La acción conserva las posturas, anexos y selecciones guardadas.</p></div>
+                  <v-btn type="button" variant="tonal" prepend-icon="mdi-sync" :loading="objectionSyncLoading" :disabled="objectionBusy || !objectionCurrentWorkspace.expediente_origen" @click="syncObjectionWorkspaceDocuments">Sincronizar documentos</v-btn>
+                </div>
+                <v-alert v-if="objectionSyncConflicts.length" class="mt-3" type="warning" variant="tonal" density="comfortable">
+                  <p class="objection-sync-intro">Hay documentos con otro contenido en el período original. Se conservó la copia de Objeciones. Elige si quieres reemplazarla; antes se guardará una copia de respaldo.</p>
+                  <div v-for="conflict in objectionSyncConflicts" :key="conflict.source_path" class="objection-sync-conflict">
+                    <div><strong>{{ conflict.name }}</strong><small>{{ conflict.reason }}</small></div>
+                    <v-btn type="button" size="small" variant="outlined" :loading="objectionSyncLoading" :disabled="objectionBusy" @click="updateObjectionSourceVersion(conflict)">Usar versión del primer ingreso</v-btn>
+                  </div>
+                </v-alert>
+              </v-card>
               <v-card class="planilla-card mt-4" rounded="xl" elevation="0">
                 <div class="planilla-toolbar"><div><h3>Documentos para completar el ZIP</h3><p>No hacen falta para crear, abrir ni continuar el espacio. Quedan pendientes y puedes cargarlos después; se solicitan al preparar la descarga final.</p></div></div>
                 <div v-for="header in objectionHeaderOptions" :key="header.tipo" class="coverage-toolbar objection-header-row">
-                  <label class="coverage-manual-upload">{{ header.nombre }}<input type="file" :accept="header.tipo === 'matriz' ? '.xlsm,application/vnd.ms-excel.sheet.macroEnabled.12' : '.pdf,application/pdf'" :disabled="objectionBusy" @change="setObjectionInput(header.tipo,$event)"/><small>{{ objectionHeaderFiles[header.tipo]?.name || (header.cargado ? 'Cargado; selecciona para reemplazar' : 'Pendiente de carga') }}</small></label>
+                  <label class="coverage-manual-upload">
+                    <strong class="objection-header-label">{{ header.etiqueta || header.nombre }}</strong>
+                    <small class="objection-header-detail">{{ header.detalle || header.nombre }}</small>
+                    <input type="file" :accept="header.tipo === 'matriz' ? '.xlsm,application/vnd.ms-excel.sheet.macroEnabled.12' : '.pdf,application/pdf'" :disabled="objectionBusy" @change="setObjectionInput(header.tipo,$event)"/>
+                    <small class="objection-header-status">{{ objectionHeaderFiles[header.tipo]?.name || (header.cargado ? 'Cargado; selecciona para reemplazar' : 'Pendiente de carga') }}</small>
+                  </label>
                   <v-btn type="button" size="small" variant="tonal" :loading="objectionBusy" :disabled="!objectionHeaderFiles[header.tipo] || objectionBusy" @click="uploadObjectionHeader(header.tipo)">{{ header.cargado ? 'Reemplazar' : 'Guardar' }}</v-btn>
                   <v-chip size="small" :color="header.cargado ? 'success' : 'warning'" variant="tonal">{{ header.cargado ? 'Listo' : 'Pendiente' }}</v-chip>
                 </div>
@@ -2202,7 +2410,7 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
           <v-card class="planilla-card saved-workspaces-card" rounded="xl" elevation="0">
             <div class="patient-documents-picker-row">
               <WorkspacePicker
-                v-model="selectedSavedWorkspace"
+                v-model="patientDocumentsWorkspaceID"
                 :workspaces="orderedSavedWorkspaces"
                 label="Período de los documentos"
                 placeholder="Busca por tipo, servicio, período, estado, usuario o ID"
@@ -2221,7 +2429,7 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
             <div v-else-if="!savedWorkspaces.length" class="planilla-state"><v-icon icon="mdi-folder-search-outline" size="25"/><span>No hay períodos guardados todavía.</span><v-btn type="button" variant="text" color="primary" @click="activePage='ingesta'">Recibir planillas</v-btn></div>
             <template v-else>
               <v-alert v-if="patientDocumentsError" class="mt-4" type="warning" variant="tonal" density="comfortable">{{ patientDocumentsError }}</v-alert>
-              <div class="coverage-toolbar"><span class="coverage-footnote">Al abrir un período podrás elegir una carpeta de paciente y revisar sus PDFs.</span><v-btn type="button" color="primary" prepend-icon="mdi-file-eye-outline" :loading="openingSavedWorkspace" :disabled="!selectedSavedWorkspace || openingSavedWorkspace" @click="openPatientDocumentsWorkspace()">Abrir documentos</v-btn></div>
+              <div class="coverage-toolbar"><span class="coverage-footnote">Al abrir un período podrás elegir una carpeta de paciente y revisar sus PDFs.</span><v-btn type="button" color="primary" prepend-icon="mdi-file-eye-outline" :loading="openingSavedWorkspace" :disabled="!patientDocumentsWorkspaceID || openingSavedWorkspace" @click="openPatientDocumentsWorkspace(patientDocumentsWorkspaceID)">Abrir documentos</v-btn></div>
             </template>
           </v-card>
         </section>
@@ -2444,14 +2652,48 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
               <div v-if="workspaceFusionQueue.length" class="workspace-fusion-quick-access">
                 <div class="workspace-fusion-quick-heading"><div class="workspace-fusion-quick-copy"><strong>Grupos pendientes de fusión</strong><span>Busca un paciente para revisar un grupo o fusiona todos en su orden actual.</span></div><v-btn type="button" color="warning" variant="outlined" prepend-icon="mdi-playlist-check" :disabled="mergeSending || mergeAllSending" @click="requestMergeAllPending">Fusionar todos sin revisar</v-btn></div>
                 <div class="workspace-fusion-quick-controls"><v-autocomplete v-model="pendingFusionSelection" :items="workspaceFusionQueue" item-title="title" item-value="value" label="Paciente y tipo de documento" placeholder="Busca un grupo por revisar" prepend-inner-icon="mdi-magnify" density="comfortable" variant="outlined" hide-details clearable :disabled="mergeAllSending"/><v-btn type="button" color="warning" prepend-icon="mdi-file-document-multiple-outline" :disabled="!pendingFusionSelection || mergeSending || mergeAllSending" @click="reviewPendingFusion">Revisar</v-btn></div>
-                <div v-if="selectedPendingFusionGroup" class="workspace-fusion-selected"><v-icon icon="mdi-account-box-outline" size="22"/><div><small>PACIENTE</small><strong>{{ selectedPendingFusionGroup.patient }}</strong></div><div><small>DOCUMENTO REPETIDO</small><strong>{{ selectedPendingFusionGroup.code }} · {{ selectedPendingFusionGroup.paths.length }} PDFs</strong></div></div>
+                <div v-if="selectedPendingFusionGroup" class="workspace-fusion-selected"><v-icon icon="mdi-account-box-outline" size="22"/><div><small>PACIENTE</small><strong>{{ selectedPendingFusionGroup.patient }}</strong></div><div><small>DOCUMENTO REPETIDO</small><strong>{{ selectedPendingFusionGroup.code }}<template v-if="selectedPendingFusionGroup.pdi_id"> · PDI_ID {{ selectedPendingFusionGroup.pdi_id }}</template> · {{ selectedPendingFusionGroup.paths.length }} PDFs</strong></div></div>
                 <div v-if="mergeAllSending" class="workspace-fusion-bulk-progress"><span>Fusionando grupos: {{ mergeAllProgress.done }} de {{ mergeAllProgress.total }}</span><v-progress-linear :model-value="mergeAllProgress.total ? mergeAllProgress.done / mergeAllProgress.total * 100 : 0" color="warning" rounded/></div>
               </div>
               <v-select v-model="workspacePatient" :items="workspacePatients" label="Carpeta del paciente" prepend-inner-icon="mdi-folder-account-outline" density="comfortable" class="workspace-patient-select" :disabled="!workspacePatients.length || replacePDFDialog" @update:model-value="selectWorkspacePatient"/>
+              <section v-if="!ingestResult?.es_objeciones" class="patient-coverage-panel" aria-labelledby="patient-coverage-title">
+                <div class="patient-coverage-heading">
+                  <div><h3 id="patient-coverage-title">Consultar cobertura con otra fecha</h3><p>Los PDFs se guardarán en esta carpeta y aparecerán en la lista de documentos.</p></div>
+                  <v-chip size="small" color="info" variant="tonal">No cambia PDI_COBERTURA</v-chip>
+                </div>
+                <p class="patient-coverage-help">Adultos: se consulta su cédula. Menores: se consulta la cédula del menor y la de cada referente legal registrado, todos con la fecha elegida. Se guarda un PDF por cédula; las hojas del mismo trámite se pueden revisar y fusionar en el grupo C_COBERTURA.</p>
+                <div v-if="patientCoverageLoading" class="patient-coverage-loading"><v-progress-circular indeterminate color="primary" size="20"/><span>Identificando trámites y referentes en Oracle…</span></div>
+                <v-alert v-if="patientCoverageError" type="error" variant="tonal" density="comfortable" class="patient-coverage-alert">
+                  {{ patientCoverageError }}
+                  <v-btn v-if="!patientCoverageRows.length" type="button" size="small" variant="text" @click="loadPatientCoveragePlanillas(ingestResult.job_id)">Reintentar carga</v-btn>
+                </v-alert>
+                <v-alert v-if="patientCoverageNotice" type="info" variant="tonal" density="comfortable" class="patient-coverage-alert">{{ patientCoverageNotice }}</v-alert>
+                <div v-if="!patientCoverageLoading && !patientCoverageError && !patientCoverageRowsForFolder.length" class="patient-coverage-empty">No se encontró un trámite Oracle asociado a esta carpeta del período.</div>
+                <template v-if="patientCoverageRowsForFolder.length">
+                  <div class="patient-coverage-controls">
+                    <v-select v-if="patientCoverageRowsForFolder.length > 1" v-model="patientCoverageSelectedID" :items="patientCoverageTramiteItems" item-title="title" item-value="value" label="Trámite al que asociar las hojas" density="comfortable" variant="outlined" hide-details/>
+                    <div v-else class="patient-coverage-tramite">Trámite {{ patientCoverageSelectedRow?.pdi_tramite }}</div>
+                    <v-text-field v-model="patientCoverageDate" type="date" label="Fecha de consulta" density="comfortable" variant="outlined" hide-details :disabled="patientCoverageGenerating || patientCoverageLoading"/>
+                    <v-btn type="button" color="primary" prepend-icon="mdi-cloud-download-outline" :loading="patientCoverageGenerating" :disabled="!patientCoverageSelectedRow || !patientCoverageDate || patientCoverageGenerating || patientCoverageLoading || workspaceMutationBusy || workspaceSending || mergeSending || mergeAllSending" @click="generatePatientCoverageAtChosenDate">Consultar y guardar</v-btn>
+                  </div>
+                  <div v-if="patientCoverageSelectedRow" class="patient-coverage-row-detail">
+                    <span v-if="patientCoverageSelectedRow.menor_edad === 'S'">Cédulas a consultar: {{ coverageQueryCedulas(patientCoverageSelectedRow).join(' · ') || 'No hay cédulas válidas registradas' }}</span>
+                    <span v-else>Cédula a consultar: {{ coverageQueryCedulas(patientCoverageSelectedRow).join(' · ') || 'No hay cédula válida registrada' }}</span>
+                    <span>Fechas guardadas: {{ patientCoverageSelectedRow.fechas_cobertura?.join(', ') || 'ninguna todavía' }}</span>
+                  </div>
+                  <div v-if="patientCoverageSelectedRow?.descarga_manual" class="patient-coverage-manual">
+                    <strong>El portal MSP no entregó todas las hojas de esta fecha.</strong>
+                    <span>Descarga una hoja PDF por cada cédula pendiente y adjúntalas aquí. Fecha: {{ patientCoverageSelectedRow.fecha_consulta_manual }}.</span>
+                    <ul><li v-for="member in patientCoverageSelectedRow.coberturas_manual || []" :key="member.cedula">{{ member.cedula }}<span v-if="member.adjunta"> · Adjuntada</span></li></ul>
+                    <a href="https://coberturasalud.msp.gob.ec/" target="_blank" rel="noopener noreferrer">Abrir portal MSP</a>
+                    <label class="coverage-manual-upload"><input type="file" accept="application/pdf,.pdf" multiple :disabled="coverageManualUploadingId === patientCoverageSelectedRow.pdi_id" @change="uploadPatientManualCoverageSheets(patientCoverageSelectedRow,$event)"/>{{ coverageManualUploadingId === patientCoverageSelectedRow.pdi_id ? 'Adjuntando…' : 'Adjuntar PDFs descargados' }}</label>
+                  </div>
+                </template>
+              </section>
               <div v-if="workspacePatientFusionGroups.length" class="workspace-patient-fusions">
-                <div class="workspace-patient-fusions-heading"><strong>PDFs repetidos de este paciente</strong><span>Revisa y fusiona cada tipo por separado.</span></div>
+                <div class="workspace-patient-fusions-heading"><strong>PDFs repetidos de este paciente</strong><span>Revisa y fusiona cada tipo por separado. Las coberturas se agrupan por trámite.</span></div>
                 <div v-for="group in workspacePatientFusionGroups" :key="group.paths[0]" class="workspace-patient-fusion-item">
-                  <div><strong>{{ group.code }}</strong><small>{{ group.paths.length }} PDFs · {{ group.paths.map(path => path.split('/').at(-1)).join(', ') }}</small></div>
+                  <div><strong>{{ group.code }}<template v-if="group.pdi_id"> · PDI_ID {{ group.pdi_id }}</template></strong><small>{{ group.paths.length }} PDFs · {{ group.paths.map(path => path.split('/').at(-1)).join(', ') }}</small></div>
                   <v-btn type="button" color="warning" variant="tonal" prepend-icon="mdi-file-document-multiple-outline" :disabled="workspaceBusy || mergeSending || mergeAllSending" @click="openWorkspaceFusion(group)">Revisar y fusionar</v-btn>
                 </div>
               </div>
@@ -2460,7 +2702,7 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
                   <div class="workspace-file-count">{{ workspacePatientPDFs.length }} PDFs en esta carpeta</div>
                   <div v-for="document in workspacePatientPDFs" :key="document.path" class="workspace-file-entry">
                     <button type="button" class="workspace-file-row" :title="document.name" :aria-pressed="selectedWorkspacePDF === document.path" :class="{ selected: selectedWorkspacePDF === document.path }" @click.prevent="selectWorkspacePDF(document.path)">
-                      <v-icon icon="mdi-file-pdf-box" color="error" size="20"/><span><strong>{{ document.name }}</strong><small>{{ prettySize(document.size) }}</small></span><v-chip v-if="isPendingWorkspaceDocument(document)" size="x-small" color="warning" variant="tonal">Sin nombre MSP</v-chip><v-chip v-else-if="workspaceFusionGroups.some(group => group.paths.includes(document.path))" size="x-small" color="warning" variant="tonal">Fusionar después</v-chip><v-icon v-if="selectedWorkspacePDF === document.path" icon="mdi-eye-outline" size="18"/>
+                      <v-icon icon="mdi-file-pdf-box" color="error" size="20"/><span><strong>{{ document.name }}</strong><small>{{ prettySize(document.size) }}</small><small v-if="document.fecha_cobertura || document.cedula_cobertura">{{ coverageDocumentSummary(document) }}</small></span><v-chip v-if="isPendingWorkspaceDocument(document)" size="x-small" color="warning" variant="tonal">Sin nombre MSP</v-chip><v-chip v-else-if="workspaceFusionGroups.some(group => group.paths.includes(document.path))" size="x-small" color="warning" variant="tonal">Fusionar después</v-chip><v-icon v-if="selectedWorkspacePDF === document.path" icon="mdi-eye-outline" size="18"/>
                     </button>
                     <v-btn type="button" prepend-icon="mdi-delete-outline" variant="tonal" size="small" color="error" class="workspace-delete-pdf-btn" :aria-label="`Quitar ${document.name}`" title="Quitar PDF de esta carpeta" @click="requestDeleteWorkspacePDF(document.path)">Quitar</v-btn>
                   </div>
@@ -2513,7 +2755,7 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
               <v-dialog v-model="mergeAllConfirmDialog" max-width="600">
                 <v-card class="action-dialog">
                   <v-card-title>Fusionar todos los grupos pendientes</v-card-title>
-                  <v-card-text><p>Se fusionarán {{ workspaceFusionQueue.length }} grupos, uno por paciente y tipo de documento, usando el orden actual de cada lista. No tendrás que revisar cada PDF antes. Las fuentes originales se conservarán en el historial privado; si una fusión falla, las siguientes quedarán pendientes.</p></v-card-text>
+                  <v-card-text><p>Se fusionarán {{ workspaceFusionQueue.length }} grupos por paciente y tipo de documento. Las coberturas se agrupan además por PDI_ID, así se pueden unir hojas de varias fechas y cédulas del mismo trámite sin mezclar trámites distintos. El orden actual de cada grupo define las páginas. Las fuentes originales se conservarán en el historial privado; si una fusión falla, las siguientes quedarán pendientes.</p></v-card-text>
                   <v-card-actions><v-spacer/><v-btn type="button" variant="text" @click="mergeAllConfirmDialog=false">Cancelar</v-btn><v-btn type="button" color="warning" prepend-icon="mdi-playlist-check" @click="confirmMergeAllPending">Fusionar {{ workspaceFusionQueue.length }} grupos</v-btn></v-card-actions>
                 </v-card>
               </v-dialog>
