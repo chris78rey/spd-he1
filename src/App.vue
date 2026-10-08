@@ -38,6 +38,49 @@ const currentUser = ref('')
 const canDeleteWorkspaces = ref(false)
 const displayUser = computed(() => currentUser.value.toLocaleUpperCase('es'))
 const activePage = ref('ingesta')
+const historicalArchiveRecords = ref([])
+const historicalArchiveLoading = ref(false)
+const historicalArchiveLoadError = ref('')
+const historicalArchiveUploadError = ref('')
+const historicalArchiveNotice = ref('')
+const historicalArchiveDownloadError = ref('')
+const historicalArchiveDownloadFailedID = ref('')
+const historicalArchiveSearch = ref('')
+const historicalArchiveServiceFilter = ref('ALL')
+const historicalArchiveMonthFilter = ref('ALL')
+const historicalArchiveYearFilter = ref('ALL')
+const historicalArchiveService = ref('')
+const historicalArchiveMonth = ref('')
+const historicalArchiveYear = ref(String(new Date().getFullYear()))
+const historicalArchiveFile = ref(null)
+const historicalArchiveInput = ref(null)
+const historicalArchiveUploading = ref(false)
+const historicalArchiveDownloadingID = ref('')
+const historicalArchiveYearOptions = computed(() => [
+  { title: 'Todos los años', value: 'ALL' },
+  ...[...new Set(historicalArchiveRecords.value.map(record => String(record.anio)))].sort((a, b) => Number(b) - Number(a)).map(year => ({ title: year, value: year })),
+])
+const filteredHistoricalArchives = computed(() => {
+  const terms = normalizeWorkspaceSearch(historicalArchiveSearch.value).split(/\s+/).filter(Boolean)
+  return [...historicalArchiveRecords.value]
+    .filter(record => historicalArchiveServiceFilter.value === 'ALL' || record.tipo_servicio === historicalArchiveServiceFilter.value)
+    .filter(record => historicalArchiveMonthFilter.value === 'ALL' || record.mes === historicalArchiveMonthFilter.value)
+    .filter(record => historicalArchiveYearFilter.value === 'ALL' || String(record.anio) === historicalArchiveYearFilter.value)
+    .filter(record => {
+      const searchable = normalizeWorkspaceSearch([
+        record.id, record.tipo_servicio, coverageServiceLabel(record.tipo_servicio), record.mes,
+        coverageMonthLabel(record.mes), record.anio, record.nombre_original, record.subido_por,
+      ].filter(Boolean).join(' '))
+      return terms.every(term => searchable.includes(term))
+    })
+    .sort((left, right) => Number(right.anio) - Number(left.anio)
+      || Number(right.mes) - Number(left.mes)
+      || new Date(right.subido_en || 0).getTime() - new Date(left.subido_en || 0).getTime())
+})
+const historicalArchiveFiltersActive = computed(() => Boolean(historicalArchiveSearch.value.trim())
+  || historicalArchiveServiceFilter.value !== 'ALL'
+  || historicalArchiveMonthFilter.value !== 'ALL'
+  || historicalArchiveYearFilter.value !== 'ALL')
 const planillaPage = ref(1)
 const planillaData = ref({ columns: [], rows: [], total: 0, totalPages: 1 })
 const planillaLoading = ref(false)
@@ -51,6 +94,8 @@ const ingestServices = [
   { title: 'Hospitalización', value: 'HOSPITALIZACION' },
 ]
 const ingestMonths = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'].map((title, index) => ({ title, value: String(index + 1).padStart(2, '0') }))
+const historicalArchiveServiceFilterItems = [{ title: 'Todos los servicios', value: 'ALL' }, ...ingestServices]
+const historicalArchiveMonthFilterItems = [{ title: 'Todos los meses', value: 'ALL' }, ...ingestMonths]
 const ingestFileFields = [
   { field: 'zip_file', title: 'Lote', detail: 'Archivo ZIP con las carpetas numéricas de planillas', accept: '.zip', icon: 'mdi-folder-zip-outline' },
   { field: 'matriz_file', title: 'Matriz de planillaje', detail: 'Libro Excel habilitado para macros', accept: '.xlsm', icon: 'mdi-file-excel-outline' },
@@ -447,6 +492,110 @@ async function signOut() {
 async function openPlanilla() {
   activePage.value = 'planilla'
   await loadPlanilla(1)
+}
+async function openHistoricalArchivePage() {
+  activePage.value = 'historical-archive'
+  historicalArchiveNotice.value = ''
+  await loadHistoricalArchives()
+}
+async function loadHistoricalArchives() {
+  historicalArchiveLoading.value = true
+  historicalArchiveLoadError.value = ''
+  try {
+    const response = await fetch('/api/v1/archivo-historico', { credentials: 'same-origin' })
+    const data = await response.json().catch(() => ({}))
+    if (response.status === 401) { await signOut(); return }
+    if (!response.ok) throw new Error(data.error || 'No se pudo cargar el archivo histórico.')
+    historicalArchiveRecords.value = Array.isArray(data.archives) ? data.archives : []
+  } catch (error) {
+    historicalArchiveLoadError.value = error.message || 'No se pudo cargar el archivo histórico.'
+  } finally {
+    historicalArchiveLoading.value = false
+  }
+}
+function setHistoricalArchiveFile(event) {
+  historicalArchiveFile.value = event.target?.files?.[0] || null
+  historicalArchiveUploadError.value = ''
+}
+function clearHistoricalArchiveFilters() {
+  historicalArchiveSearch.value = ''
+  historicalArchiveServiceFilter.value = 'ALL'
+  historicalArchiveMonthFilter.value = 'ALL'
+  historicalArchiveYearFilter.value = 'ALL'
+}
+async function uploadHistoricalArchive() {
+  historicalArchiveUploadError.value = ''
+  historicalArchiveNotice.value = ''
+  historicalArchiveDownloadError.value = ''
+  const file = historicalArchiveFile.value
+  if (!historicalArchiveService.value || !historicalArchiveMonth.value || !/^\d{4}$/.test(historicalArchiveYear.value) || !file) {
+    historicalArchiveUploadError.value = 'Completa servicio, mes, año y selecciona un ZIP.'
+    return
+  }
+  if (!file.name.toLowerCase().endsWith('.zip') || file.size === 0) {
+    historicalArchiveUploadError.value = 'Selecciona un archivo ZIP no vacío.'
+    return
+  }
+  const form = new FormData()
+  form.append('tipo_servicio', historicalArchiveService.value)
+  form.append('mes', historicalArchiveMonth.value)
+  form.append('anio', historicalArchiveYear.value)
+  form.append('zip_file', file, file.name)
+  historicalArchiveUploading.value = true
+  try {
+    const response = await fetch('/api/v1/archivo-historico', { method: 'POST', credentials: 'same-origin', body: form })
+    const data = await response.json().catch(() => ({}))
+    if (response.status === 401) { await signOut(); return }
+    if (!response.ok) throw new Error(data.error || 'No se pudo guardar el ZIP histórico.')
+    const record = data.archive
+    if (record?.id) {
+      historicalArchiveRecords.value = [...historicalArchiveRecords.value.filter(item => item.id !== record.id), record]
+      historicalArchiveServiceFilter.value = record.tipo_servicio
+      historicalArchiveMonthFilter.value = record.mes
+      historicalArchiveYearFilter.value = String(record.anio)
+    }
+    historicalArchiveSearch.value = ''
+    historicalArchiveFile.value = null
+    if (historicalArchiveInput.value) historicalArchiveInput.value.value = ''
+    historicalArchiveNotice.value = 'El ZIP original se guardó sin extraer ni modificar su contenido.'
+  } catch (error) {
+    historicalArchiveUploadError.value = error.message || 'No se pudo guardar el ZIP histórico.'
+  } finally {
+    historicalArchiveUploading.value = false
+  }
+}
+async function downloadHistoricalArchive(record) {
+  historicalArchiveDownloadingID.value = record.id
+  historicalArchiveDownloadError.value = ''
+  historicalArchiveDownloadFailedID.value = ''
+  try {
+    const response = await fetch(`/api/v1/archivo-historico/descargar/${encodeURIComponent(record.id)}`, { credentials: 'same-origin' })
+    if (response.status === 401) { await signOut(); return }
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}))
+      throw new Error(data.error || 'No se pudo descargar el ZIP histórico.')
+    }
+    const blob = await response.blob()
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = record.nombre_original || 'archivo-historico.zip'
+    link.click()
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+  } catch (error) {
+    historicalArchiveDownloadError.value = error.message || 'No se pudo descargar el ZIP histórico.'
+    historicalArchiveDownloadFailedID.value = record.id
+  } finally {
+    historicalArchiveDownloadingID.value = ''
+  }
+}
+function retryHistoricalArchiveDownload() {
+  const record = historicalArchiveRecords.value.find(item => item.id === historicalArchiveDownloadFailedID.value)
+  if (record) return downloadHistoricalArchive(record)
+}
+function historicalArchiveDate(value) {
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? 'Fecha no disponible' : new Intl.DateTimeFormat('es-EC', { dateStyle: 'medium', timeStyle: 'short' }).format(date)
 }
 async function openCoverageDownloads() {
   activePage.value = 'coberturas'
@@ -2095,7 +2244,7 @@ const visibleDocs = computed(() => {
   else items.sort((a,b) => (b.addedAt||0)-(a.addedAt||0))
   return items
 })
-  const title = computed(() => activePage.value === 'planilla' ? 'Planilla digital' : activePage.value === 'coberturas' ? 'Hojas de cobertura' : activePage.value === 'objeciones' ? 'Subsanar objeciones' : activePage.value === 'patient-documents' ? 'Revisar documentos del paciente' : activePage.value === 'zip-download' ? 'Descargar expediente ZIP' : activePage.value === 'ingesta' ? 'Recepción de planillas' : activeFolder.value === 'Todos los documentos' ? 'Mis documentos' : activeFolder.value)
+  const title = computed(() => activePage.value === 'historical-archive' ? 'Archivo histórico' : activePage.value === 'planilla' ? 'Planilla digital' : activePage.value === 'coberturas' ? 'Hojas de cobertura' : activePage.value === 'objeciones' ? 'Subsanar objeciones' : activePage.value === 'patient-documents' ? 'Revisar documentos del paciente' : activePage.value === 'zip-download' ? 'Descargar expediente ZIP' : activePage.value === 'ingesta' ? 'Recepción de planillas' : activeFolder.value === 'Todos los documentos' ? 'Mis documentos' : activeFolder.value)
 function prettySize(n) { return n < 1024*1024 ? `${Math.max(1, Math.round(n/1024))} KB` : `${(n/1024/1024).toFixed(1)} MB` }
 function handleShortcut(event) {
   if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); searchInput.value?.focus() }
@@ -2169,6 +2318,8 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
     <div v-else class="app-shell" @dragenter="onDragEnter" @dragleave="onDragLeave" @dragover.prevent @drop="onDrop">
       <aside class="sidebar">
         <a class="brand" href="#" aria-label="SPD MSP" @click.prevent="activePage='ingesta'"><span class="brand-mark"><v-icon icon="mdi-book-open-page-variant" size="21" /></span><span>SPD MSP</span></a>
+        <div class="nav-label">ARCHIVO</div>
+        <button class="nav-item" :class="{selected:activePage==='historical-archive'}" aria-label="Archivo histórico" title="Archivo histórico" @click="openHistoricalArchivePage"><v-icon icon="mdi-archive-clock-outline" size="19"/><span>Archivo histórico</span></button>
         <div class="nav-label">EXPEDIENTES</div>
         <p class="nav-hint">Usa solo las opciones que necesite cada lote.</p>
         <button class="nav-item" :class="{selected:activePage==='ingesta'}" aria-label="Recibir planillas" title="Recibir planillas" @click="activePage='ingesta'"><v-icon icon="mdi-cloud-upload-outline" size="19"/><span>Recibir planillas</span></button>
@@ -2184,7 +2335,48 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
       </aside>
       <main class="main-area">
         <header class="topbar"><div class="breadcrumbs"><span>SPD MSP</span><v-icon icon="mdi-chevron-right" size="16"/><b>{{ title }}</b></div><div class="top-actions"><span class="avatar top-avatar">{{ displayUser.slice(0,1) }}</span></div></header>
-        <section v-if="activePage==='documents'" class="content-wrap">
+        <section v-if="activePage==='historical-archive'" class="content-wrap historical-archive-content">
+          <div class="welcome-line"><div><div class="eyebrow">REPOSITORIO DE ZIP ORIGINALES</div><h1>Archivo histórico<span class="title-period">.</span></h1><p class="subtitle">Guarda ZIP de períodos anteriores y recupéralos sin alterar su contenido.</p></div><v-btn type="button" variant="tonal" prepend-icon="mdi-refresh" :loading="historicalArchiveLoading" @click="loadHistoricalArchives">Actualizar</v-btn></div>
+          <v-card class="planilla-card saved-workspaces-card historical-archive-card" rounded="xl" elevation="0">
+            <div class="ingest-card-heading"><span class="ingest-step"><v-icon icon="mdi-archive-arrow-down-outline" size="20"/></span><div><h2>Guardar un ZIP histórico</h2><p>Indica el período y carga el archivo original. El sistema lo conserva tal como lo recibimos; no lo extrae, reorganiza ni modifica.</p></div></div>
+            <div class="historical-archive-upload-grid">
+              <v-select v-model="historicalArchiveService" :items="ingestServices" item-title="title" item-value="value" label="Servicio" prepend-inner-icon="mdi-hospital-building" />
+              <v-select v-model="historicalArchiveMonth" :items="ingestMonths" item-title="title" item-value="value" label="Mes del período" prepend-inner-icon="mdi-calendar-month-outline" />
+              <v-text-field v-model="historicalArchiveYear" type="number" min="1900" max="9999" step="1" label="Año del período" prepend-inner-icon="mdi-calendar-outline" />
+            </div>
+            <div class="historical-archive-file-row">
+              <label class="historical-archive-file"><input ref="historicalArchiveInput" type="file" accept=".zip,application/zip" :disabled="historicalArchiveUploading" @change="setHistoricalArchiveFile"><v-icon icon="mdi-folder-zip-outline" size="21"/><span><strong>{{ historicalArchiveFile?.name || 'Seleccionar ZIP original' }}</strong><small>{{ historicalArchiveFile ? prettySize(historicalArchiveFile.size) : 'Archivo .zip' }}</small></span></label>
+              <v-btn type="button" color="primary" prepend-icon="mdi-content-save-outline" :loading="historicalArchiveUploading" :disabled="historicalArchiveUploading || !historicalArchiveService || !historicalArchiveMonth || !historicalArchiveYear || !historicalArchiveFile" @click="uploadHistoricalArchive">Guardar en Archivo histórico</v-btn>
+            </div>
+            <v-alert v-if="historicalArchiveUploadError" class="mt-4" type="error" variant="tonal" density="comfortable">{{ historicalArchiveUploadError }}</v-alert>
+            <v-alert v-if="historicalArchiveNotice" class="mt-4" type="success" variant="tonal" density="comfortable">{{ historicalArchiveNotice }}</v-alert>
+          </v-card>
+          <v-card class="planilla-card saved-workspaces-card historical-archive-card" rounded="xl" elevation="0">
+            <div class="section-heading historical-archive-heading"><div><h2>Buscar ZIP guardados <span class="muted-count">{{ filteredHistoricalArchives.length }}</span></h2><p>Busca por nombre, servicio, período, persona que lo cargó o ID.</p></div></div>
+            <div class="saved-workspace-filters historical-archive-filters">
+              <v-text-field v-model="historicalArchiveSearch" label="Buscar en todos los ZIP" placeholder="Ej.: Emergencia, agosto, 2021 o nombre.zip" prepend-inner-icon="mdi-magnify" clearable hide-details />
+              <div class="saved-workspace-filter-grid">
+                <v-select v-model="historicalArchiveServiceFilter" :items="historicalArchiveServiceFilterItems" label="Servicio" hide-details />
+                <v-select v-model="historicalArchiveMonthFilter" :items="historicalArchiveMonthFilterItems" label="Mes" hide-details />
+                <v-select v-model="historicalArchiveYearFilter" :items="historicalArchiveYearOptions" label="Año" hide-details />
+                <v-btn type="button" variant="tonal" prepend-icon="mdi-filter-off-outline" :disabled="!historicalArchiveFiltersActive" @click="clearHistoricalArchiveFilters">Limpiar filtros</v-btn>
+              </div>
+            </div>
+            <div class="saved-workspace-results-toolbar"><p>{{ filteredHistoricalArchives.length }} de {{ historicalArchiveRecords.length }} ZIP coinciden · período más reciente primero</p></div>
+            <v-alert v-if="historicalArchiveDownloadError" class="mt-3" type="error" variant="tonal" density="comfortable">{{ historicalArchiveDownloadError }}<v-btn type="button" size="small" variant="text" @click="retryHistoricalArchiveDownload">Reintentar descarga</v-btn></v-alert>
+            <div v-if="historicalArchiveLoading" class="planilla-state"><v-progress-circular indeterminate color="primary" size="22"/><span>Cargando archivo histórico…</span></div>
+            <div v-else-if="historicalArchiveLoadError" class="planilla-state planilla-error"><v-icon icon="mdi-alert-circle-outline"/><span>{{ historicalArchiveLoadError }}</span><v-btn type="button" size="small" variant="text" @click="loadHistoricalArchives">Reintentar</v-btn></div>
+            <div v-else-if="!historicalArchiveRecords.length" class="planilla-state"><v-icon icon="mdi-archive-search-outline" size="25"/><span>Aún no hay ZIP históricos guardados.</span></div>
+            <div v-else-if="!filteredHistoricalArchives.length" class="planilla-state historical-archive-empty"><v-icon icon="mdi-filter-remove-outline" size="25"/><span>No hay coincidencias. Limpia los filtros para volver a ver todos los períodos.</span><v-btn v-if="historicalArchiveFiltersActive" type="button" variant="text" color="primary" @click="clearHistoricalArchiveFilters">Limpiar filtros</v-btn></div>
+            <div v-else class="saved-workspace-list historical-archive-list">
+              <article v-for="record in filteredHistoricalArchives" :key="record.id" class="saved-workspace-card historical-archive-record">
+                <div class="saved-workspace-card-main"><span class="saved-workspace-icon"><v-icon icon="mdi-folder-zip-outline" size="21"/></span><div class="saved-workspace-card-copy"><div class="saved-workspace-title-row"><h3>{{ coverageServiceLabel(record.tipo_servicio) }} · {{ coverageMonthLabel(record.mes) }} {{ record.anio }}</h3><v-chip size="small" color="info" variant="tonal">ZIP original</v-chip></div><p class="saved-workspace-message"><v-icon icon="mdi-file-outline" size="16"/>{{ record.nombre_original }} · {{ prettySize(record.size_bytes) }}</p><div class="saved-workspace-meta"><span><v-icon icon="mdi-identifier" size="15"/>ID {{ record.id }}</span><span><v-icon icon="mdi-account-outline" size="15"/>{{ record.subido_por }}</span><span><v-icon icon="mdi-clock-outline" size="15"/>{{ historicalArchiveDate(record.subido_en) }}</span></div></div></div>
+                <div class="saved-workspace-card-actions"><v-btn type="button" color="primary" variant="tonal" prepend-icon="mdi-download-outline" :loading="historicalArchiveDownloadingID===record.id" :disabled="Boolean(historicalArchiveDownloadingID)" @click="downloadHistoricalArchive(record)">Descargar ZIP original</v-btn></div>
+              </article>
+            </div>
+          </v-card>
+        </section>
+        <section v-else-if="activePage==='documents'" class="content-wrap">
           <div class="welcome-line"><div><div class="eyebrow">BIBLIOTECA LOCAL</div><h1>{{ title }}<span class="title-period">.</span></h1><p class="subtitle">Busca, organiza y abre documentos guardados en este navegador.</p></div><button class="primary-upload" @click="uploadInput?.click()"><v-icon icon="mdi-upload" size="18"/> Subir documento</button></div>
           <div class="stats-row"><div class="stat-card"><span class="stat-icon green"><v-icon icon="mdi-file-multiple-outline"/></span><div><span class="stat-label">Documentos</span><strong>{{ docs.length }} <small>archivos</small></strong></div></div><div class="stat-card"><span class="stat-icon peach"><v-icon icon="mdi-folder-multiple-outline"/></span><div><span class="stat-label">Espacios</span><strong>{{ spaces.length }} <small>activos</small></strong></div></div></div>
           <section class="recent-section"><div class="section-heading"><div><h2>{{ activeFolder==='Todos los documentos' ? 'Tus archivos' : 'Archivos' }} <span class="muted-count">{{ visibleDocs.length }}</span></h2><p>Organiza y encuentra lo que buscas.</p></div><button class="text-action" @click="activeFolder=folders[0]">Ver todo <v-icon icon="mdi-arrow-right" size="16"/></button></div>

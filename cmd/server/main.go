@@ -38,19 +38,20 @@ type session struct {
 }
 
 type server struct {
-	host          string
-	port          string
-	service       string
-	schema        string
-	serviceDB     *sql.DB
-	dataDir       string
-	stagingDir    string
-	workspacesDir string
-	maxIngest     int64
-	cookieSecure  bool
-	ingestMu      sync.Mutex
-	mu            sync.Mutex
-	sessions      map[string]session
+	host                  string
+	port                  string
+	service               string
+	schema                string
+	serviceDB             *sql.DB
+	dataDir               string
+	stagingDir            string
+	workspacesDir         string
+	historicalArchivesDir string
+	maxIngest             int64
+	cookieSecure          bool
+	ingestMu              sync.Mutex
+	mu                    sync.Mutex
+	sessions              map[string]session
 }
 
 type loginRequest struct {
@@ -63,16 +64,17 @@ func main() {
 
 	dataDir := envOr("FOLIO_DATA_DIR", "data")
 	s := &server{
-		host:          os.Getenv("ORACLE_HOST"),
-		port:          os.Getenv("ORACLE_PORT"),
-		service:       os.Getenv("ORACLE_SERVICE"),
-		schema:        strings.ToUpper(strings.TrimSpace(os.Getenv("ORACLE_SCHEMA"))),
-		dataDir:       dataDir,
-		stagingDir:    filepath.Join(dataDir, "staging"),
-		workspacesDir: filepath.Join(dataDir, "expedientes"),
-		maxIngest:     envInt64("MAX_INGEST_UPLOAD_BYTES", 2<<30),
-		cookieSecure:  strings.EqualFold(os.Getenv("COOKIE_SECURE"), "true"),
-		sessions:      make(map[string]session),
+		host:                  os.Getenv("ORACLE_HOST"),
+		port:                  os.Getenv("ORACLE_PORT"),
+		service:               os.Getenv("ORACLE_SERVICE"),
+		schema:                strings.ToUpper(strings.TrimSpace(os.Getenv("ORACLE_SCHEMA"))),
+		dataDir:               dataDir,
+		stagingDir:            filepath.Join(dataDir, "staging"),
+		workspacesDir:         filepath.Join(dataDir, "expedientes"),
+		historicalArchivesDir: filepath.Join(dataDir, "archivo-historico"),
+		maxIngest:             envInt64("MAX_INGEST_UPLOAD_BYTES", 2<<30),
+		cookieSecure:          strings.EqualFold(os.Getenv("COOKIE_SECURE"), "true"),
+		sessions:              make(map[string]session),
 	}
 	if s.host == "" || s.port == "" || s.service == "" {
 		log.Fatal("ORACLE_HOST, ORACLE_PORT y ORACLE_SERVICE son obligatorios")
@@ -117,6 +119,8 @@ func main() {
 	mux.HandleFunc("/api/v1/expedientes/documentos/archivo/", s.serveWorkspacePDF)
 	mux.HandleFunc("/api/v1/expedientes/documentos/", s.workspaceDocuments)
 	mux.HandleFunc("/api/v1/expedientes/descargar/", s.downloadWorkspaceZIP)
+	mux.HandleFunc("/api/v1/archivo-historico", s.historicalArchives)
+	mux.HandleFunc("/api/v1/archivo-historico/descargar/", s.downloadHistoricalArchive)
 	mux.HandleFunc("/api/v1/objeciones/previsualizar", s.previewObjections)
 	mux.HandleFunc("/api/v1/objeciones/crear", s.createObjectionWorkspace)
 	mux.HandleFunc("/api/v1/objeciones/agregar/", s.addObjectionPatients)

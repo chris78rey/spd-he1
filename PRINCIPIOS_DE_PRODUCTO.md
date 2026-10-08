@@ -68,7 +68,11 @@ La misma búsqueda, normalización y orden por período se reutiliza al elegir e
 
 ## Decisión de navegación: expedientes primero
 
-El menú prioriza las tareas con expedientes en este orden: recibir planillas, revisar documentos del paciente, hojas de cobertura, subsanar objeciones y descargar el expediente ZIP. El orden orienta, pero no establece pasos obligatorios para todos los lotes. Objeciones es una ruta separada que parte de un período de primer ingreso preparado. La biblioteca «Mis documentos» sigue accesible en una sección propia y se identifica como almacenamiento de este navegador; «Planilla digital», una consulta de registros, queda bajo «Consultas» al final del menú.
+Después de «Archivo histórico», el menú prioriza las tareas con expedientes en este orden: recibir planillas, revisar documentos del paciente, hojas de cobertura, subsanar objeciones y descargar el expediente ZIP. El orden orienta, pero no establece pasos obligatorios para todos los lotes. Objeciones es una ruta separada que parte de un período de primer ingreso preparado. La biblioteca «Mis documentos» sigue accesible en una sección propia y se identifica como almacenamiento de este navegador; «Planilla digital», una consulta de registros, queda bajo «Consultas» al final del menú.
+
+## Decisión de navegación: Archivo histórico primero
+
+«Archivo histórico» será la primera opción del menú lateral, antes de «Recepción de planillas». Es un destino independiente para buscar y recuperar los ZIP históricos originales; su ubicación no lo convierte en un paso obligatorio del flujo de recepción. El archivo se conserva tal como fue cargado y se identifica por servicio, mes y año.
 
 ## Decisión de producto: selección independiente al revisar documentos
 

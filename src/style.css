@@ -496,3 +496,35 @@ body{min-width:320px}
   .patient-coverage-controls{grid-template-columns:minmax(0,1fr)}
   .patient-coverage-controls>.v-btn,.patient-coverage-manual .coverage-manual-upload{width:100%}
 }
+
+.historical-archive-content{display:grid;gap:18px}
+.historical-archive-content .welcome-line{margin-bottom:2px}
+.historical-archive-card{padding:clamp(20px,2.2vw,30px)}
+.historical-archive-card .ingest-card-heading{align-items:flex-start}
+.historical-archive-card .ingest-card-heading p{max-width:850px;font-size:15px;line-height:1.5}
+.historical-archive-upload-grid{display:grid;grid-template-columns:1.2fr 1fr .7fr;gap:14px;margin-top:12px}
+.historical-archive-upload-grid .v-field,.historical-archive-filters .v-field{font-size:16px}
+.historical-archive-file-row{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-top:8px}
+.historical-archive-file{position:relative;display:flex;align-items:center;gap:12px;min-width:0;min-height:58px;flex:1;padding:10px 14px;border:1px dashed #9eb3a1;border-radius:10px;background:#f8faf7;color:#365848;cursor:pointer}
+.historical-archive-file input{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+.historical-archive-file:has(input:focus-visible){outline:3px solid #8ba992;outline-offset:2px}
+.historical-archive-file>span{display:grid;min-width:0;gap:3px}
+.historical-archive-file strong{overflow-wrap:anywhere;font-size:14px}
+.historical-archive-file small{color:#66766a;font-size:13px}
+.historical-archive-file-row>.v-btn{min-height:48px;flex:none;font-size:14px}
+.historical-archive-heading{margin-bottom:6px}
+.historical-archive-heading h2{font-size:20px}
+.historical-archive-heading p{font-size:14px;line-height:1.5}
+.historical-archive-filters{margin-top:14px}
+.historical-archive-filters .saved-workspace-filter-grid{grid-template-columns:repeat(4,minmax(0,1fr))}
+.historical-archive-filters .saved-workspace-filter-grid>.v-btn{min-height:48px;font-size:14px}
+.historical-archive-card .saved-workspace-results-toolbar p{font-size:14px}
+.historical-archive-list{max-height:60vh}
+.historical-archive-record{align-items:center}
+.historical-archive-record .saved-workspace-title-row h3{font-size:16px}
+.historical-archive-record .saved-workspace-message{overflow-wrap:anywhere;font-size:14px}
+.historical-archive-record .saved-workspace-meta{font-size:14px;line-height:1.45}
+.historical-archive-record .saved-workspace-card-actions .v-btn{min-height:46px;font-size:14px}
+.historical-archive-empty{min-height:120px}
+@media(max-width:900px){.historical-archive-upload-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.historical-archive-upload-grid>:last-child{grid-column:1/-1}.historical-archive-filters .saved-workspace-filter-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:640px){.historical-archive-card{padding:18px}.historical-archive-upload-grid,.historical-archive-filters .saved-workspace-filter-grid{grid-template-columns:1fr}.historical-archive-upload-grid>:last-child{grid-column:auto}.historical-archive-file-row{align-items:stretch;flex-direction:column}.historical-archive-file-row>.v-btn{width:100%}.historical-archive-record{align-items:flex-start}.historical-archive-record .saved-workspace-card-actions{align-self:stretch}.historical-archive-record .saved-workspace-card-actions>.v-btn{width:100%}.historical-archive-list{max-height:none}}
