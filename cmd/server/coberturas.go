@@ -28,24 +28,30 @@ const maxCoverageDownload = 500
 var coverageCedulaPattern = regexp.MustCompile(`^\d{10}$`)
 
 type coveragePlanilla struct {
-	ID             int64                  `json:"pdi_id"`
-	Tramite        string                 `json:"pdi_tramite"`
-	Patient        string                 `json:"paciente"`
-	CareUntil      string                 `json:"fecha_hasta"`
-	Cedula         string                 `json:"cedula"`
-	Minor          string                 `json:"menor_edad"`
-	Dependent1     string                 `json:"dependiente_01"`
-	Dependent2     string                 `json:"dependiente_02"`
-	CoverageStatus string                 `json:"pdi_cobertura"`
-	HasPDF         bool                   `json:"hoja_generada"`
-	ManualRequired bool                   `json:"descarga_manual"`
-	ManualReason   string                 `json:"motivo_manual,omitempty"`
-	ManualMembers  []coverageManualMember `json:"coberturas_manual,omitempty"`
+	ID               int64                  `json:"pdi_id"`
+	Tramite          string                 `json:"pdi_tramite"`
+	Patient          string                 `json:"paciente"`
+	CareUntil        string                 `json:"fecha_hasta"`
+	Cedula           string                 `json:"cedula"`
+	Minor            string                 `json:"menor_edad"`
+	Dependent1       string                 `json:"dependiente_01"`
+	Dependent2       string                 `json:"dependiente_02"`
+	CoverageStatus   string                 `json:"pdi_cobertura"`
+	HasPDF           bool                   `json:"hoja_generada"`
+	ManualRequired   bool                   `json:"descarga_manual"`
+	ManualReason     string                 `json:"motivo_manual,omitempty"`
+	ManualQueryDate  string                 `json:"fecha_consulta_manual,omitempty"`
+	ManualCustomDate bool                   `json:"fecha_personalizada_manual,omitempty"`
+	CoverageDates    []string               `json:"fechas_cobertura,omitempty"`
+	ManualMembers    []coverageManualMember `json:"coberturas_manual,omitempty"`
 }
 
 type coverageFailure struct {
-	Reason string `json:"motivo"`
-	Manual bool   `json:"manual"`
+	Reason         string   `json:"motivo"`
+	Manual         bool     `json:"manual"`
+	QueryDate      string   `json:"fecha_consulta,omitempty"`
+	CustomDate     bool     `json:"fecha_personalizada,omitempty"`
+	PendingCedulas []string `json:"cedulas_pendientes,omitempty"`
 }
 
 type coverageFailureItem struct {
@@ -63,11 +69,18 @@ type coverageManualMember struct {
 
 type coverageGenerateRequest struct {
 	PlanillaIDs []int64 `json:"pdi_ids"`
+	QueryDate   string  `json:"fecha_consulta,omitempty"`
 }
 
 type coverageMember struct {
 	Cedula string
 	Fecha  string
+}
+
+type coverageDateIndex struct {
+	HasPDF     bool
+	HasUndated bool
+	Dates      map[string]bool
 }
 
 func (s *server) listCoveragePlanillas(w http.ResponseWriter, r *http.Request) {
@@ -100,6 +113,14 @@ func (s *server) listCoveragePlanillas(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) generateCoverageSheets(w http.ResponseWriter, r *http.Request) {
+	s.generateCoverageSheetsWithDate(w, r, false)
+}
+
+func (s *server) generateCoverageSheetsAtDate(w http.ResponseWriter, r *http.Request) {
+	s.generateCoverageSheetsWithDate(w, r, true)
+}
+
+func (s *server) generateCoverageSheetsWithDate(w http.ResponseWriter, r *http.Request, useChosenDate bool) {
 	if r.Method != http.MethodPost {
 		writeError(w, http.StatusMethodNotAllowed, "Método no permitido.")
 		return
@@ -108,7 +129,11 @@ func (s *server) generateCoverageSheets(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusUnauthorized, "Inicia sesión para continuar.")
 		return
 	}
-	id := strings.TrimPrefix(r.URL.Path, "/api/v1/coberturas/generar/")
+	prefix := "/api/v1/coberturas/generar/"
+	if useChosenDate {
+		prefix = "/api/v1/coberturas/generar-fecha/"
+	}
+	id := strings.TrimPrefix(r.URL.Path, prefix)
 	job, err := s.coverageJob(id)
 	if err != nil {
 		writeError(w, http.StatusConflict, err.Error())
@@ -119,6 +144,15 @@ func (s *server) generateCoverageSheets(w http.ResponseWriter, r *http.Request) 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil || len(input.PlanillaIDs) == 0 || len(input.PlanillaIDs) > maxCoverageBatch {
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("Selecciona entre 1 y %d planillas.", maxCoverageBatch))
 		return
+	}
+	queryDate := ""
+	if useChosenDate {
+		var ok bool
+		queryDate, ok = normalizeCoverageDate(input.QueryDate)
+		if !ok {
+			writeError(w, http.StatusBadRequest, "Selecciona una fecha válida para consultar las coberturas.")
+			return
+		}
 	}
 	selected := make(map[int64]bool, len(input.PlanillaIDs))
 	for _, pdiID := range input.PlanillaIDs {
@@ -147,7 +181,7 @@ func (s *server) generateCoverageSheets(w http.ResponseWriter, r *http.Request) 
 			writeError(w, http.StatusUnprocessableEntity, "Una planilla seleccionada no pertenece al año, mes, servicio y ZIP de este lote.")
 			return
 		}
-		if strings.EqualFold(row.CoverageStatus, "S") && !row.HasPDF {
+		if !useChosenDate && strings.EqualFold(row.CoverageStatus, "S") && !coverageHasDate(row, row.CareUntil) {
 			writeError(w, http.StatusConflict, "Oracle ya marca una de las planillas como cubierta, pero el lote no contiene su PDF. Revisa el expediente antes de continuar.")
 			return
 		}
@@ -182,13 +216,25 @@ func (s *server) generateCoverageSheets(w http.ResponseWriter, r *http.Request) 
 		job.CoverageFailures = make(map[int64]coverageFailure)
 	}
 	for _, row := range chosen {
-		if row.HasPDF {
+		rowQueryDate := row.CareUntil
+		members := coverageMembersAt(row, rowQueryDate)
+		if useChosenDate {
+			rowQueryDate = queryDate
+			members = missingCoverageMembersForDate(s, job, row, queryDate)
+			if len(members) == 0 && len(coverageMembersAt(row, queryDate)) > 0 {
+				generatedIDs = append(generatedIDs, row.ID)
+				delete(job.CoverageFailures, row.ID)
+				continue
+			}
+		} else if coverageHasDate(row, row.CareUntil) {
 			generatedIDs = append(generatedIDs, row.ID)
 			delete(job.CoverageFailures, row.ID)
 			continue
 		}
-		documents, targets, sources, failure := s.generateCoveragePlanilla(ctx, job, packageRoot, sourceRoot, row)
+		documents, targets, sources, failure := s.generateCoveragePlanilla(ctx, job, packageRoot, sourceRoot, row, rowQueryDate, members)
 		if failure != nil {
+			failure.QueryDate, failure.CustomDate = rowQueryDate, useChosenDate
+			failure.PendingCedulas = coverageMemberCedulas(members)
 			job.CoverageFailures[row.ID] = *failure
 			failures = append(failures, coverageFailureItem{PlanillaID: row.ID, Tramite: row.Tramite, Reason: failure.Reason, Manual: failure.Manual})
 			continue
@@ -217,38 +263,43 @@ func (s *server) generateCoverageSheets(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 	}
-	tx, err := s.serviceDB.BeginTx(ctx, nil)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "No se pudo iniciar la actualización de cobertura en Oracle.")
-		return
-	}
-	for _, row := range chosen {
-		if !containsInt64(generatedIDs, row.ID) || strings.EqualFold(row.CoverageStatus, "S") {
-			continue
-		}
-		result, updateErr := tx.ExecContext(ctx, "UPDATE "+oracleTableName(s.schema)+" SET PDI_COBERTURA = 'S' WHERE PDI_ID = :id AND PDI_PLANILLADO = 'S' AND PDI_ASEGURADORA = 'MSP'", sql.Named("id", row.ID))
-		if updateErr != nil {
-			_ = tx.Rollback()
-			log.Printf("coberturas %s PDI_ID=%d: no se pudo marcar PDI_COBERTURA (%T)", job.ID, row.ID, updateErr)
-			writeError(w, http.StatusInternalServerError, "Las hojas quedaron guardadas en el expediente, pero Oracle no confirmó el estado de cobertura.")
+	if !useChosenDate {
+		tx, err := s.serviceDB.BeginTx(ctx, nil)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "No se pudo iniciar la actualización de cobertura en Oracle.")
 			return
 		}
-		affected, rowsErr := result.RowsAffected()
-		if rowsErr != nil || affected != 1 {
-			_ = tx.Rollback()
-			writeError(w, http.StatusConflict, "Oracle no confirmó exactamente una planilla al actualizar su estado de cobertura.")
+		for _, row := range chosen {
+			if !containsInt64(generatedIDs, row.ID) || strings.EqualFold(row.CoverageStatus, "S") {
+				continue
+			}
+			result, updateErr := tx.ExecContext(ctx, "UPDATE "+oracleTableName(s.schema)+" SET PDI_COBERTURA = 'S' WHERE PDI_ID = :id AND PDI_PLANILLADO = 'S' AND PDI_ASEGURADORA = 'MSP'", sql.Named("id", row.ID))
+			if updateErr != nil {
+				_ = tx.Rollback()
+				log.Printf("coberturas %s PDI_ID=%d: no se pudo marcar PDI_COBERTURA (%T)", job.ID, row.ID, updateErr)
+				writeError(w, http.StatusInternalServerError, "Las hojas quedaron guardadas en el expediente, pero Oracle no confirmó el estado de cobertura.")
+				return
+			}
+			affected, rowsErr := result.RowsAffected()
+			if rowsErr != nil || affected != 1 {
+				_ = tx.Rollback()
+				writeError(w, http.StatusConflict, "Oracle no confirmó exactamente una planilla al actualizar su estado de cobertura.")
+				return
+			}
+		}
+		if err := tx.Commit(); err != nil {
+			writeError(w, http.StatusInternalServerError, "Oracle no confirmó la actualización de cobertura.")
 			return
 		}
 	}
-	if err := tx.Commit(); err != nil {
-		writeError(w, http.StatusInternalServerError, "Oracle no confirmó la actualización de cobertura.")
-		return
+	response := map[string]any{"job_id": job.ID, "generadas": generatedIDs, "errores": failures, "oracle_actualizado": !useChosenDate}
+	if useChosenDate {
+		response["fecha_consulta"] = queryDate
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"job_id": job.ID, "generadas": generatedIDs, "errores": failures})
+	writeJSON(w, http.StatusOK, response)
 }
 
-func (s *server) generateCoveragePlanilla(ctx context.Context, job stagedJob, packageRoot, sourceRoot string, row coveragePlanilla) ([]workspaceDocument, []string, []string, *coverageFailure) {
-	members := coverageMembers(row)
+func (s *server) generateCoveragePlanilla(ctx context.Context, job stagedJob, packageRoot, sourceRoot string, row coveragePlanilla, queryDate string, members []coverageMember) ([]workspaceDocument, []string, []string, *coverageFailure) {
 	if len(members) == 0 {
 		return nil, nil, nil, &coverageFailure{Reason: "La planilla no tiene una cédula válida de 10 dígitos o una fecha de atención.", Manual: false}
 	}
@@ -326,7 +377,7 @@ func (s *server) generateCoveragePlanilla(ctx context.Context, job stagedJob, pa
 		}
 		targets = append(targets, target)
 		info, _ := os.Stat(target)
-		documents = append(documents, workspaceDocument{ID: strings.TrimSuffix(storedName, ".pdf"), StoredName: storedName, OriginalName: "C_COBERTURA.pdf", RelativePath: relative, Size: info.Size(), PlanillaID: row.ID, CoverageCedula: member.Cedula})
+		documents = append(documents, workspaceDocument{ID: strings.TrimSuffix(storedName, ".pdf"), StoredName: storedName, OriginalName: "C_COBERTURA.pdf", RelativePath: relative, Size: info.Size(), PlanillaID: row.ID, CoverageCedula: member.Cedula, CoverageDate: queryDate})
 	}
 	return documents, targets, sources, nil
 }
@@ -369,6 +420,15 @@ func (s *server) downloadCoverageSheets(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusConflict, err.Error())
 		return
 	}
+	queryDate := ""
+	if rawDate := r.URL.Query().Get("fecha_consulta"); rawDate != "" {
+		var ok bool
+		queryDate, ok = normalizeCoverageDate(rawDate)
+		if !ok {
+			writeError(w, http.StatusBadRequest, "La fecha para descargar las coberturas no es válida.")
+			return
+		}
+	}
 	ids := strings.Split(r.URL.Query().Get("pdi_ids"), ",")
 	if len(ids) == 0 || len(ids) > maxCoverageDownload {
 		writeError(w, http.StatusBadRequest, "La descarga no contiene una selección válida.")
@@ -395,12 +455,15 @@ func (s *server) downloadCoverageSheets(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		row, ok := byID[id]
-		if !ok || !row.HasPDF {
+		if !ok || (queryDate == "" && !row.HasPDF) {
 			_ = writer.Close()
 			writeError(w, http.StatusConflict, "Una de las planillas no tiene todas sus hojas guardadas en el expediente.")
 			return
 		}
 		for _, doc := range s.coverageDocumentsForPlanilla(job, id) {
+			if queryDate != "" && coverageDocumentDate(doc, row) != queryDate {
+				continue
+			}
 			path, err := safeWorkspacePath(packageRoot, doc.RelativePath)
 			if err != nil {
 				continue
@@ -426,7 +489,11 @@ func (s *server) downloadCoverageSheets(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	w.Header().Set("Content-Type", "application/zip")
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="COBERTURAS_%s_%s_%s.zip"`, job.Service, job.Month, job.Year))
+	filename := fmt.Sprintf("COBERTURAS_%s_%s_%s", job.Service, job.Month, job.Year)
+	if queryDate != "" {
+		filename += "_FECHA_" + strings.ReplaceAll(queryDate, "-", "")
+	}
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s.zip"`, filename))
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(archive.Bytes())
 }
@@ -470,11 +537,17 @@ func (s *server) uploadManualCoverageSheets(w http.ResponseWriter, r *http.Reque
 			break
 		}
 	}
-	if row == nil || strings.EqualFold(row.CoverageStatus, "S") {
+	failure, hasFailure := job.CoverageFailures[pdiID]
+	customDate := hasFailure && failure.CustomDate
+	if row == nil || (strings.EqualFold(row.CoverageStatus, "S") && !customDate) {
 		writeError(w, http.StatusConflict, "La planilla no pertenece al ZIP o ya está marcada como cubierta.")
 		return
 	}
-	members := coverageMembers(*row)
+	queryDate := row.CareUntil
+	if hasFailure && failure.QueryDate != "" {
+		queryDate = failure.QueryDate
+	}
+	members := filterCoverageMembers(coverageMembersAt(*row, queryDate), failure.PendingCedulas)
 	files := r.MultipartForm.File["pdf_files"]
 	if len(members) == 0 || len(files) != len(members) {
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("Adjunta un PDF del portal MSP para cada persona de la planilla (%d requeridos).", len(members)))
@@ -580,7 +653,7 @@ func (s *server) uploadManualCoverageSheets(w http.ResponseWriter, r *http.Reque
 		}
 		targets = append(targets, target)
 		info, _ := os.Stat(target)
-		documents = append(documents, workspaceDocument{ID: strings.TrimSuffix(stored, ".pdf"), StoredName: stored, OriginalName: "C_COBERTURA.pdf", RelativePath: relative, Size: info.Size(), PlanillaID: row.ID, CoverageCedula: matched})
+		documents = append(documents, workspaceDocument{ID: strings.TrimSuffix(stored, ".pdf"), StoredName: stored, OriginalName: "C_COBERTURA.pdf", RelativePath: relative, Size: info.Size(), PlanillaID: row.ID, CoverageCedula: matched, CoverageDate: queryDate})
 	}
 	if len(seen) != len(members) {
 		rollback()
@@ -603,16 +676,18 @@ func (s *server) uploadManualCoverageSheets(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusInternalServerError, "Los PDFs se guardaron, pero no se pudieron sincronizar con Oracle.")
 		return
 	}
-	result, err := s.serviceDB.ExecContext(r.Context(), "UPDATE "+oracleTableName(s.schema)+" SET PDI_COBERTURA = 'S' WHERE PDI_ID = :id AND PDI_PLANILLADO = 'S' AND PDI_ASEGURADORA = 'MSP'", sql.Named("id", row.ID))
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Los PDFs quedaron en el expediente, pero Oracle no confirmó PDI_COBERTURA.")
-		return
+	if !customDate {
+		result, err := s.serviceDB.ExecContext(r.Context(), "UPDATE "+oracleTableName(s.schema)+" SET PDI_COBERTURA = 'S' WHERE PDI_ID = :id AND PDI_PLANILLADO = 'S' AND PDI_ASEGURADORA = 'MSP'", sql.Named("id", row.ID))
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "Los PDFs quedaron en el expediente, pero Oracle no confirmó PDI_COBERTURA.")
+			return
+		}
+		if affected, err := result.RowsAffected(); err != nil || affected != 1 {
+			writeError(w, http.StatusConflict, "Oracle no confirmó una planilla al actualizar PDI_COBERTURA.")
+			return
+		}
 	}
-	if affected, err := result.RowsAffected(); err != nil || affected != 1 {
-		writeError(w, http.StatusConflict, "Oracle no confirmó una planilla al actualizar PDI_COBERTURA.")
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"job_id": job.ID, "pdi_id": row.ID, "adjuntadas": len(documents)})
+	writeJSON(w, http.StatusOK, map[string]any{"job_id": job.ID, "pdi_id": row.ID, "adjuntadas": len(documents), "fecha_consulta": queryDate, "oracle_actualizado": !customDate})
 }
 
 func (s *server) coverageJob(id string) (stagedJob, error) {
@@ -670,6 +745,7 @@ func (s *server) coverageRows(ctx context.Context, job stagedJob) ([]coveragePla
 		return nil, err
 	}
 	defer rows.Close()
+	coverageIndex := s.indexCoverageDocuments(job)
 	result := make([]coveragePlanilla, 0)
 	for rows.Next() {
 		var row coveragePlanilla
@@ -689,18 +765,32 @@ func (s *server) coverageRows(ctx context.Context, job stagedJob) ([]coveragePla
 		row.Cedula, row.Minor = strings.TrimSpace(cedula.String), strings.ToUpper(strings.TrimSpace(minor.String))
 		row.Dependent1, row.Dependent2 = strings.TrimSpace(dep1.String), strings.TrimSpace(dep2.String)
 		row.CoverageStatus = strings.ToUpper(strings.TrimSpace(coverage.String))
-		row.HasPDF = s.coverageDocumentExists(job, row.ID)
+		if indexed := coverageIndex[row.ID]; indexed != nil {
+			row.HasPDF = indexed.HasPDF
+			if indexed.HasUndated {
+				if date, ok := normalizeCoverageDate(row.CareUntil); ok {
+					indexed.Dates[date] = true
+				}
+			}
+			row.CoverageDates = make([]string, 0, len(indexed.Dates))
+			for date := range indexed.Dates {
+				row.CoverageDates = append(row.CoverageDates, date)
+			}
+			sort.Strings(row.CoverageDates)
+		}
 		if failure, ok := job.CoverageFailures[row.ID]; ok {
 			row.ManualRequired, row.ManualReason = failure.Manual, failure.Reason
+			row.ManualQueryDate, row.ManualCustomDate = failure.QueryDate, failure.CustomDate
 		}
 		if row.ManualRequired {
 			attached := make(map[string]bool)
 			for _, doc := range job.ExternalPDFs {
-				if doc.PlanillaID == row.ID {
+				if doc.PlanillaID == row.ID && coverageDocumentDate(doc, row) == row.ManualQueryDate {
 					attached[doc.CoverageCedula] = true
 				}
 			}
-			for _, member := range coverageMembers(row) {
+			members := filterCoverageMembers(coverageMembersAt(row, row.ManualQueryDate), job.CoverageFailures[row.ID].PendingCedulas)
+			for _, member := range members {
 				row.ManualMembers = append(row.ManualMembers, coverageManualMember{Cedula: member.Cedula, Fecha: member.Fecha, Adjunta: attached[member.Cedula]})
 			}
 		}
@@ -713,8 +803,22 @@ func (s *server) coverageRows(ctx context.Context, job stagedJob) ([]coveragePla
 	return result, nil
 }
 
+func normalizeCoverageDate(value string) (string, bool) {
+	value = strings.TrimSpace(value)
+	parsed, err := time.Parse("2006-01-02", value)
+	if err != nil || parsed.Format("2006-01-02") != value {
+		return "", false
+	}
+	return value, true
+}
+
 func coverageMembers(row coveragePlanilla) []coverageMember {
-	if len(row.CareUntil) != 10 || row.CareUntil[4] != '-' || row.CareUntil[7] != '-' {
+	return coverageMembersAt(row, row.CareUntil)
+}
+
+func coverageMembersAt(row coveragePlanilla, queryDate string) []coverageMember {
+	queryDate, ok := normalizeCoverageDate(queryDate)
+	if !ok {
 		return nil
 	}
 	members := make([]coverageMember, 0, 3)
@@ -723,7 +827,7 @@ func coverageMembers(row coveragePlanilla) []coverageMember {
 		value = strings.TrimSpace(value)
 		if coverageCedulaPattern.MatchString(value) && !seen[value] {
 			seen[value] = true
-			members = append(members, coverageMember{Cedula: value, Fecha: row.CareUntil})
+			members = append(members, coverageMember{Cedula: value, Fecha: queryDate})
 		}
 	}
 	add(row.Cedula)
@@ -734,26 +838,99 @@ func coverageMembers(row coveragePlanilla) []coverageMember {
 	return members
 }
 
-func (s *server) coverageDocumentExists(job stagedJob, pdiID int64) bool {
-	for _, doc := range job.ExternalPDFs {
-		if doc.PlanillaID == pdiID && strings.HasPrefix(filepath.Base(doc.RelativePath), "C_COBERTURA") {
-			return true
+func coverageMemberCedulas(members []coverageMember) []string {
+	cedulas := make([]string, 0, len(members))
+	for _, member := range members {
+		cedulas = append(cedulas, member.Cedula)
+	}
+	return cedulas
+}
+
+func filterCoverageMembers(members []coverageMember, selectedCedulas []string) []coverageMember {
+	if len(selectedCedulas) == 0 {
+		return members
+	}
+	selected := make(map[string]bool, len(selectedCedulas))
+	for _, cedula := range selectedCedulas {
+		selected[cedula] = true
+	}
+	filtered := make([]coverageMember, 0, len(selectedCedulas))
+	for _, member := range members {
+		if selected[member.Cedula] {
+			filtered = append(filtered, member)
 		}
 	}
-	data, err := os.ReadFile(filepath.Join(s.jobRoot(job.ID), "reportes", "classification_report.json"))
-	if err != nil {
+	return filtered
+}
+
+func coverageDocumentDate(doc workspaceDocument, row coveragePlanilla) string {
+	if date, ok := normalizeCoverageDate(doc.CoverageDate); ok {
+		return date
+	}
+	date, _ := normalizeCoverageDate(row.CareUntil)
+	return date
+}
+
+func coverageHasDate(row coveragePlanilla, date string) bool {
+	date, ok := normalizeCoverageDate(date)
+	if !ok {
 		return false
 	}
-	var report classificationReport
-	if json.Unmarshal(data, &report) != nil {
-		return false
-	}
-	for _, item := range report.Files {
-		if item.PlanillaID == pdiID && strings.HasPrefix(filepath.Base(item.Output), "C_COBERTURA") {
+	for _, storedDate := range row.CoverageDates {
+		if storedDate == date {
 			return true
 		}
 	}
 	return false
+}
+
+func missingCoverageMembersForDate(s *server, job stagedJob, row coveragePlanilla, queryDate string) []coverageMember {
+	existing := make(map[string]bool)
+	for _, doc := range s.coverageDocumentsForPlanilla(job, row.ID) {
+		if coverageDocumentDate(doc, row) == queryDate && coverageCedulaPattern.MatchString(doc.CoverageCedula) {
+			existing[doc.CoverageCedula] = true
+		}
+	}
+	missing := make([]coverageMember, 0, 3)
+	for _, member := range coverageMembersAt(row, queryDate) {
+		if !existing[member.Cedula] {
+			missing = append(missing, member)
+		}
+	}
+	return missing
+}
+
+func (s *server) indexCoverageDocuments(job stagedJob) map[int64]*coverageDateIndex {
+	indexed := make(map[int64]*coverageDateIndex)
+	add := func(pdiID int64, relativePath, date string) {
+		if pdiID <= 0 || !strings.HasPrefix(filepath.Base(relativePath), "C_COBERTURA") {
+			return
+		}
+		entry := indexed[pdiID]
+		if entry == nil {
+			entry = &coverageDateIndex{Dates: make(map[string]bool)}
+			indexed[pdiID] = entry
+		}
+		entry.HasPDF = true
+		if normalized, ok := normalizeCoverageDate(date); ok {
+			entry.Dates[normalized] = true
+		} else {
+			entry.HasUndated = true
+		}
+	}
+	for _, doc := range job.ExternalPDFs {
+		add(doc.PlanillaID, doc.RelativePath, doc.CoverageDate)
+	}
+	data, err := os.ReadFile(filepath.Join(s.jobRoot(job.ID), "reportes", "classification_report.json"))
+	if err == nil {
+		var report classificationReport
+		if json.Unmarshal(data, &report) == nil {
+			for _, item := range report.Files {
+				add(item.PlanillaID, item.Output, "")
+			}
+		}
+	}
+	return indexed
 }
 
 func (s *server) coverageDocumentsForPlanilla(job stagedJob, pdiID int64) []workspaceDocument {

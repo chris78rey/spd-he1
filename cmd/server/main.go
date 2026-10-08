@@ -99,6 +99,7 @@ func main() {
 	mux.HandleFunc("/api/planilla-digital", s.listPlanillaDigital)
 	mux.HandleFunc("/api/v1/coberturas/planillas/", s.listCoveragePlanillas)
 	mux.HandleFunc("/api/v1/coberturas/generar/", s.generateCoverageSheets)
+	mux.HandleFunc("/api/v1/coberturas/generar-fecha/", s.generateCoverageSheetsAtDate)
 	mux.HandleFunc("/api/v1/coberturas/descargar/", s.downloadCoverageSheets)
 	mux.HandleFunc("/api/v1/coberturas/manual/", s.uploadManualCoverageSheets)
 	mux.HandleFunc("/api/v1/ingesta/lote-dual", s.receiveDualUpload)

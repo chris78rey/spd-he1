@@ -41,6 +41,7 @@ type workspaceDocument struct {
 	Size           int64  `json:"size_bytes"`
 	PlanillaID     int64  `json:"pdi_id,omitempty"`
 	CoverageCedula string `json:"coverage_cedula,omitempty"`
+	CoverageDate   string `json:"coverage_date,omitempty"`
 }
 
 type stagedJob struct {

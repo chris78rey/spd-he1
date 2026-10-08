@@ -77,3 +77,7 @@ Solo puede haber un espacio nuevo de Objeciones por servicio, mes y año. Si ya 
 ## Evidencia de uso: períodos de Objeciones con muchos pacientes
 
 Al crecer un período, evita renderizar todas las tarjetas completas de pacientes de una vez. Permite localizar por nombre, trámite o cédula y muestra diez expedientes por página. Agrupa la lista de PDFs una vez por carpeta para que consultar cada tarjeta no vuelva a recorrer todos los archivos. Conserva accesibles todos los trámites y sus selecciones, posturas y anexos.
+
+## Decisión de producto: consultar coberturas con fecha elegida
+
+«Hojas de cobertura» conserva la consulta habitual con la fecha del trámite y ofrece una segunda modalidad para elegir otra fecha. La persona selecciona un período de Recepción preparado, una o varias planillas y una fecha; la fecha elegida se aplica a todas las seleccionadas y sus PDFs se guardan en los expedientes de ese período. En menores se consultan también las cédulas registradas como referentes con la misma fecha. La interfaz muestra las fechas guardadas y permite descargar un ZIP filtrado por la fecha consultada. Esta modalidad registra el documento en el expediente y en su asociación documental Oracle, pero deja intacto `PDI_COBERTURA`; ese indicador continúa representando el resultado del flujo habitual.

@@ -415,6 +415,18 @@ body{min-width:320px}
 .coverage-picker-actions{display:grid;gap:10px;min-width:0;margin:4px 0 14px}
 .coverage-picker-buttons{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:10px}
 .coverage-picker-buttons>.v-btn,.objection-source-picker-row>.v-btn,.objection-workspace-picker-buttons>.v-btn{min-height:48px}
+.coverage-mode-switch{display:flex;flex-wrap:wrap;gap:10px;margin:4px 0 16px}
+.coverage-mode-switch>.v-btn{min-height:48px;font-size:16px}
+.coverage-custom-date-alert{margin:0 0 14px}
+.coverage-custom-date-content{display:grid;grid-template-columns:minmax(0,1fr) minmax(220px,280px);align-items:center;gap:18px}
+.coverage-custom-date-content strong{font-size:16px}
+.coverage-custom-date-content p{margin:4px 0 0;font-size:14px;line-height:1.5}
+.coverage-custom-date-alert small{display:block;margin-top:8px;font-size:14px;line-height:1.5}
+.coverage-custom-date-input{min-width:0}
+.coverage-member-detail{display:block;margin-top:4px;color:#526256;font-size:14px;line-height:1.5;overflow-wrap:anywhere}
+.coverage-card .coverage-manual small,.coverage-card .coverage-failure{max-width:300px;font-size:14px;line-height:1.5}
+.coverage-card .coverage-manual>a{font-size:14px}
+.coverage-card .coverage-manual-upload{min-height:44px;font-size:14px}
 .objection-source-picker-row,.objection-workspace-picker-row,.patient-documents-picker-row,.zip-download-picker-row{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:12px;min-width:0}
 .objection-source-picker-row>.v-btn{align-self:end}
 .objection-workspace-picker-buttons{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
@@ -431,6 +443,9 @@ body{min-width:320px}
   .workspace-picker-menu.v-overlay__content{min-width:min(440px,calc(100vw - 24px))!important}
 }
 @media(max-width:640px){
+  .coverage-mode-switch{display:grid;grid-template-columns:1fr}
+  .coverage-mode-switch>.v-btn{width:100%}
+  .coverage-custom-date-content{grid-template-columns:1fr;gap:10px}
   .objection-source-picker-row,.objection-workspace-picker-row,.patient-documents-picker-row,.zip-download-picker-row{grid-template-columns:minmax(0,1fr)}
   .objection-source-picker-row>.v-btn,.objection-workspace-picker-buttons>.v-btn{width:100%}
   .objection-workspace-picker-buttons{display:grid;grid-template-columns:1fr 1fr}
