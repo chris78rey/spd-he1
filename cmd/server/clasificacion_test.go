@@ -50,3 +50,29 @@ func TestMatchClassificationRecognizesHCUForm008Keyword(t *testing.T) {
 		t.Fatalf("matchClassification() = (%q, %d, %t), want HCU_008.pdf and a unique match", code, matches, tied)
 	}
 }
+
+func TestMatchClassificationPrioritizesHCU007InterconsultaPhrase(t *testing.T) {
+	rules, err := loadClassificationRules(filepath.Join("..", "..", "reglas_clasificacion.yaml"))
+	if err != nil {
+		t.Fatalf("loadClassificationRules() error = %v", err)
+	}
+
+	text := "FORMULARIO 7 – INTERCONSULTA\nFORMULARIO 017\nPROTOCOLO QUIRURGICO\nCIRUGIA"
+	code, matches, tied := matchClassification(text, rules)
+	if code != "HCU_007.pdf" || matches != 1 || tied {
+		t.Fatalf("matchClassification() = (%q, %d, %t), want prioritized HCU_007.pdf", code, matches, tied)
+	}
+}
+
+func TestResolvePDFClassificationPrefersConfirmedFilenameOverGenericContent(t *testing.T) {
+	rules, err := loadClassificationRules(filepath.Join("..", "..", "reglas_clasificacion.yaml"))
+	if err != nil {
+		t.Fatalf("loadClassificationRules() error = %v", err)
+	}
+
+	filenameCode := matchFilenameClassification("007_2.pdf", rules)
+	code, matches, reason := resolvePDFClassification("FORMULARIO 017 PROTOCOLO QUIRURGICO CIRUGIA", filenameCode, rules)
+	if code != "HCU_007.pdf" || matches != 0 || reason != "CODIGO_RECONOCIDO_POR_NOMBRE" {
+		t.Fatalf("resolvePDFClassification() = (%q, %d, %q), want filename HCU_007.pdf", code, matches, reason)
+	}
+}

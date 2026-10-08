@@ -44,6 +44,9 @@ reglas:
     palabras_clave: ["FORMULARIO 006", "EPICRISIS", "RESUMEN DE ALTA", "CUADRO CLINICO DE EGRESO"]
   - codigo: HCU_017.pdf
     palabras_clave: ["FORMULARIO 017", "PROTOCOLO QUIRURGICO", "CIRUGIA"]
+  - codigo: HCU_007.pdf
+    palabras_clave: ["FORMULARIO 7 – INTERCONSULTA"]
+    palabras_clave_prioritarias: ["FORMULARIO 7 – INTERCONSULTA"]
   - codigo: HCU_018A.pdf
     palabras_clave: ["FORMULARIO 018A", "TRANSANESTESICO", "ANESTESIA"]
   - codigo: HCU_012.pdf

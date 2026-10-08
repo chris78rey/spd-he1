@@ -4,7 +4,7 @@
 
 ## 1. Entrada, extracción y clasificación
 
-- Ignorar el nombre del PDF como señal general: puede ser aleatorio (`tmp_a1.pdf`, `doc_99.pdf`). Excepción confirmada: reconocer únicamente las bases `08` y `008` como `HCU_008.pdf`, y `007` como `HCU_007.pdf`; se admite un sufijo numérico de duplicado (`007_2.pdf`, `08_1.pdf`) y el prefijo generado `PENDIENTE_tmp_`. Un texto identificable del PDF tiene prioridad; si contradice una regla textual o existe empate, conservar pendiente.
+- Ignorar el nombre del PDF como señal general: puede ser aleatorio (`tmp_a1.pdf`, `doc_99.pdf`). Excepción confirmada: las bases exactas `08` y `008` identifican `HCU_008.pdf`, y `007` identifica `HCU_007.pdf`; se admite un sufijo numérico de duplicado (`007_2.pdf`, `08_1.pdf`) y el prefijo generado `PENDIENTE_tmp_`. Estos códigos de archivo prevalecen sobre coincidencias genéricas del contenido. Para nombres no confirmados, clasificar por el texto del PDF y conservar como pendiente las coincidencias ambiguas.
 - Analizar primero el texto vectorial de las páginas 1 y 2.
 - Si no hay texto digital utilizable, renderizar la página 1 en escala de grises a 200–300 DPI y aplicar Tesseract en español (`spa`).
 - Texto vectorial con coincidencia exacta de una regla: confianza operativa 100% según el criterio recibido; no representa una probabilidad calibrada estadísticamente.
@@ -47,6 +47,7 @@ La fuente ejecutable del catálogo es [`../reglas_clasificacion.yaml`](../reglas
 | `HCU_053.pdf` | `FORMULARIO 053`, `REFERENCIA`, `DERIVACION`, `CONTRARREFERENCIA`; discriminador adicional `ESTABLECIMIENTO QUE DERIVA` |
 | `HCU_006.pdf` | `FORMULARIO 006`, `EPICRISIS`, `RESUMEN DE ALTA`, `CUADRO CLINICO DE EGRESO` |
 | `HCU_017.pdf` | `FORMULARIO 017`, `PROTOCOLO QUIRURGICO`, `CIRUGIA` |
+| `HCU_007.pdf` | `FORMULARIO 7 – INTERCONSULTA` (señal prioritaria frente a palabras genéricas como `CIRUGIA`) |
 | `HCU_018A.pdf` | `FORMULARIO 018A`, `TRANSANESTESICO`, `ANESTESIA` |
 | `HCU_012.pdf` | `FORMULARIO 12 IMAGENOLOGIA`, `RESULTADOS EXAMENES DE IMAGEN` |
 | `HCU_010.pdf` | `FORMULARIO 10 LABORATORIO CLINICO`, `RESULTADOS EXAMENES` |
@@ -58,7 +59,7 @@ La fuente ejecutable del catálogo es [`../reglas_clasificacion.yaml`](../reglas
 
 La separación HCU 006 / HCU 053 se basa especialmente en EPICRISIS, RESUMEN DE ALTA y CUADRO CLINICO DE EGRESO frente a REFERENCIA, DERIVACION, CONTRARREFERENCIA y ESTABLECIMIENTO QUE DERIVA.
 
-Para `HCU_007.pdf` se reconoce el nombre base numérico confirmado `007`, pero no hay todavía una frase OCR confirmada. Para los demás códigos conocidos de nombres de archivo no se recibieron patrones OCR: enviarlos a revisión manual.
+Para `HCU_007.pdf`, la frase `FORMULARIO 7 – INTERCONSULTA` es una señal prioritaria de contenido. Para los demás códigos conocidos de nombres de archivo sin frases OCR confirmadas, enviarlos a revisión manual.
 
 ## 3. Catálogo de nombres de archivo conocidos
 

@@ -26,8 +26,9 @@ type classificationRules struct {
 		} `yaml:"codigos_nombre_archivo_confirmados"`
 	} `yaml:"entrada"`
 	Rules []struct {
-		Code     string   `yaml:"codigo"`
-		Keywords []string `yaml:"palabras_clave"`
+		Code             string   `yaml:"codigo"`
+		Keywords         []string `yaml:"palabras_clave"`
+		PriorityKeywords []string `yaml:"palabras_clave_prioritarias"`
 	} `yaml:"reglas"`
 }
 
@@ -104,17 +105,25 @@ func classifyPDF(ctx context.Context, filePath, originalName string, rules class
 		}
 	}
 	result.DatesOutsidePeriod = datesOutsideBilledPeriod(text, periodMonth, periodYear)
-	if code, matches, tie := matchClassification(text, rules); code != "" && !tie {
-		result.Code, result.Matches = code, matches
-		return result
-	} else if matches == 0 && !tie && filenameCode != "" {
-		result.Code = filenameCode
-		result.Reason = "CODIGO_RECONOCIDO_POR_NOMBRE"
+	if code, matches, reason := resolvePDFClassification(text, filenameCode, rules); code != "" {
+		result.Code, result.Matches, result.Reason = code, matches, reason
 		return result
 	}
 	result.Code = pendingPDFName(originalName)
 	result.Reason = "SIN_COINCIDENCIA_O_AMBIGUO"
 	return result
+}
+
+func resolvePDFClassification(text, filenameCode string, rules classificationRules) (string, int, string) {
+	// The confirmed numeric input codes (08, 008, 007) identify the source form.
+	// Prefer them over generic words in the document, such as "CIRUGIA".
+	if filenameCode != "" {
+		return filenameCode, 0, "CODIGO_RECONOCIDO_POR_NOMBRE"
+	}
+	if code, matches, tie := matchClassification(text, rules); code != "" && !tie {
+		return code, matches, ""
+	}
+	return "", 0, ""
 }
 
 func matchFilenameClassification(originalName string, rules classificationRules) string {
@@ -278,6 +287,31 @@ func runOCR(ctx context.Context, filePath string) (string, error) {
 
 func matchClassification(text string, rules classificationRules) (string, int, bool) {
 	normalized := normalizeOCRText(text)
+	priorityCode := ""
+	priorityCount := 0
+	for _, rule := range rules.Rules {
+		seen := make(map[string]struct{}, len(rule.PriorityKeywords))
+		for _, keyword := range rule.PriorityKeywords {
+			normalizedKeyword := normalizeOCRText(keyword)
+			if normalizedKeyword == "" {
+				continue
+			}
+			if _, duplicate := seen[normalizedKeyword]; duplicate {
+				continue
+			}
+			seen[normalizedKeyword] = struct{}{}
+			if strings.Contains(normalized, normalizedKeyword) {
+				if priorityCode != "" && priorityCode != rule.Code {
+					return "", priorityCount + 1, true
+				}
+				priorityCode = rule.Code
+				priorityCount++
+			}
+		}
+	}
+	if priorityCode != "" {
+		return priorityCode, priorityCount, false
+	}
 	bestCode, bestCount, bestSpecificity := "", 0, 0
 	tied := false
 	for _, rule := range rules.Rules {
