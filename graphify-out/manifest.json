@@ -6,9 +6,9 @@
     "semantic_hash": ""
   },
   "src/App.vue": {
-    "mtime": 1791823270.2311215,
-    "seen": 1791823341.6435134,
-    "ast_hash": "f18d5105e962d3a34de25cb2617c9030",
+    "mtime": 1791830243.1365829,
+    "seen": 1791830307.2400675,
+    "ast_hash": "96a1a66c3ec136451fa833f548f47d24",
     "semantic_hash": ""
   },
   "src/main.js": {
@@ -30,9 +30,9 @@
     "semantic_hash": ""
   },
   "PRINCIPIOS_DE_PRODUCTO.md": {
-    "mtime": 1791823191.3916426,
-    "seen": 1791823247.3551202,
-    "ast_hash": "9551bea04e3577948b7bacf94fe2f564",
+    "mtime": 1791830203.1313376,
+    "seen": 1791830307.2400794,
+    "ast_hash": "08bc0b9c0d34fd6dad4506b58fcb36f0",
     "semantic_hash": ""
   },
   "index.html": {
@@ -42,9 +42,9 @@
     "semantic_hash": ""
   },
   "cmd/server/main.go": {
-    "mtime": 1791823149.6353889,
-    "seen": 1791823247.355039,
-    "ast_hash": "58a3c26caf77bb6b9d3bc27931129e82",
+    "mtime": 1791830178.064184,
+    "seen": 1791830307.2400408,
+    "ast_hash": "b2575f8b29f1e4db2ea9d36c7d5b44a8",
     "semantic_hash": ""
   },
   "go.mod": {
@@ -360,15 +360,15 @@
     "semantic_hash": ""
   },
   "cmd/server/historical_archive.go": {
-    "mtime": 1791823149.6363888,
-    "seen": 1791823247.35503,
-    "ast_hash": "618c4b1ee799feed49125bf182f0f10d",
+    "mtime": 1791830245.6375983,
+    "seen": 1791830307.2400367,
+    "ast_hash": "2b60254ac51ed8c7b1eaeef541b45ba1",
     "semantic_hash": ""
   },
   "cmd/server/historical_archive_test.go": {
-    "mtime": 1791823159.1044464,
-    "seen": 1791823247.3550327,
-    "ast_hash": "6cd3090d09a22e5fdf8a4485d8e157ba",
+    "mtime": 1791830223.5184627,
+    "seen": 1791830307.2400377,
+    "ast_hash": "504ac1f8613403ad08282cd77a41521e",
     "semantic_hash": ""
   },
   "graphify-out/memory/query_20261008_204302_4c7018d9_where_should_archivo_hist\u00f3rico_appear_in_the_folio.md": {
@@ -615,6 +615,18 @@
     "mtime": 1791492809.8341062,
     "seen": 1791823247.355112,
     "ast_hash": "35c78f17d9b231eefa0abe03adb79d38",
+    "semantic_hash": ""
+  },
+  ".dist-before-live-20261012T183125Z/assets/index-BAUuMchU.js": {
+    "mtime": 1791821979.2952979,
+    "seen": 1791830307.2400126,
+    "ast_hash": "d8a8e72041879e0ea2e64029496b13d6",
+    "semantic_hash": ""
+  },
+  ".dist-before-live-20261012T183125Z/index.html": {
+    "mtime": 1791821979.2932978,
+    "seen": 1791830307.2400734,
+    "ast_hash": "07df11effb9316c072a991701a73fc8d",
     "semantic_hash": ""
   }
 }

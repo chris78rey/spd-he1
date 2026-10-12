@@ -53,7 +53,9 @@ func (s *server) historicalArchives(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) listHistoricalArchives(w http.ResponseWriter, r *http.Request) {
+	s.historicalArchivesMu.Lock()
 	records, err := s.readHistoricalArchiveRecords()
+	s.historicalArchivesMu.Unlock()
 	if err != nil {
 		log.Printf("No se pudo leer el archivo histórico (%T): %v", err, err)
 		writeError(w, http.StatusInternalServerError, "No se pudo cargar el archivo histórico.")
@@ -221,7 +223,36 @@ func (s *server) uploadHistoricalArchive(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusInternalServerError, "No se pudo registrar la información del ZIP.")
 		return
 	}
-	if err := os.Rename(temporaryDir, filepath.Join(s.historicalArchivesDir, id)); err != nil {
+	// Check and publish while holding one lock so simultaneous uploads cannot
+	// create two archives for the same service and period.
+	s.historicalArchivesMu.Lock()
+	records, recordsErr := s.readHistoricalArchiveRecords()
+	var existing []historicalArchiveRecord
+	if recordsErr == nil {
+		for _, saved := range records {
+			if saved.Service == record.Service && saved.Month == record.Month && saved.Year == record.Year {
+				existing = append(existing, saved)
+			}
+		}
+	}
+	var renameErr error
+	if recordsErr == nil && len(existing) == 0 {
+		renameErr = os.Rename(temporaryDir, filepath.Join(s.historicalArchivesDir, id))
+	}
+	s.historicalArchivesMu.Unlock()
+	if recordsErr != nil {
+		log.Printf("No se pudo comprobar si ya existe un ZIP histórico del período (%T): %v", recordsErr, recordsErr)
+		writeError(w, http.StatusInternalServerError, "No se pudo comprobar si ya existe un ZIP para ese servicio y período.")
+		return
+	}
+	if len(existing) > 0 {
+		writeJSON(w, http.StatusConflict, map[string]any{
+			"error":    historicalArchiveDuplicateMessage(record.Service, record.Month, record.Year, existing),
+			"archives": existing,
+		})
+		return
+	}
+	if renameErr != nil {
 		writeError(w, http.StatusInternalServerError, "No se pudo conservar el ZIP en el archivo histórico.")
 		return
 	}
@@ -304,6 +335,8 @@ func (s *server) deleteHistoricalArchive(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, "Escribe el ID completo del ZIP histórico para confirmar su eliminación.")
 		return
 	}
+	s.historicalArchivesMu.Lock()
+	defer s.historicalArchivesMu.Unlock()
 	if _, err := s.readHistoricalArchiveRecord(id); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			writeError(w, http.StatusNotFound, "No se encontró el ZIP histórico.")
@@ -334,6 +367,19 @@ func (s *server) deleteHistoricalArchive(w http.ResponseWriter, r *http.Request)
 	}
 	log.Printf("ZIP histórico %s eliminado por %s", id, entry.username)
 	writeJSON(w, http.StatusOK, map[string]any{"deleted": true, "id": id})
+}
+
+func historicalArchiveDuplicateMessage(service, month, year string, existing []historicalArchiveRecord) string {
+	ids := make([]string, 0, len(existing))
+	for _, record := range existing {
+		ids = append(ids, record.ID)
+	}
+	verb, countLabel, idLabel := "existen", "ZIP históricos", "IDs"
+	if len(existing) == 1 {
+		verb, countLabel, idLabel = "existe", "ZIP histórico", "ID"
+	}
+	return fmt.Sprintf("Ya %s %d %s para %s · %s %s (%s: %s). No se guardó otro ZIP para este período.",
+		verb, len(existing), countLabel, historicalArchiveServiceLabel(service), historicalArchiveMonthLabel(month), year, idLabel, strings.Join(ids, ", "))
 }
 
 func (s *server) readHistoricalArchiveRecords() ([]historicalArchiveRecord, error) {

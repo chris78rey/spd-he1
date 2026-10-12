@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -121,6 +122,116 @@ func TestHistoricalArchiveUploadPreservesOriginalZIPAndCanSearchAndDownload(t *t
 	}
 	if !strings.Contains(downloadResponse.Header().Get("Content-Disposition"), "EMGagosto2021.zip") {
 		t.Fatalf("unexpected download filename header: %q", downloadResponse.Header().Get("Content-Disposition"))
+	}
+}
+
+func TestHistoricalArchiveRejectsDuplicateServicePeriod(t *testing.T) {
+	s := historicalArchiveTestServer(t)
+	original := makeHistoricalTestZIP(t, "first archive")
+	first := httptest.NewRecorder()
+	s.historicalArchives(first, historicalUploadRequest(t, original, "EMGagosto2021.zip", "EMERGENCIA", "08", "2021"))
+	if first.Code != http.StatusCreated {
+		t.Fatalf("first upload status = %d, body = %s", first.Code, first.Body.String())
+	}
+
+	duplicate := httptest.NewRecorder()
+	s.historicalArchives(duplicate, historicalUploadRequest(t, makeHistoricalTestZIP(t, "duplicate archive"), "otro.zip", "EMERGENCIA", "8", "2021"))
+	if duplicate.Code != http.StatusConflict {
+		t.Fatalf("duplicate upload status = %d, want %d, body = %s", duplicate.Code, http.StatusConflict, duplicate.Body.String())
+	}
+	var conflict struct {
+		Error    string                    `json:"error"`
+		Archives []historicalArchiveRecord `json:"archives"`
+	}
+	if err := json.Unmarshal(duplicate.Body.Bytes(), &conflict); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(conflict.Error, "Emergencia · Agosto 2021") || len(conflict.Archives) != 1 {
+		t.Fatalf("duplicate response did not explain the existing period: %+v", conflict)
+	}
+
+	stored, err := os.ReadFile(filepath.Join(s.historicalArchivesDir, conflict.Archives[0].ID, "original.zip"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(stored, original) {
+		t.Fatal("rejecting a duplicate changed the original ZIP")
+	}
+
+	// Each part of the service/month/year key remains independent.
+	for _, period := range []struct {
+		service string
+		month   string
+		year    string
+	}{
+		{service: "EMERGENCIA", month: "09", year: "2021"},
+		{service: "AMBULATORIO", month: "08", year: "2021"},
+		{service: "EMERGENCIA", month: "08", year: "2022"},
+	} {
+		response := httptest.NewRecorder()
+		s.historicalArchives(response, historicalUploadRequest(t, makeHistoricalTestZIP(t, "different period"), "periodo.zip", period.service, period.month, period.year))
+		if response.Code != http.StatusCreated {
+			t.Fatalf("distinct period %s/%s/%s upload status = %d, body = %s", period.service, period.month, period.year, response.Code, response.Body.String())
+		}
+	}
+
+	entries, err := os.ReadDir(s.historicalArchivesDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	archiveCount := 0
+	for _, entry := range entries {
+		if entry.IsDir() && historicalArchiveIDPattern.MatchString(entry.Name()) {
+			archiveCount++
+		}
+	}
+	if archiveCount != 4 {
+		t.Fatalf("saved archive count = %d, want 4 (one for each distinct period)", archiveCount)
+	}
+}
+
+func TestConcurrentHistoricalArchiveUploadsKeepOnePerServicePeriod(t *testing.T) {
+	s := historicalArchiveTestServer(t)
+	statuses := make(chan int, 2)
+	var wait sync.WaitGroup
+	for _, filename := range []string{"primero.zip", "segundo.zip"} {
+		filename := filename
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			response := httptest.NewRecorder()
+			s.historicalArchives(response, historicalUploadRequest(t, makeHistoricalTestZIP(t, filename), filename, "EMERGENCIA", "08", "2021"))
+			statuses <- response.Code
+		}()
+	}
+	wait.Wait()
+	close(statuses)
+	created, conflicts := 0, 0
+	for status := range statuses {
+		switch status {
+		case http.StatusCreated:
+			created++
+		case http.StatusConflict:
+			conflicts++
+		default:
+			t.Fatalf("concurrent upload status = %d, want 201 or 409", status)
+		}
+	}
+	if created != 1 || conflicts != 1 {
+		t.Fatalf("concurrent upload outcomes = %d created, %d conflicts; want 1 each", created, conflicts)
+	}
+	entries, err := os.ReadDir(s.historicalArchivesDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	archiveCount := 0
+	for _, entry := range entries {
+		if entry.IsDir() && historicalArchiveIDPattern.MatchString(entry.Name()) {
+			archiveCount++
+		}
+	}
+	if archiveCount != 1 {
+		t.Fatalf("saved archive count after concurrent uploads = %d, want 1", archiveCount)
 	}
 }
 

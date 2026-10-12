@@ -109,3 +109,7 @@ La consulta con fecha elegida también está disponible dentro de «Revisar docu
 ## Decisión de producto: eliminar ZIP del Archivo histórico por rol
 
 Los ZIP originales del Archivo histórico solo se pueden eliminar con el rol personal de Oracle `SPD_BORRA_EXPEDIENTE`. La interfaz muestra la acción únicamente a quienes tienen el permiso de sesión; la API vuelve a comprobarlo antes de tocar archivos. La confirmación requiere escribir el ID completo del ZIP. La eliminación retira el ZIP y sus metadatos del repositorio y no modifica Oracle.
+
+## Decisión de producto: un ZIP histórico por servicio y período
+
+El Archivo histórico admite un solo ZIP por combinación de servicio, mes y año. Al seleccionar una combinación ya guardada, la pantalla identifica los ZIP existentes y bloquea la selección y el envío de otra carga. El servidor aplica la misma regla y rechaza con HTTP 409 cualquier repetición, incluso si varias cargas llegan al mismo tiempo. Los duplicados que ya existan se conservan sin borrar ni fusionar sus archivos; la regla impide crear nuevos.

@@ -50,6 +50,7 @@ type server struct {
 	maxIngest             int64
 	cookieSecure          bool
 	ingestMu              sync.Mutex
+	historicalArchivesMu  sync.Mutex
 	mu                    sync.Mutex
 	sessions              map[string]session
 }

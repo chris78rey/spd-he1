@@ -61,6 +61,23 @@ const historicalArchiveFile = ref(null)
 const historicalArchiveInput = ref(null)
 const historicalArchiveUploading = ref(false)
 const historicalArchiveDownloadingID = ref('')
+const historicalArchivesForSelectedPeriod = computed(() => {
+  const service = String(historicalArchiveService.value || '').trim().toUpperCase()
+  const month = String(historicalArchiveMonth.value || '').trim().padStart(2, '0')
+  const year = String(historicalArchiveYear.value || '').trim()
+  if (!service || !/^\d{2}$/.test(month) || !/^\d{4}$/.test(year)) return []
+  return historicalArchiveRecords.value.filter(record => String(record.tipo_servicio || '').toUpperCase() === service
+    && String(record.mes || '').padStart(2, '0') === month
+    && String(record.anio || '').trim() === year)
+})
+const historicalArchivePeriodAlreadyExists = computed(() => historicalArchivesForSelectedPeriod.value.length > 0)
+const historicalArchiveDuplicateNotice = computed(() => {
+  const records = historicalArchivesForSelectedPeriod.value
+  if (!records.length) return ''
+  const period = `${coverageServiceLabel(historicalArchiveService.value)} · ${coverageMonthLabel(historicalArchiveMonth.value)} ${String(historicalArchiveYear.value).trim()}`
+  const ids = records.map(record => record.id).join(', ')
+  return `Ya ${records.length === 1 ? 'existe' : 'existen'} ${records.length} ZIP ${records.length === 1 ? 'guardado' : 'guardados'} para ${period} (ID: ${ids}). No se puede cargar otro ZIP para este mismo servicio y período.`
+})
 const historicalArchiveYearOptions = computed(() => [
   { title: 'Todos los años', value: 'ALL' },
   ...[...new Set(historicalArchiveRecords.value.map(record => String(record.anio)))].sort((a, b) => Number(b) - Number(a)).map(year => ({ title: year, value: year })),
@@ -86,6 +103,9 @@ const historicalArchiveFiltersActive = computed(() => Boolean(historicalArchiveS
   || historicalArchiveServiceFilter.value !== 'ALL'
   || historicalArchiveMonthFilter.value !== 'ALL'
   || historicalArchiveYearFilter.value !== 'ALL')
+watch([historicalArchiveService, historicalArchiveMonth, historicalArchiveYear], () => {
+  historicalArchiveUploadError.value = ''
+})
 const planillaPage = ref(1)
 const planillaData = ref({ columns: [], rows: [], total: 0, totalPages: 1 })
 const planillaLoading = ref(false)
@@ -542,6 +562,10 @@ async function uploadHistoricalArchive() {
   historicalArchiveUploadError.value = ''
   historicalArchiveNotice.value = ''
   historicalArchiveDownloadError.value = ''
+  if (historicalArchivePeriodAlreadyExists.value) {
+    historicalArchiveUploadError.value = historicalArchiveDuplicateNotice.value
+    return
+  }
   const file = historicalArchiveFile.value
   if (!historicalArchiveService.value || !historicalArchiveMonth.value || !/^\d{4}$/.test(historicalArchiveYear.value) || !file) {
     historicalArchiveUploadError.value = 'Completa servicio, mes, año y selecciona un ZIP.'
@@ -561,6 +585,12 @@ async function uploadHistoricalArchive() {
     const response = await fetch('/api/v1/archivo-historico', { method: 'POST', credentials: 'same-origin', body: form })
     const data = await response.json().catch(() => ({}))
     if (response.status === 401) { await signOut(); return }
+    if (response.status === 409) {
+      const message = data.error || 'Ya existe un ZIP histórico para este servicio y período.'
+      await loadHistoricalArchives()
+      if (historicalArchiveLoadError.value || !historicalArchivePeriodAlreadyExists.value) historicalArchiveUploadError.value = message
+      return
+    }
     if (!response.ok) throw new Error(data.error || 'No se pudo guardar el ZIP histórico.')
     const record = data.archive
     if (record?.id) {
@@ -2445,9 +2475,10 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
               <v-text-field v-model="historicalArchiveYear" type="number" min="1900" max="9999" step="1" label="Año del período" prepend-inner-icon="mdi-calendar-outline" />
             </div>
             <div class="historical-archive-file-row">
-              <label class="historical-archive-file"><input ref="historicalArchiveInput" type="file" accept=".zip,application/zip" :disabled="historicalArchiveUploading" @change="setHistoricalArchiveFile"><v-icon icon="mdi-folder-zip-outline" size="21"/><span><strong>{{ historicalArchiveFile?.name || 'Seleccionar ZIP original' }}</strong><small>{{ historicalArchiveFile ? prettySize(historicalArchiveFile.size) : 'Archivo .zip' }}</small></span></label>
-              <v-btn type="button" color="primary" prepend-icon="mdi-content-save-outline" :loading="historicalArchiveUploading" :disabled="historicalArchiveUploading || !historicalArchiveService || !historicalArchiveMonth || !historicalArchiveYear || !historicalArchiveFile" @click="uploadHistoricalArchive">Guardar en Archivo histórico</v-btn>
+              <label class="historical-archive-file" :class="{'is-disabled': historicalArchiveUploading || historicalArchivePeriodAlreadyExists}"><input ref="historicalArchiveInput" type="file" accept=".zip,application/zip" :disabled="historicalArchiveUploading || historicalArchivePeriodAlreadyExists" @change="setHistoricalArchiveFile"><v-icon icon="mdi-folder-zip-outline" size="21"/><span><strong>{{ historicalArchiveFile?.name || 'Seleccionar ZIP original' }}</strong><small>{{ historicalArchiveFile ? prettySize(historicalArchiveFile.size) : 'Archivo .zip' }}</small></span></label>
+              <v-btn type="button" color="primary" prepend-icon="mdi-content-save-outline" :loading="historicalArchiveUploading" :disabled="historicalArchiveUploading || historicalArchivePeriodAlreadyExists || !historicalArchiveService || !historicalArchiveMonth || !historicalArchiveYear || !historicalArchiveFile" @click="uploadHistoricalArchive">Guardar en Archivo histórico</v-btn>
             </div>
+            <v-alert v-if="historicalArchiveDuplicateNotice" class="mt-4" type="warning" variant="tonal" density="comfortable" role="status">{{ historicalArchiveDuplicateNotice }}</v-alert>
             <v-alert v-if="historicalArchiveUploadError" class="mt-4" type="error" variant="tonal" density="comfortable">{{ historicalArchiveUploadError }}</v-alert>
             <v-alert v-if="historicalArchiveNotice" class="mt-4" type="success" variant="tonal" density="comfortable">{{ historicalArchiveNotice }}</v-alert>
           </v-card>

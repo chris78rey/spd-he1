@@ -506,6 +506,7 @@ body{min-width:320px}
 .historical-archive-upload-grid .v-field,.historical-archive-filters .v-field{font-size:16px}
 .historical-archive-file-row{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-top:8px}
 .historical-archive-file{position:relative;display:flex;align-items:center;gap:12px;min-width:0;min-height:58px;flex:1;padding:10px 14px;border:1px dashed #9eb3a1;border-radius:10px;background:#f8faf7;color:#365848;cursor:pointer}
+.historical-archive-file.is-disabled{opacity:.58;cursor:not-allowed}
 .historical-archive-file input{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
 .historical-archive-file:has(input:focus-visible){outline:3px solid #8ba992;outline-offset:2px}
 .historical-archive-file>span{display:grid;min-width:0;gap:3px}
