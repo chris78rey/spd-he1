@@ -277,6 +277,65 @@ func (s *server) downloadHistoricalArchive(w http.ResponseWriter, r *http.Reques
 	}
 }
 
+func (s *server) deleteHistoricalArchive(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		writeError(w, http.StatusMethodNotAllowed, "Método no permitido.")
+		return
+	}
+	entry, ok := s.getSession(r)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "Inicia sesión para continuar.")
+		return
+	}
+	if !entry.canDeleteWorkspaces {
+		writeError(w, http.StatusForbidden, "Tu usuario no tiene asignado el rol Oracle SPD_BORRA_EXPEDIENTE.")
+		return
+	}
+	id := strings.TrimPrefix(r.URL.Path, "/api/v1/archivo-historico/eliminar/")
+	if !historicalArchiveIDPattern.MatchString(id) {
+		writeError(w, http.StatusBadRequest, "El identificador del ZIP histórico no es válido.")
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 4*1024)
+	var input struct {
+		Confirmation string `json:"confirmacion"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil || strings.TrimSpace(input.Confirmation) != id {
+		writeError(w, http.StatusBadRequest, "Escribe el ID completo del ZIP histórico para confirmar su eliminación.")
+		return
+	}
+	if _, err := s.readHistoricalArchiveRecord(id); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			writeError(w, http.StatusNotFound, "No se encontró el ZIP histórico.")
+			return
+		}
+		log.Printf("No se pudo verificar el ZIP histórico %s (%T): %v", id, err, err)
+		writeError(w, http.StatusInternalServerError, "No se pudo verificar el ZIP histórico antes de eliminarlo.")
+		return
+	}
+	archiveDir := filepath.Join(s.historicalArchivesDir, id)
+	info, err := os.Lstat(archiveDir)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			writeError(w, http.StatusNotFound, "No se encontró el ZIP histórico.")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "No se pudo comprobar la carpeta del ZIP histórico.")
+		return
+	}
+	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		writeError(w, http.StatusBadRequest, "La carpeta del ZIP histórico no es válida.")
+		return
+	}
+	if err := os.RemoveAll(archiveDir); err != nil {
+		log.Printf("No se pudo eliminar ZIP histórico %s, solicitado por %s (%T): %v", id, entry.username, err, err)
+		writeError(w, http.StatusInternalServerError, "No se pudo eliminar el ZIP histórico.")
+		return
+	}
+	log.Printf("ZIP histórico %s eliminado por %s", id, entry.username)
+	writeJSON(w, http.StatusOK, map[string]any{"deleted": true, "id": id})
+}
+
 func (s *server) readHistoricalArchiveRecords() ([]historicalArchiveRecord, error) {
 	entries, err := os.ReadDir(s.historicalArchivesDir)
 	if errors.Is(err, os.ErrNotExist) {

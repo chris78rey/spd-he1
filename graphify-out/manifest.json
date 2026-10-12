@@ -6,9 +6,9 @@
     "semantic_hash": ""
   },
   "src/App.vue": {
-    "mtime": 1791489714.6654701,
-    "seen": 1791489750.1382582,
-    "ast_hash": "737584ae8096fa2d4774f5104fc52481",
+    "mtime": 1791823270.2311215,
+    "seen": 1791823341.6435134,
+    "ast_hash": "f18d5105e962d3a34de25cb2617c9030",
     "semantic_hash": ""
   },
   "src/main.js": {
@@ -24,15 +24,15 @@
     "semantic_hash": "4098147b2a6374bc7abaee797f3955d9"
   },
   "AGENTS.md": {
-    "mtime": 1791386856.1545749,
-    "seen": 1791387986.3188944,
-    "ast_hash": "d54aaaa6402aeb521564382d73f82926",
+    "mtime": 1791824602.0972211,
+    "seen": 1791824659.2512908,
+    "ast_hash": "8664e72088155b4a7a3541ef8bbcb6f6",
     "semantic_hash": ""
   },
   "PRINCIPIOS_DE_PRODUCTO.md": {
-    "mtime": 1791491023.1172924,
-    "seen": 1791491052.802505,
-    "ast_hash": "18a92df72ce6980e77cc46456b4cef59",
+    "mtime": 1791823191.3916426,
+    "seen": 1791823247.3551202,
+    "ast_hash": "9551bea04e3577948b7bacf94fe2f564",
     "semantic_hash": ""
   },
   "index.html": {
@@ -42,9 +42,9 @@
     "semantic_hash": ""
   },
   "cmd/server/main.go": {
-    "mtime": 1791486195.9133937,
-    "seen": 1791486545.633316,
-    "ast_hash": "54087b370eacd4a9a98a7624fc7f9065",
+    "mtime": 1791823149.6353889,
+    "seen": 1791823247.355039,
+    "ast_hash": "58a3c26caf77bb6b9d3bc27931129e82",
     "semantic_hash": ""
   },
   "go.mod": {
@@ -174,9 +174,9 @@
     "semantic_hash": ""
   },
   "cmd/server/coberturas.go": {
-    "mtime": 1791489677.7462387,
-    "seen": 1791489750.138149,
-    "ast_hash": "d65b3303b8cce0c8f090d644cfd9dc19",
+    "mtime": 1791821643.1982741,
+    "seen": 1791821759.1665964,
+    "ast_hash": "6e3f277abbfa754cb8d4f8f14f1adc73",
     "semantic_hash": ""
   },
   "scripts/cobertura/generate_pdf.cjs": {
@@ -336,9 +336,9 @@
     "semantic_hash": ""
   },
   "MANUAL_OPERACION_FOLIO.md": {
-    "mtime": 1791402026.0265923,
-    "seen": 1791466445.7352607,
-    "ast_hash": "bf322c5a56aa5e6897377a1d8ca9d19c",
+    "mtime": 1791823291.178249,
+    "seen": 1791823341.6435537,
+    "ast_hash": "9b14e6adf4cee650bfde73627e9badaf",
     "semantic_hash": ""
   },
   "cmd/server/clasificacion_test.go": {
@@ -348,15 +348,273 @@
     "semantic_hash": ""
   },
   "cmd/server/coberturas_test.go": {
-    "mtime": 1791486413.1167612,
-    "seen": 1791486545.633305,
-    "ast_hash": "e997e1768aae89648d5c3066b96aa0e6",
+    "mtime": 1791821693.6405814,
+    "seen": 1791821759.1665986,
+    "ast_hash": "e351fd1570d4215cfb1b5f1b8b31da4c",
     "semantic_hash": ""
   },
   "cmd/server/workspace_coverage_test.go": {
     "mtime": 1791489694.7753453,
     "seen": 1791489750.1382067,
     "ast_hash": "eed7bd6a194621622a9b43742f6f9436",
+    "semantic_hash": ""
+  },
+  "cmd/server/historical_archive.go": {
+    "mtime": 1791823149.6363888,
+    "seen": 1791823247.35503,
+    "ast_hash": "618c4b1ee799feed49125bf182f0f10d",
+    "semantic_hash": ""
+  },
+  "cmd/server/historical_archive_test.go": {
+    "mtime": 1791823159.1044464,
+    "seen": 1791823247.3550327,
+    "ast_hash": "6cd3090d09a22e5fdf8a4485d8e157ba",
+    "semantic_hash": ""
+  },
+  "graphify-out/memory/query_20261008_204302_4c7018d9_where_should_archivo_hist\u00f3rico_appear_in_the_folio.md": {
+    "mtime": 1791492182.5803418,
+    "seen": 1791492615.821065,
+    "ast_hash": "a5ae1a930788a7f54a35441e8cf0d8e7",
+    "semantic_hash": ""
+  },
+  "PRUEBAS/EMGagosto2021/1. CAIZA GARCIA STEVEN ALEXANDER/P_INDIVIDUAL.pdf": {
+    "mtime": 1791491127.2419293,
+    "seen": 1791492615.8210883,
+    "ast_hash": "4b2780446e785a12df5020e0c91ff6e6",
+    "semantic_hash": ""
+  },
+  "PRUEBAS/EMGagosto2021/10. PERALTA ARMAS DAVID ANDRES/ANEXOS.pdf": {
+    "mtime": 1791491127.32793,
+    "seen": 1791492615.8210897,
+    "ast_hash": "7f139333ca8cce6d9e4d35562f04782f",
+    "semantic_hash": ""
+  },
+  "PRUEBAS/EMGagosto2021/10. PERALTA ARMAS DAVID ANDRES/P_INDIVIDUAL.pdf": {
+    "mtime": 1791491127.34293,
+    "seen": 1791492615.8210907,
+    "ast_hash": "dbcc42286f7dcc3e49b749d6975f92e2",
+    "semantic_hash": ""
+  },
+  "PRUEBAS/EMGagosto2021/11. PISARA ECHEVERRIA WASHINGTON ALEXANDER/ANEXOS.pdf": {
+    "mtime": 1791491127.37593,
+    "seen": 1791492615.8210924,
+    "ast_hash": "b01b8a6e1e1480bcb663c0462b60f24e",
+    "semantic_hash": ""
+  },
+  "PRUEBAS/EMGagosto2021/11. PISARA ECHEVERRIA WASHINGTON ALEXANDER/P_INDIVIDUAL.pdf": {
+    "mtime": 1791491127.3889303,
+    "seen": 1791492615.8210936,
+    "ast_hash": "ebad13f2ebf8d652233f8eab28f1af5c",
+    "semantic_hash": ""
+  },
+  "PRUEBAS/EMGagosto2021/12. QUINATOA MOROCHO GLORIA ESTELA/ANEXOS.pdf": {
+    "mtime": 1791491127.4899309,
+    "seen": 1791492615.8210952,
+    "ast_hash": "3688e617ad7d883b0efccd0e7e836a50",
+    "semantic_hash": ""
+  },
+  "PRUEBAS/EMGagosto2021/12. QUINATOA MOROCHO GLORIA ESTELA/P_INDIVIDUAL.pdf": {
+    "mtime": 1791491127.506931,
+    "seen": 1791492615.8210967,
+    "ast_hash": "3e33231328a3c3c3643c8f621e25690d",
+    "semantic_hash": ""
+  },
+  "PRUEBAS/EMGagosto2021/13. SABAY GRIJALVA IVANA GABRIELA/ANEXOS.pdf": {
+    "mtime": 1791491127.5689313,
+    "seen": 1791492615.821098,
+    "ast_hash": "5f07a242b6b6caa520d8eb9706680689",
+    "semantic_hash": ""
+  },
+  "PRUEBAS/EMGagosto2021/13. SABAY GRIJALVA IVANA GABRIELA/P_INDIVIDUAL.pdf": {
+    "mtime": 1791491127.5839314,
+    "seen": 1791492615.8210993,
+    "ast_hash": "a49162a1000d8e75693fb1f24ce74978",
+    "semantic_hash": ""
+  },
+  "PRUEBAS/EMGagosto2021/14. SAMANIEGO ALVAREZ JOSIMAR SANTIAGO/ANEXOS.pdf": {
+    "mtime": 1791491127.6979322,
+    "seen": 1791492615.8211007,
+    "ast_hash": "944af1c4bfaa423b38f05180f84dc684",
+    "semantic_hash": ""
+  },
+  "PRUEBAS/EMGagosto2021/14. SAMANIEGO ALVAREZ JOSIMAR SANTIAGO/P_INDIVIDUAL.pdf": {
+    "mtime": 1791491127.7349324,
+    "seen": 1791492615.8211021,
+    "ast_hash": "879f5573fa8aae8c154b188f917dd82f",
+    "semantic_hash": ""
+  },
+  "PRUEBAS/EMGagosto2021/15. SARANGO VERA SUSANA MARIA/ANEXOS.pdf": {
+    "mtime": 1791491127.7909327,
+    "seen": 1791492615.8211033,
+    "ast_hash": "ca700e42062e09bdd3c3407948d8ab70",
+    "semantic_hash": ""
+  },
+  "PRUEBAS/EMGagosto2021/15. SARANGO VERA SUSANA MARIA/P_INDIVIDUAL.pdf": {
+    "mtime": 1791491127.8029327,
+    "seen": 1791492615.821105,
+    "ast_hash": "855427cb69584133286112ce643b93ee",
+    "semantic_hash": ""
+  },
+  "PRUEBAS/EMGagosto2021/16. SORIA PINCHA ROSA/ANEXOS.pdf": {
+    "mtime": 1791491127.8929334,
+    "seen": 1791492615.8211062,
+    "ast_hash": "de3e01777d0648f938144b2061d35d24",
+    "semantic_hash": ""
+  },
+  "PRUEBAS/EMGagosto2021/16. SORIA PINCHA ROSA/P_INDIVIDUAL.pdf": {
+    "mtime": 1791491127.9059334,
+    "seen": 1791492615.8211074,
+    "ast_hash": "1d5b326883e031b7190dd944e12706c1",
+    "semantic_hash": ""
+  },
+  "PRUEBAS/EMGagosto2021/17. TORRES ENRIQUEZ DAVID PAUL/ANEXOS.pdf": {
+    "mtime": 1791491127.977934,
+    "seen": 1791492615.821109,
+    "ast_hash": "329e1479ac505f608990d935dccbc1be",
+    "semantic_hash": ""
+  },
+  "PRUEBAS/EMGagosto2021/17. TORRES ENRIQUEZ DAVID PAUL/P_INDIVIDUAL.pdf": {
+    "mtime": 1791491127.9879339,
+    "seen": 1791492615.8211102,
+    "ast_hash": "7a36c698c1536d1424a66a52e95b2294",
+    "semantic_hash": ""
+  },
+  "PRUEBAS/EMGagosto2021/18. VIRACOCHA LEON THIAGO ZAID/ANEXO.pdf": {
+    "mtime": 1791491128.1019347,
+    "seen": 1791492615.8211114,
+    "ast_hash": "5b00e10d3c5714197f7356cc3b52c7d2",
+    "semantic_hash": ""
+  },
+  "PRUEBAS/EMGagosto2021/18. VIRACOCHA LEON THIAGO ZAID/P_INDIVIDUAL.pdf": {
+    "mtime": 1791491128.1359348,
+    "seen": 1791492615.8211129,
+    "ast_hash": "6beaa241e4e0ee7b2ca0524a07371c7d",
+    "semantic_hash": ""
+  },
+  "PRUEBAS/EMGagosto2021/2. CHANGOLUISA O\u00a5A GLADYS MARIBEL/ANEXOS.pdf": {
+    "mtime": 1791491128.2239354,
+    "seen": 1791492615.8211145,
+    "ast_hash": "a866e518cf3321b9db525b5bd66e82d7",
+    "semantic_hash": ""
+  },
+  "PRUEBAS/EMGagosto2021/2. CHANGOLUISA O\u00a5A GLADYS MARIBEL/P_INDIVIDUAL.pdf": {
+    "mtime": 1791491128.2369354,
+    "seen": 1791492615.8211162,
+    "ast_hash": "91f907cbf9ff19cb6439e939689e836d",
+    "semantic_hash": ""
+  },
+  "PRUEBAS/EMGagosto2021/3. CHILUISA TONATO MARIA CECILIA/ANEXOS.pdf": {
+    "mtime": 1791491128.3379362,
+    "seen": 1791492615.8211176,
+    "ast_hash": "d4f5f2d6d760a02736cc7816f578c09c",
+    "semantic_hash": ""
+  },
+  "PRUEBAS/EMGagosto2021/3. CHILUISA TONATO MARIA CECILIA/P_INDIVIDUAL.pdf": {
+    "mtime": 1791491128.3589363,
+    "seen": 1791492615.821119,
+    "ast_hash": "275a941359123572a7fd2063cb6b0b67",
+    "semantic_hash": ""
+  },
+  "PRUEBAS/EMGagosto2021/4. FERRIN PAREDES SILVANA MARISTHANY/ANEXOS.pdf": {
+    "mtime": 1791491128.464937,
+    "seen": 1791492615.8211234,
+    "ast_hash": "48318ea17631369712f216b9208d3bfc",
+    "semantic_hash": ""
+  },
+  "PRUEBAS/EMGagosto2021/4. FERRIN PAREDES SILVANA MARISTHANY/P_INDIVIDUAL.pdf": {
+    "mtime": 1791491128.4799368,
+    "seen": 1791492615.8211248,
+    "ast_hash": "8dc36f5ff43d962335de1e45eb84745c",
+    "semantic_hash": ""
+  },
+  "PRUEBAS/EMGagosto2021/5. JACOME MONTESDEOCA MARIA ELENA/HCU_007.pdf": {
+    "mtime": 1791491128.4989371,
+    "seen": 1791492615.8211265,
+    "ast_hash": "b440e6499f7f47b1d239b56b2fdd91af",
+    "semantic_hash": ""
+  },
+  "PRUEBAS/EMGagosto2021/5. JACOME MONTESDEOCA MARIA ELENA/P_INDIVIDUAL.pdf": {
+    "mtime": 1791491128.506937,
+    "seen": 1791492615.821128,
+    "ast_hash": "8e73d7f02e61063cd9cb28341518362a",
+    "semantic_hash": ""
+  },
+  "PRUEBAS/EMGagosto2021/6. LARA CHAVEZ ADRIEL ALEJANDRO/ANEXOS.pdf": {
+    "mtime": 1791491128.5169373,
+    "seen": 1791492615.8211296,
+    "ast_hash": "fcfaba236daa637eb0993a7c03eece04",
+    "semantic_hash": ""
+  },
+  "PRUEBAS/EMGagosto2021/6. LARA CHAVEZ ADRIEL ALEJANDRO/P_INDIVIDUAL.pdf": {
+    "mtime": 1791491128.5219371,
+    "seen": 1791492615.821131,
+    "ast_hash": "4ea16bc4b1f20aef104b3d1e710a6ffe",
+    "semantic_hash": ""
+  },
+  "PRUEBAS/EMGagosto2021/7. LOPEZ BUENA\u00a5O ANTHONY ALEXIS/ANEXOS.pdf": {
+    "mtime": 1791491128.5859375,
+    "seen": 1791492615.8211327,
+    "ast_hash": "cf8ceba10e4e474553fa2dd3d73e6630",
+    "semantic_hash": ""
+  },
+  "PRUEBAS/EMGagosto2021/7. LOPEZ BUENA\u00a5O ANTHONY ALEXIS/P_INDIVIDUAL.pdf": {
+    "mtime": 1791491128.5959377,
+    "seen": 1791492615.8211343,
+    "ast_hash": "131f4632e29cdeafb24e1f893d58d9c7",
+    "semantic_hash": ""
+  },
+  "PRUEBAS/EMGagosto2021/8. MENDOZA CHANGO LUIS ENRIQUE/ANEXOS.pdf": {
+    "mtime": 1791491128.6689382,
+    "seen": 1791492615.8211355,
+    "ast_hash": "17566bdcd323588ed0b5896236dc5553",
+    "semantic_hash": ""
+  },
+  "PRUEBAS/EMGagosto2021/8. MENDOZA CHANGO LUIS ENRIQUE/P_INDIVIDUAL.pdf": {
+    "mtime": 1791491128.682938,
+    "seen": 1791492615.8211372,
+    "ast_hash": "7cab41d289af36add5fc4e0e85efb2f0",
+    "semantic_hash": ""
+  },
+  "PRUEBAS/EMGagosto2021/9. MENDOZA POLANCO ANTONIO XAVIER/ANEXOS.pdf": {
+    "mtime": 1791491128.7509387,
+    "seen": 1791492615.8211386,
+    "ast_hash": "8b4738df48558ca7e0a93c2d0996aaad",
+    "semantic_hash": ""
+  },
+  "PRUEBAS/EMGagosto2021/9. MENDOZA POLANCO ANTONIO XAVIER/P_INDIVIDUAL.pdf": {
+    "mtime": 1791491128.7669387,
+    "seen": 1791492615.8211403,
+    "ast_hash": "4f9e4bdda5b63b49b920cd2401443ae9",
+    "semantic_hash": ""
+  },
+  ".dist-before-live-historic-archive-20261008/assets/index-0fzV9O3-.js": {
+    "mtime": 1791489746.1486673,
+    "seen": 1791820178.1511717,
+    "ast_hash": "285f509458a572ca10d3a60b29e97d82",
+    "semantic_hash": ""
+  },
+  ".dist-before-live-historic-archive-20261008/assets/index-CpjDxZn6.js": {
+    "mtime": 1791492587.740763,
+    "seen": 1791820178.1511772,
+    "ast_hash": "9e0b7eb7eab5acc2943e6f3e81826619",
+    "semantic_hash": ""
+  },
+  ".dist-before-live-historic-archive-20261008/index.html": {
+    "mtime": 1791489746.1446674,
+    "seen": 1791820178.1512501,
+    "ast_hash": "87b86f3de33fa85235ae7e7a132ee117",
+    "semantic_hash": ""
+  },
+  ".dist-before-live-individual-coverage-20261012/assets/index-C51sf43P.js": {
+    "mtime": 1791492809.8441062,
+    "seen": 1791823247.3550043,
+    "ast_hash": "7345ea1de434eda267e7841de63c642a",
+    "semantic_hash": ""
+  },
+  ".dist-before-live-individual-coverage-20261012/index.html": {
+    "mtime": 1791492809.8341062,
+    "seen": 1791823247.355112,
+    "ast_hash": "35c78f17d9b231eefa0abe03adb79d38",
     "semantic_hash": ""
   }
 }

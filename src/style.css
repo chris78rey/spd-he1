@@ -528,3 +528,11 @@ body{min-width:320px}
 .historical-archive-empty{min-height:120px}
 @media(max-width:900px){.historical-archive-upload-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.historical-archive-upload-grid>:last-child{grid-column:1/-1}.historical-archive-filters .saved-workspace-filter-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:640px){.historical-archive-card{padding:18px}.historical-archive-upload-grid,.historical-archive-filters .saved-workspace-filter-grid{grid-template-columns:1fr}.historical-archive-upload-grid>:last-child{grid-column:auto}.historical-archive-file-row{align-items:stretch;flex-direction:column}.historical-archive-file-row>.v-btn{width:100%}.historical-archive-record{align-items:flex-start}.historical-archive-record .saved-workspace-card-actions{align-self:stretch}.historical-archive-record .saved-workspace-card-actions>.v-btn{width:100%}.historical-archive-list{max-height:none}}
+.individual-coverage-card{padding:22px}
+.individual-coverage-card>.ingest-card-heading{align-items:flex-start}
+.individual-coverage-card>.ingest-card-heading p{font-size:14px;line-height:1.5}
+.individual-coverage-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:start;gap:12px 16px}
+.individual-coverage-form .v-field{font-size:16px}
+.individual-coverage-form>.v-btn{grid-column:1/-1;justify-self:start;min-height:48px;font-size:15px}
+.individual-coverage-info{margin-top:12px;font-size:14px;line-height:1.5}
+@media(max-width:640px){.individual-coverage-card{padding:18px}.individual-coverage-form{grid-template-columns:1fr}.individual-coverage-form>.v-btn{grid-column:auto;width:100%}}

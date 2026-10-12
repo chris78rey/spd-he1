@@ -45,6 +45,11 @@ const historicalArchiveUploadError = ref('')
 const historicalArchiveNotice = ref('')
 const historicalArchiveDownloadError = ref('')
 const historicalArchiveDownloadFailedID = ref('')
+const historicalArchiveDeleteDialog = ref(false)
+const historicalArchiveDeleteRecord = ref(null)
+const historicalArchiveDeleteConfirmation = ref('')
+const historicalArchiveDeleteError = ref('')
+const historicalArchiveDeletingID = ref('')
 const historicalArchiveSearch = ref('')
 const historicalArchiveServiceFilter = ref('ALL')
 const historicalArchiveMonthFilter = ref('ALL')
@@ -150,6 +155,11 @@ const coverageDownloadableSelectedIds = computed(() => coverageSelectedIds.value
 const coverageManualUploadingId = ref(null)
 const coverageError = ref('')
 const coverageNotice = ref('')
+const individualCoverageCedula = ref('')
+const individualCoverageDate = ref('')
+const individualCoverageGenerating = ref(false)
+const individualCoverageError = ref('')
+const individualCoverageNotice = ref('')
 const ingestMode = ref('new')
 const ingestModeTouched = ref(false)
 const openingSavedWorkspace = ref(false)
@@ -488,6 +498,11 @@ async function signOut() {
   currentUser.value = ''
   canDeleteWorkspaces.value = false
   oraclePassword.value = ''
+  historicalArchiveDeleteDialog.value = false
+  historicalArchiveDeleteRecord.value = null
+  historicalArchiveDeleteConfirmation.value = ''
+  historicalArchiveDeleteError.value = ''
+  historicalArchiveDeletingID.value = ''
 }
 async function openPlanilla() {
   activePage.value = 'planilla'
@@ -593,6 +608,46 @@ function retryHistoricalArchiveDownload() {
   const record = historicalArchiveRecords.value.find(item => item.id === historicalArchiveDownloadFailedID.value)
   if (record) return downloadHistoricalArchive(record)
 }
+function startHistoricalArchiveDelete(record) {
+  if (!canDeleteWorkspaces.value || !record?.id) return
+  historicalArchiveDeleteRecord.value = record
+  historicalArchiveDeleteConfirmation.value = ''
+  historicalArchiveDeleteError.value = ''
+  historicalArchiveDeleteDialog.value = true
+}
+function closeHistoricalArchiveDelete(force = false) {
+  if (historicalArchiveDeletingID.value && !force) return
+  historicalArchiveDeleteDialog.value = false
+  historicalArchiveDeleteRecord.value = null
+  historicalArchiveDeleteConfirmation.value = ''
+  historicalArchiveDeleteError.value = ''
+}
+async function deleteHistoricalArchive() {
+  const record = historicalArchiveDeleteRecord.value
+  if (!canDeleteWorkspaces.value || !record?.id) return
+  if (historicalArchiveDeleteConfirmation.value.trim() !== record.id) {
+    historicalArchiveDeleteError.value = 'Escribe el ID completo del ZIP para confirmar.'
+    return
+  }
+  historicalArchiveDeletingID.value = record.id
+  historicalArchiveDeleteError.value = ''
+  try {
+    const response = await fetch(`/api/v1/archivo-historico/eliminar/${encodeURIComponent(record.id)}`, {
+      method: 'DELETE', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ confirmacion: historicalArchiveDeleteConfirmation.value.trim() }),
+    })
+    const data = await response.json().catch(() => ({}))
+    if (response.status === 401) { await signOut(); return }
+    if (!response.ok) throw new Error(data.error || 'No se pudo eliminar el ZIP histórico.')
+    historicalArchiveRecords.value = historicalArchiveRecords.value.filter(item => item.id !== record.id)
+    historicalArchiveNotice.value = `Se eliminó ${record.nombre_original} del Archivo histórico.`
+    closeHistoricalArchiveDelete(true)
+  } catch (error) {
+    historicalArchiveDeleteError.value = error.message || 'No se pudo eliminar el ZIP histórico.'
+  } finally {
+    historicalArchiveDeletingID.value = ''
+  }
+}
 function historicalArchiveDate(value) {
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? 'Fecha no disponible' : new Intl.DateTimeFormat('es-EC', { dateStyle: 'medium', timeStyle: 'short' }).format(date)
@@ -608,6 +663,50 @@ async function openCoverageDownloads() {
   }
   if (selectedCoverageWorkspace.value) await loadCoveragePlanillas(selectedCoverageWorkspace.value)
   else coveragePlanillas.value = []
+}
+function openIndividualCoveragePage() {
+  activePage.value = 'individual-coverage'
+  individualCoverageError.value = ''
+  individualCoverageNotice.value = ''
+}
+async function generateIndividualCoverage() {
+  const cedula = String(individualCoverageCedula.value || '').trim()
+  const queryDate = String(individualCoverageDate.value || '').trim()
+  if (!/^\d{10}$/.test(cedula)) {
+    individualCoverageError.value = 'Ingresa una cédula de 10 dígitos.'
+    return
+  }
+  if (!queryDate) {
+    individualCoverageError.value = 'Selecciona la fecha de consulta.'
+    return
+  }
+  individualCoverageGenerating.value = true
+  individualCoverageError.value = ''
+  individualCoverageNotice.value = ''
+  try {
+    const response = await fetch('/api/v1/coberturas/individual', {
+      method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cedula, fecha_consulta: queryDate }),
+    })
+    if (response.status === 401) { await signOut(); return }
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}))
+      throw new Error(data.error || 'No se pudo generar la cobertura.')
+    }
+    const pdf = await response.blob()
+    if (!pdf.size || pdf.type !== 'application/pdf') throw new Error('El servidor no devolvió un PDF de cobertura válido.')
+    const url = URL.createObjectURL(pdf)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `COBERTURA_${cedula}_${queryDate.replaceAll('-', '')}.pdf`
+    link.click()
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+    individualCoverageNotice.value = `Se descargó la cobertura de la cédula ${cedula}, consultada al ${queryDate}.`
+  } catch (error) {
+    individualCoverageError.value = error.message || 'No se pudo generar la cobertura.'
+  } finally {
+    individualCoverageGenerating.value = false
+  }
 }
 async function loadCoveragePlanillas(jobId = selectedCoverageWorkspace.value) {
   selectedCoverageWorkspace.value = jobId || ''
@@ -2244,7 +2343,7 @@ const visibleDocs = computed(() => {
   else items.sort((a,b) => (b.addedAt||0)-(a.addedAt||0))
   return items
 })
-  const title = computed(() => activePage.value === 'historical-archive' ? 'Archivo histórico' : activePage.value === 'planilla' ? 'Planilla digital' : activePage.value === 'coberturas' ? 'Hojas de cobertura' : activePage.value === 'objeciones' ? 'Subsanar objeciones' : activePage.value === 'patient-documents' ? 'Revisar documentos del paciente' : activePage.value === 'zip-download' ? 'Descargar expediente ZIP' : activePage.value === 'ingesta' ? 'Recepción de planillas' : activeFolder.value === 'Todos los documentos' ? 'Mis documentos' : activeFolder.value)
+  const title = computed(() => activePage.value === 'historical-archive' ? 'Archivo histórico' : activePage.value === 'planilla' ? 'Planilla digital' : activePage.value === 'coberturas' ? 'Hojas de cobertura' : activePage.value === 'individual-coverage' ? 'Cobertura individual' : activePage.value === 'objeciones' ? 'Subsanar objeciones' : activePage.value === 'patient-documents' ? 'Revisar documentos del paciente' : activePage.value === 'zip-download' ? 'Descargar expediente ZIP' : activePage.value === 'ingesta' ? 'Recepción de planillas' : activeFolder.value === 'Todos los documentos' ? 'Mis documentos' : activeFolder.value)
 function prettySize(n) { return n < 1024*1024 ? `${Math.max(1, Math.round(n/1024))} KB` : `${(n/1024/1024).toFixed(1)} MB` }
 function handleShortcut(event) {
   if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); searchInput.value?.focus() }
@@ -2325,6 +2424,7 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
         <button class="nav-item" :class="{selected:activePage==='ingesta'}" aria-label="Recibir planillas" title="Recibir planillas" @click="activePage='ingesta'"><v-icon icon="mdi-cloud-upload-outline" size="19"/><span>Recibir planillas</span></button>
         <button class="nav-item" :class="{selected:activePage==='patient-documents'}" aria-label="Revisar documentos del paciente" title="Revisar documentos del paciente" @click="openPatientDocumentsPage"><v-icon icon="mdi-folder-account-outline" size="19"/><span>Revisar documentos del paciente</span></button>
         <button class="nav-item" :class="{selected:activePage==='coberturas'}" aria-label="Hojas de cobertura" title="Hojas de cobertura" @click="openCoverageDownloads"><v-icon icon="mdi-file-download-outline" size="19"/><span>Hojas de cobertura</span></button>
+        <button class="nav-item" :class="{selected:activePage==='individual-coverage'}" aria-label="Consultar cobertura individual por cédula" title="Cobertura individual" @click="openIndividualCoveragePage"><v-icon icon="mdi-card-account-details-outline" size="19"/><span>Cobertura individual</span></button>
         <button class="nav-item" :class="{selected:activePage==='objeciones'}" aria-label="Subsanar objeciones" title="Subsanar objeciones" @click="openObjectionsPage"><v-icon icon="mdi-file-alert-outline" size="19"/><span>Subsanar objeciones</span></button>
         <button class="nav-item" :class="{selected:activePage==='zip-download'}" aria-label="Descargar expediente ZIP" title="Descargar expediente ZIP" @click="openZipDownloadPage"><v-icon icon="mdi-folder-zip-outline" size="19"/><span>Descargar expediente ZIP</span></button>
         <div class="nav-label">BIBLIOTECA LOCAL</div>
@@ -2371,10 +2471,30 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
             <div v-else class="saved-workspace-list historical-archive-list">
               <article v-for="record in filteredHistoricalArchives" :key="record.id" class="saved-workspace-card historical-archive-record">
                 <div class="saved-workspace-card-main"><span class="saved-workspace-icon"><v-icon icon="mdi-folder-zip-outline" size="21"/></span><div class="saved-workspace-card-copy"><div class="saved-workspace-title-row"><h3>{{ coverageServiceLabel(record.tipo_servicio) }} · {{ coverageMonthLabel(record.mes) }} {{ record.anio }}</h3><v-chip size="small" color="info" variant="tonal">ZIP original</v-chip></div><p class="saved-workspace-message"><v-icon icon="mdi-file-outline" size="16"/>{{ record.nombre_original }} · {{ prettySize(record.size_bytes) }}</p><div class="saved-workspace-meta"><span><v-icon icon="mdi-identifier" size="15"/>ID {{ record.id }}</span><span><v-icon icon="mdi-account-outline" size="15"/>{{ record.subido_por }}</span><span><v-icon icon="mdi-clock-outline" size="15"/>{{ historicalArchiveDate(record.subido_en) }}</span></div></div></div>
-                <div class="saved-workspace-card-actions"><v-btn type="button" color="primary" variant="tonal" prepend-icon="mdi-download-outline" :loading="historicalArchiveDownloadingID===record.id" :disabled="Boolean(historicalArchiveDownloadingID)" @click="downloadHistoricalArchive(record)">Descargar ZIP original</v-btn></div>
+                <div class="saved-workspace-card-actions">
+                  <v-btn type="button" color="primary" variant="tonal" prepend-icon="mdi-download-outline" :loading="historicalArchiveDownloadingID===record.id" :disabled="Boolean(historicalArchiveDownloadingID || historicalArchiveDeletingID)" @click="downloadHistoricalArchive(record)">Descargar ZIP original</v-btn>
+                  <v-btn v-if="canDeleteWorkspaces" type="button" color="error" variant="tonal" prepend-icon="mdi-delete-outline" :loading="historicalArchiveDeletingID===record.id" :disabled="Boolean(historicalArchiveDownloadingID || historicalArchiveDeletingID)" @click="startHistoricalArchiveDelete(record)">Eliminar ZIP</v-btn>
+                </div>
               </article>
             </div>
           </v-card>
+          <v-dialog v-model="historicalArchiveDeleteDialog" max-width="560" :persistent="Boolean(historicalArchiveDeletingID)">
+            <v-card rounded="xl">
+              <v-card-title>Eliminar ZIP histórico</v-card-title>
+              <v-card-text>
+                <p v-if="historicalArchiveDeleteRecord">Se eliminará permanentemente <strong>{{ historicalArchiveDeleteRecord.nombre_original }}</strong> y dejará de aparecer en el repositorio.</p>
+                <p class="mt-3">Para confirmar, escribe el ID completo del archivo:</p>
+                <p v-if="historicalArchiveDeleteRecord" class="font-weight-bold">{{ historicalArchiveDeleteRecord.id }}</p>
+                <v-text-field v-model="historicalArchiveDeleteConfirmation" label="ID del ZIP histórico" autocomplete="off" :disabled="Boolean(historicalArchiveDeletingID)" />
+                <v-alert v-if="historicalArchiveDeleteError" type="error" variant="tonal" density="comfortable" role="alert">{{ historicalArchiveDeleteError }}</v-alert>
+              </v-card-text>
+              <v-card-actions>
+                <v-spacer />
+                <v-btn type="button" variant="text" :disabled="Boolean(historicalArchiveDeletingID)" @click="closeHistoricalArchiveDelete">Cancelar</v-btn>
+                <v-btn type="button" color="error" prepend-icon="mdi-delete-outline" :loading="Boolean(historicalArchiveDeletingID)" :disabled="!historicalArchiveDeleteRecord || historicalArchiveDeleteConfirmation.trim() !== historicalArchiveDeleteRecord.id || Boolean(historicalArchiveDeletingID)" @click="deleteHistoricalArchive">Eliminar ZIP</v-btn>
+              </v-card-actions>
+            </v-card>
+          </v-dialog>
         </section>
         <section v-else-if="activePage==='documents'" class="content-wrap">
           <div class="welcome-line"><div><div class="eyebrow">BIBLIOTECA LOCAL</div><h1>{{ title }}<span class="title-period">.</span></h1><p class="subtitle">Busca, organiza y abre documentos guardados en este navegador.</p></div><button class="primary-upload" @click="uploadInput?.click()"><v-icon icon="mdi-upload" size="18"/> Subir documento</button></div>
@@ -2446,6 +2566,22 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
             <div v-else-if="!coveragePlanillas.length" class="planilla-state"><v-icon icon="mdi-file-search-outline"/><span>No se encontraron planillas MSP de ese período en las carpetas del ZIP.</span></div>
             <div v-else class="planilla-table-wrap"><v-table class="planilla-table" density="comfortable" fixed-header height="min(62vh, 620px)"><thead><tr><th><label :title="coverageMode === 'chosen-date' ? 'Seleccionar todas las planillas' : 'Seleccionar todas las pendientes'"><input type="checkbox" :checked="coverageAllSelected" :disabled="!coverageSelectableRows.length || coverageGenerating" :aria-label="coverageMode === 'chosen-date' ? 'Seleccionar todas las planillas' : 'Seleccionar todas las planillas pendientes'" @change="toggleAllCoveragePlanillas"/> Todas</label></th><th>Trámite del ZIP</th><th>Paciente</th><th>Fecha hasta</th><th>Fechas de cobertura guardadas</th><th>Estado de cobertura</th><th>Acción manual</th></tr></thead><tbody><tr v-for="row in coveragePlanillas" :key="row.pdi_id"><td><input type="checkbox" :checked="coverageSelectedIds.includes(row.pdi_id)" :disabled="(coverageMode === 'standard' && row.pdi_cobertura === 'S' && !row.hoja_generada) || coverageGenerating" :aria-label="`Seleccionar planilla ${row.pdi_tramite}`" @change="toggleCoveragePlanilla(row)"/></td><td>{{ row.pdi_tramite }}</td><td><div>{{ row.paciente || '—' }}</div><small v-if="coverageMode === 'chosen-date' && row.menor_edad === 'S'" class="coverage-member-detail">Menor; se consultarán las cédulas: {{ coverageQueryCedulas(row).join(', ') || 'no hay cédulas válidas registradas' }}</small></td><td>{{ row.fecha_hasta || '—' }}</td><td>{{ (row.fechas_cobertura || []).join(', ') || '—' }}</td><td><v-chip size="small" :color="row.pdi_cobertura === 'S' ? 'success' : row.hoja_generada ? 'info' : (row.descarga_manual || row.motivo_manual) ? 'error' : 'warning'" variant="tonal">{{ row.pdi_cobertura === 'S' ? 'Generada' : row.hoja_generada ? 'PDF en expediente · Oracle pendiente' : row.descarga_manual ? 'Descarga manual' : row.motivo_manual ? 'Revisar datos' : 'Pendiente' }}</v-chip><small v-if="row.motivo_manual" class="coverage-failure">{{ row.motivo_manual }}</small></td><td><div v-if="row.descarga_manual" class="coverage-manual"><a href="https://coberturasalud.msp.gob.ec/" target="_blank" rel="noopener noreferrer">Abrir portal MSP</a><small>Descarga un PDF por cédula para {{ row.fecha_consulta_manual || row.fecha_hasta }}: {{ row.coberturas_manual?.map(member => member.cedula).join(', ') || coverageQueryCedulas(row).join(', ') }}</small><small>El sistema comprueba la cédula; confirma en el portal que cada hoja corresponda a la fecha indicada.</small><label class="coverage-manual-upload"><input type="file" accept="application/pdf,.pdf" multiple :disabled="coverageManualUploadingId === row.pdi_id" @change="uploadManualCoverageSheets(row,$event)"/>{{ coverageManualUploadingId === row.pdi_id ? 'Adjuntando…' : 'Adjuntar PDFs descargados' }}</label></div><span v-else>—</span></td></tr></tbody></v-table></div>
             <div v-if="coveragePlanillas.length" class="coverage-footnote">Marca la casilla del encabezado para seleccionar todas las {{ coverageMode === 'chosen-date' ? 'planillas' : 'pendientes' }}. Se procesan en grupos de 10; las hojas se guardan en cada expediente. El ZIP admite hasta 500 planillas{{ coverageMode === 'chosen-date' ? ' y, si eliges una fecha, contiene solo las coberturas consultadas para esa fecha.' : '.' }}</div>
+          </v-card>
+        </section>
+        <section v-else-if="activePage==='individual-coverage'" class="content-wrap individual-coverage-content">
+          <div class="welcome-line"><div><div class="eyebrow">CONSULTA DIRECTA AL PORTAL MSP</div><h1>Cobertura individual<span class="title-period">.</span></h1><p class="subtitle">Genera una hoja por cédula y fecha, aunque la persona no tenga registro en PLANILLA_DIGITAL.</p></div></div>
+          <v-card class="planilla-card individual-coverage-card" rounded="xl" elevation="0">
+            <div class="ingest-card-heading"><span class="ingest-step"><v-icon icon="mdi-card-account-details-outline" size="20"/></span><div><h2>Datos de consulta</h2><p>La búsqueda se hace directamente en el portal MSP; no necesitas elegir un período ni un trámite.</p></div></div>
+            <form class="individual-coverage-form" @submit.prevent="generateIndividualCoverage">
+              <v-text-field v-model="individualCoverageCedula" label="Cédula" placeholder="10 dígitos" inputmode="numeric" maxlength="10" autocomplete="off" prepend-inner-icon="mdi-card-account-details-outline" :disabled="individualCoverageGenerating" />
+              <v-text-field v-model="individualCoverageDate" type="date" label="Fecha de consulta" prepend-inner-icon="mdi-calendar" :disabled="individualCoverageGenerating" />
+              <v-btn type="submit" color="primary" size="large" prepend-icon="mdi-file-download-outline" :loading="individualCoverageGenerating" :disabled="individualCoverageGenerating">Consultar y descargar PDF</v-btn>
+            </form>
+            <v-alert class="individual-coverage-info" type="info" variant="tonal" density="comfortable" prepend-icon="mdi-information-outline">
+              El PDF se descarga en tu dispositivo y no se guarda en un expediente ni modifica Oracle. Esta consulta procesa solo la cédula ingresada. Para un menor, consulta también por separado las cédulas de sus referentes legales si necesitas sus hojas.
+            </v-alert>
+            <v-alert v-if="individualCoverageError" class="mt-4" type="error" variant="tonal" density="comfortable" role="alert">{{ individualCoverageError }}</v-alert>
+            <v-alert v-if="individualCoverageNotice" class="mt-4" type="success" variant="tonal" density="comfortable" role="status">{{ individualCoverageNotice }}</v-alert>
           </v-card>
         </section>
         <section v-else-if="activePage==='objeciones'" class="content-wrap">

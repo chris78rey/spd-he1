@@ -154,3 +154,61 @@ func TestHistoricalArchiveRequiresSessionAndRejectsInvalidZIP(t *testing.T) {
 		t.Fatalf("invalid upload created saved archive entries: %+v", entries)
 	}
 }
+
+func TestDeleteHistoricalArchiveRequiresRoleAndExactIDConfirmation(t *testing.T) {
+	s := historicalArchiveTestServer(t)
+	uploadResponse := httptest.NewRecorder()
+	s.historicalArchives(uploadResponse, historicalUploadRequest(t, makeHistoricalTestZIP(t, "keep until authorized"), "historico.zip", "EMERGENCIA", "08", "2021"))
+	if uploadResponse.Code != http.StatusCreated {
+		t.Fatalf("upload status = %d, body = %s", uploadResponse.Code, uploadResponse.Body.String())
+	}
+	var uploaded struct {
+		Archive historicalArchiveRecord `json:"archive"`
+	}
+	if err := json.Unmarshal(uploadResponse.Body.Bytes(), &uploaded); err != nil {
+		t.Fatal(err)
+	}
+	archiveDir := filepath.Join(s.historicalArchivesDir, uploaded.Archive.ID)
+	zipPath := filepath.Join(archiveDir, "original.zip")
+
+	deleteRequest := func(confirmation string) *http.Request {
+		body, err := json.Marshal(map[string]string{"confirmacion": confirmation})
+		if err != nil {
+			t.Fatal(err)
+		}
+		request := httptest.NewRequest(http.MethodDelete, "/api/v1/archivo-historico/eliminar/"+uploaded.Archive.ID, bytes.NewReader(body))
+		request.AddCookie(&http.Cookie{Name: "folio_session", Value: "test-session"})
+		return request
+	}
+
+	denied := httptest.NewRecorder()
+	s.deleteHistoricalArchive(denied, deleteRequest(uploaded.Archive.ID))
+	if denied.Code != http.StatusForbidden {
+		t.Fatalf("unauthorized delete status = %d, want 403, body = %s", denied.Code, denied.Body.String())
+	}
+	if _, err := os.Stat(zipPath); err != nil {
+		t.Fatalf("ZIP was changed without the delete role: %v", err)
+	}
+
+	s.mu.Lock()
+	s.sessions["test-session"] = session{username: "supervisor", canDeleteWorkspaces: true, expiresAt: time.Now().Add(time.Hour)}
+	s.mu.Unlock()
+
+	wrongConfirmation := httptest.NewRecorder()
+	s.deleteHistoricalArchive(wrongConfirmation, deleteRequest("HIST-incorrecto"))
+	if wrongConfirmation.Code != http.StatusBadRequest {
+		t.Fatalf("wrong confirmation status = %d, want 400, body = %s", wrongConfirmation.Code, wrongConfirmation.Body.String())
+	}
+	if _, err := os.Stat(zipPath); err != nil {
+		t.Fatalf("ZIP was changed without the exact ID confirmation: %v", err)
+	}
+
+	deleted := httptest.NewRecorder()
+	s.deleteHistoricalArchive(deleted, deleteRequest(uploaded.Archive.ID))
+	if deleted.Code != http.StatusOK {
+		t.Fatalf("authorized delete status = %d, body = %s", deleted.Code, deleted.Body.String())
+	}
+	if _, err := os.Stat(archiveDir); !os.IsNotExist(err) {
+		t.Fatalf("archive directory still exists after authorized delete, stat error = %v", err)
+	}
+}

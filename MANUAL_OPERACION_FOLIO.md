@@ -138,11 +138,11 @@ Reemplaza `/RUTA_DE_RESPALDO_APROBADA` por un destino de respaldo autorizado, di
 
 La unidad systemd no configura respaldos automáticos. DTIC debe definir la frecuencia, retención, ubicación protegida y prueba periódica de restauración. Para restaurar, detén Folio, conserva una copia del estado actual, restaura el respaldo validado con el propietario y permisos correctos, y comprueba la aplicación antes de reabrir el servicio.
 
-## Permisos para eliminar períodos
+## Permisos para eliminar períodos y ZIP históricos
 
-Todo usuario que ingrese necesita el rol Oracle `SPD_EXTERNOS`. Para eliminar un período completo, además necesita `SPD_BORRA_EXPEDIENTE` en su propia cuenta Oracle. La aplicación consulta los roles de la cuenta personal al iniciar sesión y no guarda su contraseña. Después de que el DBA otorgue el rol, la persona debe cerrar sesión e ingresar de nuevo para actualizar el permiso de esa sesión.
+Todo usuario que ingrese necesita el rol Oracle `SPD_EXTERNOS`. Para eliminar un período completo o un ZIP del Archivo histórico, además necesita `SPD_BORRA_EXPEDIENTE` en su propia cuenta Oracle. La aplicación consulta los roles de la cuenta personal al iniciar sesión y no guarda su contraseña. Después de que el DBA otorgue el rol, la persona debe cerrar sesión e ingresar de nuevo para actualizar el permiso de esa sesión.
 
-Si la persona no tiene el rol adicional, no verá la acción de borrar y el servidor rechazará una petición directa con HTTP `403`. El permiso solo cubre eliminar un período completo; quitar un PDF y administrar «Mis documentos» son acciones separadas.
+Si la persona no tiene el rol adicional, no verá las acciones de borrado y el servidor rechazará una petición directa con HTTP `403`. El permiso cubre eliminar períodos completos y ZIP históricos; quitar un PDF y administrar «Mis documentos» son acciones separadas.
 
 ## Lista breve de operación
 

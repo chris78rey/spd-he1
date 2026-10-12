@@ -1,9 +1,46 @@
 package main
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 )
+
+func TestGenerateIndividualCoverageRequiresSession(t *testing.T) {
+	s := &server{sessions: make(map[string]session)}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/coberturas/individual", strings.NewReader(`{"cedula":"1720000000","fecha_consulta":"2026-10-12"}`))
+	response := httptest.NewRecorder()
+
+	s.generateIndividualCoverage(response, req)
+
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("generateIndividualCoverage() status = %d, want %d", response.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestGenerateIndividualCoverageRejectsInvalidInputsBeforePortal(t *testing.T) {
+	s := &server{sessions: map[string]session{"test-session": {username: "TEST", expiresAt: time.Now().Add(time.Hour)}}}
+	for _, body := range []string{
+		`{"cedula":"123","fecha_consulta":"2026-10-12"}`,
+		`{"cedula":"1720000000","fecha_consulta":"2026-02-30"}`,
+		`not-json`,
+	} {
+		t.Run(body, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/coberturas/individual", strings.NewReader(body))
+			req.AddCookie(&http.Cookie{Name: "folio_session", Value: "test-session"})
+			response := httptest.NewRecorder()
+
+			s.generateIndividualCoverage(response, req)
+
+			if response.Code != http.StatusBadRequest {
+				t.Fatalf("generateIndividualCoverage() status = %d, want %d; body: %s", response.Code, http.StatusBadRequest, response.Body.String())
+			}
+		})
+	}
+}
 
 func TestNormalizeCoverageDateRequiresRealISODate(t *testing.T) {
 	if got, ok := normalizeCoverageDate("2026-02-28"); !ok || got != "2026-02-28" {

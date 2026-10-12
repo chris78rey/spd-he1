@@ -73,6 +73,11 @@ type coverageGenerateRequest struct {
 	QueryDate   string  `json:"fecha_consulta,omitempty"`
 }
 
+type individualCoverageRequest struct {
+	Cedula    string `json:"cedula"`
+	QueryDate string `json:"fecha_consulta"`
+}
+
 type coverageMember struct {
 	Cedula string
 	Fecha  string
@@ -119,6 +124,55 @@ func (s *server) generateCoverageSheets(w http.ResponseWriter, r *http.Request) 
 
 func (s *server) generateCoverageSheetsAtDate(w http.ResponseWriter, r *http.Request) {
 	s.generateCoverageSheetsWithDate(w, r, true)
+}
+
+func (s *server) generateIndividualCoverage(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "Método no permitido.")
+		return
+	}
+	if _, ok := s.getSession(r); !ok {
+		writeError(w, http.StatusUnauthorized, "Inicia sesión para continuar.")
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 16<<10)
+	var input individualCoverageRequest
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "Ingresa una cédula y una fecha de consulta válidas.")
+		return
+	}
+	input.Cedula = strings.TrimSpace(input.Cedula)
+	queryDate, ok := normalizeCoverageDate(input.QueryDate)
+	if !coverageCedulaPattern.MatchString(input.Cedula) || !ok {
+		writeError(w, http.StatusBadRequest, "Ingresa una cédula de 10 dígitos y una fecha válida.")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Minute)
+	defer cancel()
+	outputDir, err := os.MkdirTemp("", "folio-cobertura-individual-")
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "No se pudo preparar la descarga de cobertura.")
+		return
+	}
+	defer os.RemoveAll(outputDir)
+	outputName := fmt.Sprintf("COBERTURA_%s_%s", input.Cedula, strings.ReplaceAll(queryDate, "-", ""))
+	cmd := exec.CommandContext(ctx, envOr("NODE_BIN", "node"), "scripts/cobertura/generate_pdf.cjs", "--cedula", input.Cedula, "--fecha", queryDate, "--output_name", outputName, "--output_dir", outputDir)
+	if _, err := cmd.CombinedOutput(); err != nil {
+		log.Printf("cobertura individual: consulta MSP fallida (%T)", err)
+		writeError(w, http.StatusBadGateway, "No se pudo obtener la cobertura del portal MSP. Revisa la cédula y vuelve a intentar.")
+		return
+	}
+	pdfPath := filepath.Join(outputDir, outputName+".pdf")
+	if err := validateCoveragePDF(pdfPath, input.Cedula); err != nil {
+		log.Printf("cobertura individual: el PDF devuelto no pasó la validación (%T)", err)
+		writeError(w, http.StatusBadGateway, "El portal MSP no devolvió un PDF válido para la cédula ingresada.")
+		return
+	}
+	w.Header().Set("Content-Type", "application/pdf")
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s.pdf"`, outputName))
+	w.Header().Set("Cache-Control", "no-store")
+	http.ServeFile(w, r, pdfPath)
 }
 
 func (s *server) generateCoverageSheetsWithDate(w http.ResponseWriter, r *http.Request, useChosenDate bool) {
