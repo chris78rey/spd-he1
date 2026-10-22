@@ -3,6 +3,7 @@
   { "title": "C_COBERTURA.pdf — Cobertura de salud", "value": "C_COBERTURA.pdf", "categoria": "GENERAL" },
   { "title": "A_ENTREGA.pdf — Acta de entrega-recepción (RPC)", "value": "A_ENTREGA.pdf", "categoria": "GENERAL" },
   { "title": "C_VALIDACION.pdf — Validación interinstitucional (RPC)", "value": "C_VALIDACION.pdf", "categoria": "GENERAL" },
+  { "title": "Anexos.pdf — Anexos", "value": "Anexos.pdf", "categoria": "GENERAL" },
   { "title": "HCU_002.pdf — Consulta externa", "value": "HCU_002.pdf", "categoria": "HCU" },
   { "title": "HCU_006.pdf — Epicrisis / alta hospitalaria", "value": "HCU_006.pdf", "categoria": "HCU" },
   { "title": "HCU_007.pdf — Interconsulta", "value": "HCU_007.pdf", "categoria": "HCU" },
