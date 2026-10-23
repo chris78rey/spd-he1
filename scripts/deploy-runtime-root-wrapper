@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+readonly ROOT="/home/spd-he1/codex_projects/spd_msp"
+readonly ENGINE="/usr/local/libexec/spd-deploy-runtime-engine"
+readonly SERVICE="folio.service"
+readonly BASE_URL="http://172.16.60.41:5174"
+readonly DEPLOY_USER="spd-he1"
+
+fail() {
+  printf 'DEPLOY_ABORTED: %s\n' "$1" >&2
+  exit 2
+}
+
+[[ "$EUID" -eq 0 ]] || fail "wrapper debe ejecutarse como root"
+[[ $# -eq 1 ]] || fail "se esperaba únicamente el directorio candidato"
+candidate="$1"
+[[ "$candidate" =~ ^/tmp/folio-runtime-deploy\.[A-Za-z0-9]{6}$ ]] || fail "ruta candidata no permitida"
+[[ -d "$candidate" && ! -L "$candidate" ]] || fail "directorio candidato inválido"
+[[ "$(readlink -f -- "$candidate")" == "$candidate" ]] || fail "ruta candidata no canónica"
+[[ "$(stat -c '%U' -- "$candidate")" == "$DEPLOY_USER" ]] || fail "el candidato no pertenece a $DEPLOY_USER"
+[[ -x "$candidate/folio-server-candidate" && -f "$candidate/dist/index.html" ]] || fail "faltan los artefactos compilados"
+[[ -x "$ENGINE" && "$(stat -c '%u' -- "$ENGINE")" == 0 ]] || fail "motor root no disponible o no pertenece a root"
+engine_mode="$(stat -c '%a' -- "$ENGINE")"
+(( (8#$engine_mode & 022) == 0 )) || fail "el motor root tiene permisos de escritura inseguros"
+[[ -z "$(find "$candidate" -xdev -type l -print -quit)" ]] || fail "el candidato contiene enlaces simbólicos"
+[[ -z "$(find "$candidate" -xdev ! -user "$DEPLOY_USER" -print -quit)" ]] || fail "el candidato contiene archivos de otro propietario"
+[[ "$(systemctl is-active "$SERVICE" 2>/dev/null || true)" == active ]] || fail "$SERVICE no está activo"
+pid="$(systemctl show -p MainPID --value "$SERVICE" 2>/dev/null || true)"
+[[ "$pid" =~ ^[1-9][0-9]*$ && -e "/proc/$pid/exe" ]] || fail "no se pudo identificar el proceso activo"
+[[ "$(readlink "/proc/$pid/exe" 2>/dev/null || true)" == "$ROOT/bin/folio-server" ]] || fail "el servicio no carga el binario esperado"
+stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+
+exec /usr/bin/env -i PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+  FOLIO_ROOT="$ROOT" FOLIO_SERVICE_NAME="$SERVICE" FOLIO_BASE_URL="$BASE_URL" \
+  FOLIO_DEPLOY_USER="$DEPLOY_USER" \
+  /usr/bin/bash "$ENGINE" --install-internal "$candidate" "$pid" "$stamp"

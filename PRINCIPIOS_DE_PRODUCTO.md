@@ -117,3 +117,11 @@ El Archivo histórico admite un solo ZIP por combinación de servicio, mes y añ
 ## Decisión de producto: fusionar grupos de hasta 1000 PDFs
 
 El usuario reportó un grupo `HCU_010.pdf` con 277 PDFs que no podía fusionarse porque el máximo de 100 seguía siendo bajo. Se eleva el límite a 1000 PDFs por grupo para permitir fusionar el grupo completo en una sola operación. La interfaz espera hasta diez minutos por la respuesta. Se mantiene el requisito de seleccionar el grupo completo, respetar el orden elegido y conservar las fuentes originales en el historial privado.
+
+## Decisión de producto: clasificar por el encabezado del documento
+
+Para recomendar el nombre MSP, Folio primero reconoce un código confirmado en el nombre original. Si no existe, prioriza las frases del tipo documental que aparecen en las primeras 12 líneas de la primera página; una mención interna aislada no debe desplazar el encabezado. Después considera frases prioritarias y, por último, la cantidad de frases exactas distintas. Si el encabezado contiene señales de tipos documentales diferentes o las reglas empatan, el archivo queda pendiente de revisión en vez de forzar una clasificación.
+
+## Decisión de producto: aplicar nombres sugeridos en lote
+
+Desde la carpeta del paciente, «Actualizar nombres» presenta una vista previa antes de aplicar clasificaciones claras. Excluye las hojas `C_COBERTURA` identificadas por nombre, metadatos o contenido; deja los PDFs ambiguos pendientes de revisión; reserva sufijos para evitar sobrescribir documentos; y conserva las fuentes originales. Al aplicar, actualiza una sola vez el estado del expediente y registra los nombres en Oracle.

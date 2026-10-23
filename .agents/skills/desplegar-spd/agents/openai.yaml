@@ -1,0 +1,3 @@
+interface:
+  display_name: "Desplegar SPD"
+  short_description: "Compila, despliega y verifica SPD MSP"

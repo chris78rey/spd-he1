@@ -30,7 +30,9 @@
 .workspace-files-card { margin-top: 18px; }
 .workspace-file-layout { display: grid; grid-template-columns: minmax(260px, .82fr) minmax(0, 1.7fr); gap: 14px; min-height: 480px; }
 .workspace-file-list { min-width: 0; max-height: 560px; overflow: auto; border: 1px solid #e8ece8; border-radius: 9px; background: #fbfcfb; }
-.workspace-file-count { position: sticky; top: 0; z-index: 1; padding: 11px 12px; border-bottom: 1px solid #e8ece8; background: #f7f9f7; color: #758078; font-size: 10px; font-weight: 650; }
+.workspace-file-list-toolbar { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 8px; border-bottom: 1px solid #e8ece8; background: #f7f9f7; }
+.workspace-file-count { flex: 1; min-width: 0; padding: 8px 4px; color: #758078; font-size: 10px; font-weight: 650; }
+.workspace-file-list-toolbar .v-btn { flex: none; white-space: nowrap; }
 .workspace-file-row { display: flex; align-items: center; gap: 9px; width: 100%; padding: 10px 11px; border: 0; border-bottom: 1px solid #eef0ed; background: #fff; text-align: left; color: #56645a; cursor: pointer; }
 .workspace-file-entry { display: flex; align-items: center; border-bottom: 1px solid #eef0ed; background: #fff; }
 .workspace-file-entry .workspace-file-row { flex: 1; min-width: 0; border-bottom: 0; }
@@ -330,6 +332,16 @@
 .patient-documents-modal .workspace-rename-panel{flex:none;padding:10px 14px}
 .patient-documents-modal .workspace-rename-copy small{font-size:12px}
 .patient-documents-modal .workspace-edit-row{grid-template-columns:minmax(0,1fr) auto}
+.workspace-name-preview-summary{display:flex;flex-wrap:wrap;gap:7px;margin:12px 0}
+.workspace-name-preview-list{display:grid;gap:1px;max-height:min(48dvh,520px);overflow:auto;border:1px solid #e4e9e4;border-radius:8px;background:#edf0ed}
+.workspace-name-preview-row{display:grid;grid-template-columns:minmax(0,1fr) 26px minmax(0,1fr) auto;align-items:center;gap:8px;min-height:52px;padding:7px 10px;background:#fff}
+.workspace-name-preview-row.is-pending{background:#fffaf2}
+.workspace-name-preview-row.is-coverage{background:#f5f9fb}
+.workspace-name-preview-name{display:grid;min-width:0;gap:3px}
+.workspace-name-preview-name strong{overflow-wrap:anywhere;color:#3f5045;font-size:12px;font-weight:650}
+.workspace-name-preview-name small{overflow-wrap:anywhere;color:#79867d;font-size:10px}
+.workspace-name-preview-empty{margin:14px 0 0;color:#758078;font-size:12px}
+@media(max-width:650px){.workspace-name-preview-row{grid-template-columns:minmax(0,1fr) auto;gap:6px}.workspace-name-preview-row>i{display:none}}
 .objection-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:18px}
 .objection-form-grid .coverage-manual-upload,.objection-document-actions .coverage-manual-upload{position:relative;display:flex;min-height:56px;flex-direction:column;align-items:flex-start;justify-content:center;gap:4px;padding:9px 12px;overflow:hidden}
 .objection-form-grid .coverage-manual-upload small,.objection-document-actions .coverage-manual-upload small{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#78857b;font-weight:400}

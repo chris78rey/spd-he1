@@ -130,6 +130,16 @@ func (s *server) syncOracleWorkspace(ctx context.Context, job *stagedJob, packag
 			}
 		}
 	}
+	for original, renamed := range job.Renames {
+		original = filepath.ToSlash(filepath.Clean(filepath.FromSlash(original)))
+		renamed = filepath.ToSlash(filepath.Clean(filepath.FromSlash(renamed)))
+		if name := originalByPath[original]; name != "" {
+			originalByPath[renamed] = name
+		}
+		if id := planillaByPath[original]; id > 0 {
+			planillaByPath[renamed] = id
+		}
+	}
 	documents, _, err := listWorkspacePDFs(packageRoot)
 	if err != nil {
 		return err

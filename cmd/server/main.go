@@ -117,6 +117,7 @@ func main() {
 	mux.HandleFunc("/api/v1/expedientes", s.listWorkspaces)
 	mux.HandleFunc("/api/v1/expedientes/eliminar/", s.deleteWorkspace)
 	mux.HandleFunc("/api/v1/expedientes/documentos/renombrar/", s.renameWorkspacePDF)
+	mux.HandleFunc("/api/v1/expedientes/documentos/renombrar-sugeridos/", s.suggestWorkspacePDFNames)
 	mux.HandleFunc("/api/v1/expedientes/documentos/fusionar/", s.mergeWorkspacePDFs)
 	mux.HandleFunc("/api/v1/expedientes/documentos/archivo/", s.serveWorkspacePDF)
 	mux.HandleFunc("/api/v1/expedientes/documentos/", s.workspaceDocuments)

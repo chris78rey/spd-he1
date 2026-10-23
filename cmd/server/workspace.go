@@ -4,6 +4,8 @@ import (
 	"archive/zip"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -41,6 +43,49 @@ type mspPDFCode struct {
 	Title    string `json:"title"`
 	Value    string `json:"value"`
 	Category string `json:"categoria"`
+}
+
+type workspacePDFRenameChange struct {
+	OldRelative string
+	NewRelative string
+}
+
+type workspaceNameSuggestion struct {
+	Path          string `json:"path"`
+	NewPath       string `json:"new_path,omitempty"`
+	CurrentName   string `json:"current_name"`
+	Code          string `json:"code,omitempty"`
+	SuggestedName string `json:"suggested_name,omitempty"`
+	Status        string `json:"status"`
+	Reason        string `json:"reason,omitempty"`
+}
+
+type workspaceNamePreview struct {
+	PreviewID        string                    `json:"preview_id"`
+	Patient          string                    `json:"patient"`
+	Total            int                       `json:"total"`
+	SuggestedCount   int                       `json:"suggested_count"`
+	AlreadyCorrect   int                       `json:"already_correct_count"`
+	CoverageExcluded int                       `json:"coverage_excluded_count"`
+	Pending          int                       `json:"pending_count"`
+	Applied          bool                      `json:"applied,omitempty"`
+	RenamedCount     int                       `json:"renamed_count,omitempty"`
+	Items            []workspaceNameSuggestion `json:"items"`
+}
+
+type workspaceNamePreviewRequest struct {
+	Patient   string `json:"patient"`
+	Apply     bool   `json:"apply"`
+	PreviewID string `json:"preview_id"`
+}
+
+type workspaceNameFingerprintItem struct {
+	Path          string `json:"path"`
+	CurrentName   string `json:"current_name"`
+	SuggestedName string `json:"suggested_name,omitempty"`
+	Status        string `json:"status"`
+	Size          int64  `json:"size"`
+	Modified      int64  `json:"modified"`
 }
 
 func loadMSPPDFCodeSet() (map[string]struct{}, error) {
@@ -1031,6 +1076,635 @@ func (s *server) serveWorkspacePDF(w http.ResponseWriter, r *http.Request) {
 	http.ServeContent(w, r, filepath.Base(filePath), info.ModTime(), file)
 }
 
+func canonicalMSPPDFCode(filename string, allowed map[string]struct{}) string {
+	canonicalName := filename
+	if match := numberedMSPName.FindStringSubmatch(filename); match != nil {
+		canonicalName = match[1] + ".pdf"
+	}
+	for code := range allowed {
+		if strings.EqualFold(canonicalName, code) {
+			return code
+		}
+	}
+	return ""
+}
+
+func isCoverageWorkspaceDocument(job stagedJob, relative, name string) bool {
+	if isCoveragePDFName(name) {
+		return true
+	}
+	relative = filepath.ToSlash(filepath.Clean(filepath.FromSlash(relative)))
+	for _, document := range job.ExternalPDFs {
+		path := filepath.ToSlash(filepath.Clean(filepath.FromSlash(document.RelativePath)))
+		if path == relative && (document.CoverageDate != "" || document.CoverageCedula != "" || len(document.CoverageItems) > 0) {
+			return true
+		}
+	}
+	return false
+}
+
+func assignWorkspaceNameTargets(packageRoot string, items []workspaceNameSuggestion) ([]workspacePDFRenameChange, error) {
+	byDirectory := make(map[string][]int)
+	for index, item := range items {
+		if item.Status != "proposed" {
+			continue
+		}
+		directory := filepath.ToSlash(filepath.Dir(filepath.FromSlash(item.Path)))
+		byDirectory[directory] = append(byDirectory[directory], index)
+	}
+	changes := make([]workspacePDFRenameChange, 0)
+	for directory, indexes := range byDirectory {
+		absoluteDirectory, err := safeWorkspacePath(packageRoot, directory)
+		if err != nil {
+			return nil, err
+		}
+		entries, err := os.ReadDir(absoluteDirectory)
+		if err != nil {
+			return nil, err
+		}
+		moving := make(map[string]bool, len(indexes))
+		for _, index := range indexes {
+			moving[strings.ToLower(items[index].CurrentName)] = true
+		}
+		used := make(map[string]bool, len(entries)+len(indexes))
+		for _, entry := range entries {
+			if !moving[strings.ToLower(entry.Name())] {
+				used[strings.ToLower(entry.Name())] = true
+			}
+		}
+		sort.Slice(indexes, func(i, j int) bool {
+			return strings.ToLower(items[indexes[i]].Path) < strings.ToLower(items[indexes[j]].Path)
+		})
+		for _, index := range indexes {
+			item := &items[index]
+			candidate := item.Code
+			if used[strings.ToLower(candidate)] {
+				base := strings.TrimSuffix(item.Code, ".pdf")
+				for suffix := 1; ; suffix++ {
+					candidate = fmt.Sprintf("%s_%d.pdf", base, suffix)
+					if !used[strings.ToLower(candidate)] {
+						break
+					}
+				}
+			}
+			used[strings.ToLower(candidate)] = true
+			item.SuggestedName = candidate
+			item.NewPath = filepath.ToSlash(filepath.Join(filepath.FromSlash(directory), candidate))
+			changes = append(changes, workspacePDFRenameChange{
+				OldRelative: filepath.ToSlash(filepath.Clean(filepath.FromSlash(item.Path))),
+				NewRelative: item.NewPath,
+			})
+		}
+	}
+	sort.Slice(changes, func(i, j int) bool {
+		return strings.ToLower(changes[i].OldRelative) < strings.ToLower(changes[j].OldRelative)
+	})
+	return changes, nil
+}
+
+func (s *server) buildWorkspaceNamePreview(ctx context.Context, job stagedJob, patient string) (workspaceNamePreview, []workspacePDFRenameChange, error) {
+	preview := workspaceNamePreview{Patient: patient, Items: make([]workspaceNameSuggestion, 0)}
+	if job.Status != "PROCESSED" && job.Status != "INCOMPLETE" {
+		return preview, nil, errors.New("Prepara primero el expediente antes de actualizar nombres.")
+	}
+	packageRoot := filepath.Join(s.jobRoot(job.ID), "trabajo", packageFolderName(&job))
+	documents, patients, err := listWorkspacePDFs(packageRoot)
+	if err != nil {
+		return preview, nil, errors.New("No se pudieron revisar los PDFs de la carpeta.")
+	}
+	patientFound := false
+	for _, folder := range patients {
+		if folder == patient {
+			patientFound = true
+			break
+		}
+	}
+	if !patientFound {
+		return preview, nil, errors.New("No se encontró la carpeta del paciente seleccionada.")
+	}
+	rules, err := loadClassificationRules(filepath.Join(".", "reglas_clasificacion.yaml"))
+	if err != nil {
+		return preview, nil, errors.New("No se pudieron cargar las reglas de clasificación.")
+	}
+	allowedCodes, err := loadMSPPDFCodeSet()
+	if err != nil {
+		return preview, nil, errors.New("No se pudo cargar el catálogo de nombres MSP.")
+	}
+	prefix := filepath.ToSlash(filepath.Join("4. EXPEDIENTES", patient)) + "/"
+	modifiedByPath := make(map[string]int64)
+	sizeByPath := make(map[string]int64)
+	for _, document := range documents {
+		if !strings.HasPrefix(document.Path, prefix) {
+			continue
+		}
+		if err := ctx.Err(); err != nil {
+			return preview, nil, err
+		}
+		absolutePath, err := safeWorkspacePath(packageRoot, document.Path)
+		if err != nil {
+			return preview, nil, errors.New("Una ruta de PDF no es válida.")
+		}
+		info, err := os.Stat(absolutePath)
+		if err != nil || !info.Mode().IsRegular() {
+			return preview, nil, errors.New("No se pudo leer uno de los PDFs de la carpeta.")
+		}
+		item := workspaceNameSuggestion{Path: document.Path, CurrentName: document.Name}
+		modifiedByPath[document.Path] = info.ModTime().UnixNano()
+		sizeByPath[document.Path] = info.Size()
+		if isCoverageWorkspaceDocument(job, document.Path, document.Name) {
+			item.Status = "coverage"
+			item.Reason = "La hoja de cobertura se conserva sin cambios."
+			preview.CoverageExcluded++
+			preview.Items = append(preview.Items, item)
+			continue
+		}
+		classified := classifyPDF(ctx, absolutePath, document.Name, rules, job.Month, job.Year)
+		item.Code = classified.Code
+		item.Reason = classified.Reason
+		if err := ctx.Err(); err != nil {
+			return preview, nil, err
+		}
+		if strings.EqualFold(classified.Code, "C_COBERTURA.pdf") {
+			item.Status = "coverage"
+			item.Reason = "La clasificación detectó una hoja de cobertura; se conserva sin cambios."
+			preview.CoverageExcluded++
+		} else if strings.HasPrefix(strings.ToUpper(classified.Code), "PENDIENTE_TMP_") {
+			item.Status = "pending"
+			preview.Pending++
+		} else if _, ok := allowedCodes[classified.Code]; !ok {
+			item.Status = "pending"
+			item.Code = ""
+			item.Reason = "La clasificación no coincide con un nombre del catálogo MSP."
+			preview.Pending++
+		} else if current := canonicalMSPPDFCode(document.Name, allowedCodes); current != "" && strings.EqualFold(current, classified.Code) {
+			item.Status = "correct"
+			preview.AlreadyCorrect++
+		} else {
+			item.Status = "proposed"
+			preview.SuggestedCount++
+		}
+		preview.Items = append(preview.Items, item)
+	}
+	preview.Total = len(preview.Items)
+	changes, err := assignWorkspaceNameTargets(packageRoot, preview.Items)
+	if err != nil {
+		return preview, nil, errors.New("No se pudieron reservar nombres disponibles para los PDFs.")
+	}
+	fingerprint := make([]workspaceNameFingerprintItem, 0, len(preview.Items))
+	for _, item := range preview.Items {
+		fingerprint = append(fingerprint, workspaceNameFingerprintItem{
+			Path: item.Path, CurrentName: item.CurrentName, SuggestedName: item.SuggestedName,
+			Status: item.Status, Size: sizeByPath[item.Path], Modified: modifiedByPath[item.Path],
+		})
+	}
+	data, err := json.Marshal(struct {
+		JobID   string                         `json:"job_id"`
+		Patient string                         `json:"patient"`
+		Items   []workspaceNameFingerprintItem `json:"items"`
+	}{JobID: job.ID, Patient: patient, Items: fingerprint})
+	if err != nil {
+		return preview, nil, errors.New("No se pudo preparar la vista previa.")
+	}
+	sum := sha256.Sum256(data)
+	preview.PreviewID = hex.EncodeToString(sum[:])
+	return preview, changes, nil
+}
+
+func (s *server) suggestWorkspacePDFNames(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "Método no permitido.")
+		return
+	}
+	if _, ok := s.getSession(r); !ok {
+		writeError(w, http.StatusUnauthorized, "Inicia sesión para continuar.")
+		return
+	}
+	id := strings.TrimPrefix(r.URL.Path, "/api/v1/expedientes/documentos/renombrar-sugeridos/")
+	if !validJobID(id) {
+		writeError(w, http.StatusBadRequest, "El identificador del espacio no es válido.")
+		return
+	}
+	var input workspaceNamePreviewRequest
+	r.Body = http.MaxBytesReader(w, r.Body, 32*1024)
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "Indica la carpeta del paciente.")
+		return
+	}
+	input.Patient = strings.TrimSpace(input.Patient)
+	if input.Patient == "" {
+		writeError(w, http.StatusBadRequest, "Selecciona la carpeta del paciente.")
+		return
+	}
+	if input.Apply {
+		s.ingestMu.Lock()
+		defer s.ingestMu.Unlock()
+	}
+	job, err := s.loadStagedJob(id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "No se encontró el espacio de trabajo.")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Minute)
+	defer cancel()
+	preview, changes, err := s.buildWorkspaceNamePreview(ctx, job, input.Patient)
+	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			writeError(w, http.StatusRequestTimeout, "La revisión de PDFs se interrumpió. Vuelve a intentarlo.")
+			return
+		}
+		writeError(w, http.StatusConflict, err.Error())
+		return
+	}
+	if !input.Apply {
+		writeJSON(w, http.StatusOK, preview)
+		return
+	}
+	if input.PreviewID == "" || input.PreviewID != preview.PreviewID {
+		writeJSON(w, http.StatusConflict, map[string]any{
+			"error":   "La carpeta cambió desde la vista previa. Revisa nuevamente los nombres sugeridos.",
+			"preview": preview,
+		})
+		return
+	}
+	if len(changes) == 0 {
+		preview.Applied = true
+		writeJSON(w, http.StatusOK, preview)
+		return
+	}
+	if !job.IsObjections && s.serviceDB == nil {
+		writeError(w, http.StatusServiceUnavailable, "Oracle no está disponible para registrar los cambios del expediente.")
+		return
+	}
+	previousJob, err := cloneStagedJob(job)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "No se pudo preparar el historial del cambio.")
+		return
+	}
+	packageRoot := filepath.Join(s.jobRoot(job.ID), "trabajo", packageFolderName(&job))
+	if err := applyWorkspacePDFFileRenames(packageRoot, changes); err != nil {
+		writeError(w, http.StatusInternalServerError, "No se pudieron aplicar los nombres sugeridos. No se completó la operación.")
+		return
+	}
+	applyWorkspacePDFRenameMetadata(&job, changes)
+	if err := s.saveStagedJob(job); err != nil {
+		updatedJob := job
+		fileRollbackErr := applyWorkspacePDFFileRenames(packageRoot, reverseWorkspacePDFRenameChanges(changes))
+		if fileRollbackErr != nil {
+			log.Printf("expediente %s: falló la restauración de PDFs tras no guardar nombres sugeridos: %v", job.ID, fileRollbackErr)
+			if stateErr := s.saveStagedJob(updatedJob); stateErr == nil {
+				writeJSON(w, http.StatusInternalServerError, map[string]any{
+					"error":   "No se pudo restaurar el cambio. Los PDFs conservaron los nombres sugeridos; revisa el expediente antes de continuar.",
+					"applied": true, "renamed_count": len(changes),
+				})
+				return
+			} else {
+				log.Printf("expediente %s: tampoco se pudo guardar el estado renombrado: %v", job.ID, stateErr)
+				writeError(w, http.StatusInternalServerError, "No se pudo completar ni restaurar el cambio. Revisa el expediente antes de continuar.")
+				return
+			}
+		}
+		if stateErr := s.saveStagedJob(previousJob); stateErr != nil {
+			log.Printf("expediente %s: no se pudo guardar el estado anterior tras revertir los nombres sugeridos: %v", job.ID, stateErr)
+			if restoreErr := applyWorkspacePDFFileRenames(packageRoot, changes); restoreErr == nil {
+				if saveErr := s.saveStagedJob(updatedJob); saveErr == nil {
+					writeJSON(w, http.StatusInternalServerError, map[string]any{
+						"error":   "No se pudo guardar la restauración. Los PDFs conservaron los nombres sugeridos; revisa el expediente antes de continuar.",
+						"applied": true, "renamed_count": len(changes),
+					})
+					return
+				}
+			}
+			writeError(w, http.StatusInternalServerError, "No se pudo completar ni restaurar el cambio. Revisa el expediente antes de continuar.")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "No se pudo guardar el cambio; se restauraron los nombres anteriores.")
+		return
+	}
+	if err := s.syncOracleWorkspace(r.Context(), &job, packageRoot); err != nil {
+		log.Printf("expediente %s: falló sincronización Oracle tras actualizar nombres sugeridos: %v", job.ID, err)
+		updatedJob := job
+		rollbackErr := applyWorkspacePDFFileRenames(packageRoot, reverseWorkspacePDFRenameChanges(changes))
+		if rollbackErr == nil {
+			if saveErr := s.saveStagedJob(previousJob); saveErr != nil {
+				rollbackErr = saveErr
+				if restoreErr := applyWorkspacePDFFileRenames(packageRoot, changes); restoreErr == nil {
+					if stateErr := s.saveStagedJob(updatedJob); stateErr == nil {
+						writeJSON(w, http.StatusInternalServerError, map[string]any{
+							"error":   "Oracle no confirmó el cambio y no se pudo guardar la restauración. Los PDFs conservaron los nombres sugeridos; revisa el expediente antes de continuar.",
+							"applied": true, "renamed_count": len(changes),
+						})
+						return
+					} else {
+						rollbackErr = errors.Join(rollbackErr, stateErr)
+					}
+				} else {
+					rollbackErr = errors.Join(rollbackErr, restoreErr)
+					if stateErr := s.saveStagedJob(previousJob); stateErr == nil {
+						writeError(w, http.StatusServiceUnavailable, "Oracle no confirmó el cambio. Se restauraron los nombres anteriores; vuelve a intentarlo.")
+						return
+					} else {
+						rollbackErr = errors.Join(rollbackErr, stateErr)
+					}
+				}
+			}
+		}
+		if rollbackErr == nil {
+			writeError(w, http.StatusServiceUnavailable, "Oracle no confirmó el cambio. Se restauraron los nombres anteriores; vuelve a intentarlo.")
+			return
+		}
+		log.Printf("expediente %s: falló la restauración tras error de Oracle al actualizar nombres sugeridos: %v", job.ID, rollbackErr)
+		writeJSON(w, http.StatusInternalServerError, map[string]any{
+			"error":   "No se pudo confirmar la sincronización con Oracle y tampoco se completó la restauración automática. Revisa el expediente antes de continuar.",
+			"applied": true, "renamed_count": len(changes),
+		})
+		return
+	}
+	preview.Applied = true
+	preview.RenamedCount = len(changes)
+	for index := range preview.Items {
+		if preview.Items[index].Status == "proposed" {
+			preview.Items[index].Status = "renamed"
+		}
+	}
+	writeJSON(w, http.StatusOK, preview)
+}
+
+func cloneStagedJob(job stagedJob) (stagedJob, error) {
+	var clone stagedJob
+	data, err := json.Marshal(job)
+	if err != nil {
+		return clone, err
+	}
+	if err := json.Unmarshal(data, &clone); err != nil {
+		return stagedJob{}, err
+	}
+	return clone, nil
+}
+
+func reverseWorkspacePDFRenameChanges(changes []workspacePDFRenameChange) []workspacePDFRenameChange {
+	reversed := make([]workspacePDFRenameChange, 0, len(changes))
+	for _, change := range changes {
+		reversed = append(reversed, workspacePDFRenameChange{OldRelative: change.NewRelative, NewRelative: change.OldRelative})
+	}
+	return reversed
+}
+
+func applyWorkspacePDFFileRenames(packageRoot string, changes []workspacePDFRenameChange) error {
+	type fileMove struct {
+		oldPath   string
+		newPath   string
+		tempPath  string
+		staged    bool
+		finalized bool
+	}
+	moves := make([]fileMove, 0, len(changes))
+	oldPaths := make(map[string]bool, len(changes))
+	newPaths := make(map[string]bool, len(changes))
+	for _, change := range changes {
+		oldRelative := filepath.ToSlash(filepath.Clean(filepath.FromSlash(change.OldRelative)))
+		newRelative := filepath.ToSlash(filepath.Clean(filepath.FromSlash(change.NewRelative)))
+		if !strings.HasPrefix(oldRelative, "4. EXPEDIENTES/") || !strings.HasPrefix(newRelative, "4. EXPEDIENTES/") || !strings.EqualFold(filepath.Ext(oldRelative), ".pdf") || !strings.EqualFold(filepath.Ext(newRelative), ".pdf") {
+			return errors.New("la ruta de un PDF no es válida")
+		}
+		oldPath, err := safeWorkspacePath(packageRoot, oldRelative)
+		if err != nil {
+			return err
+		}
+		newPath, err := safeWorkspacePath(packageRoot, newRelative)
+		if err != nil {
+			return err
+		}
+		if oldPath == newPath {
+			continue
+		}
+		if filepath.Dir(oldPath) != filepath.Dir(newPath) || oldPaths[oldPath] || newPaths[newPath] {
+			return errors.New("la operación contiene rutas duplicadas o fuera de la carpeta del paciente")
+		}
+		info, err := os.Stat(oldPath)
+		if err != nil || !info.Mode().IsRegular() {
+			return errors.New("no se encontró uno de los PDFs que se va a renombrar")
+		}
+		oldPaths[oldPath] = true
+		newPaths[newPath] = true
+		moves = append(moves, fileMove{oldPath: oldPath, newPath: newPath})
+	}
+	if len(moves) == 0 {
+		return nil
+	}
+	for _, move := range moves {
+		if _, err := os.Lstat(move.newPath); err == nil && !oldPaths[move.newPath] {
+			return errors.New("el nombre de destino ya está ocupado")
+		} else if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	}
+	rollback := func() error {
+		type restoreMove struct{ tempPath, oldPath string }
+		restore := make([]restoreMove, 0, len(moves))
+		var rollbackErr error
+		for index := range moves {
+			move := &moves[index]
+			currentPath := ""
+			if move.finalized {
+				currentPath = move.newPath
+			} else if move.staged {
+				currentPath = move.tempPath
+			} else {
+				continue
+			}
+			file, err := os.CreateTemp(filepath.Dir(move.oldPath), ".folio-restore-*.tmp")
+			if err != nil {
+				rollbackErr = errors.Join(rollbackErr, err)
+				continue
+			}
+			tempPath := file.Name()
+			if err := file.Close(); err != nil {
+				_ = os.Remove(tempPath)
+				rollbackErr = errors.Join(rollbackErr, err)
+				continue
+			}
+			if err := os.Remove(tempPath); err != nil {
+				rollbackErr = errors.Join(rollbackErr, err)
+				continue
+			}
+			if err := os.Rename(currentPath, tempPath); err != nil {
+				rollbackErr = errors.Join(rollbackErr, err)
+				continue
+			}
+			restore = append(restore, restoreMove{tempPath: tempPath, oldPath: move.oldPath})
+		}
+		for _, move := range restore {
+			if err := os.Rename(move.tempPath, move.oldPath); err != nil {
+				rollbackErr = errors.Join(rollbackErr, err)
+			}
+		}
+		return rollbackErr
+	}
+	for index := range moves {
+		file, err := os.CreateTemp(filepath.Dir(moves[index].oldPath), ".folio-name-*.tmp")
+		if err != nil {
+			if rollbackErr := rollback(); rollbackErr != nil {
+				return errors.Join(err, rollbackErr)
+			}
+			return err
+		}
+		moves[index].tempPath = file.Name()
+		if err := file.Close(); err != nil {
+			_ = os.Remove(moves[index].tempPath)
+			if rollbackErr := rollback(); rollbackErr != nil {
+				return errors.Join(err, rollbackErr)
+			}
+			return err
+		}
+		if err := os.Remove(moves[index].tempPath); err != nil {
+			if rollbackErr := rollback(); rollbackErr != nil {
+				return errors.Join(err, rollbackErr)
+			}
+			return err
+		}
+		if err := os.Rename(moves[index].oldPath, moves[index].tempPath); err != nil {
+			if rollbackErr := rollback(); rollbackErr != nil {
+				return errors.Join(err, rollbackErr)
+			}
+			return err
+		}
+		moves[index].staged = true
+	}
+	for index := range moves {
+		if _, err := os.Lstat(moves[index].newPath); err == nil {
+			if rollbackErr := rollback(); rollbackErr != nil {
+				return errors.Join(errors.New("el nombre de destino ya está ocupado"), rollbackErr)
+			}
+			return errors.New("el nombre de destino ya está ocupado")
+		} else if err != nil && !errors.Is(err, os.ErrNotExist) {
+			if rollbackErr := rollback(); rollbackErr != nil {
+				return errors.Join(err, rollbackErr)
+			}
+			return err
+		}
+		if err := os.Rename(moves[index].tempPath, moves[index].newPath); err != nil {
+			if rollbackErr := rollback(); rollbackErr != nil {
+				return errors.Join(err, rollbackErr)
+			}
+			return err
+		}
+		moves[index].staged = false
+		moves[index].finalized = true
+	}
+	return nil
+}
+
+func applyWorkspacePDFRenameMetadata(job *stagedJob, changes []workspacePDFRenameChange) {
+	oldToNew := make(map[string]string, len(changes))
+	for _, change := range changes {
+		oldToNew[filepath.ToSlash(filepath.Clean(filepath.FromSlash(change.OldRelative)))] = filepath.ToSlash(filepath.Clean(filepath.FromSlash(change.NewRelative)))
+	}
+	if len(oldToNew) == 0 {
+		return
+	}
+	currentToOriginal := make(map[string]string, len(job.Renames))
+	for original, current := range job.Renames {
+		currentToOriginal[filepath.ToSlash(filepath.Clean(filepath.FromSlash(current)))] = original
+	}
+	updatedRenames := make(map[string]string, len(job.Renames)+len(changes))
+	for original, current := range job.Renames {
+		cleanCurrent := filepath.ToSlash(filepath.Clean(filepath.FromSlash(current)))
+		if next, ok := oldToNew[cleanCurrent]; ok {
+			current = next
+		}
+		updatedRenames[original] = current
+	}
+	for old, next := range oldToNew {
+		if _, alreadyTracked := currentToOriginal[old]; alreadyTracked {
+			continue
+		}
+		if old != next {
+			updatedRenames[old] = next
+		}
+	}
+	for original, current := range updatedRenames {
+		if original == current {
+			delete(updatedRenames, original)
+		}
+	}
+	job.Renames = updatedRenames
+
+	if len(job.DocumentPlanillas) > 0 {
+		updated := make(map[string]int64, len(job.DocumentPlanillas))
+		for path, id := range job.DocumentPlanillas {
+			clean := filepath.ToSlash(filepath.Clean(filepath.FromSlash(path)))
+			if next, ok := oldToNew[clean]; ok {
+				clean = next
+			}
+			updated[clean] = id
+		}
+		job.DocumentPlanillas = updated
+	}
+	if len(job.DeletedPDFs) > 0 {
+		updated := make(map[string]bool, len(job.DeletedPDFs))
+		for path, deleted := range job.DeletedPDFs {
+			clean := filepath.ToSlash(filepath.Clean(filepath.FromSlash(path)))
+			if next, ok := oldToNew[clean]; ok {
+				clean = next
+			}
+			updated[clean] = deleted
+		}
+		job.DeletedPDFs = updated
+	}
+	if len(job.ObjectionPDFSelection) > 0 {
+		updated := make(map[string]bool, len(job.ObjectionPDFSelection))
+		for path, selected := range job.ObjectionPDFSelection {
+			clean := filepath.ToSlash(filepath.Clean(filepath.FromSlash(path)))
+			if next, ok := oldToNew[clean]; ok {
+				clean = next
+			}
+			updated[clean] = selected
+		}
+		job.ObjectionPDFSelection = updated
+	}
+	if len(job.Replacements) > 0 {
+		updated := make(map[string]string, len(job.Replacements))
+		for path, stored := range job.Replacements {
+			clean := filepath.ToSlash(filepath.Clean(filepath.FromSlash(path)))
+			if next, ok := oldToNew[clean]; ok {
+				clean = next
+			}
+			updated[clean] = stored
+		}
+		job.Replacements = updated
+	}
+	for index := range job.ExternalPDFs {
+		path := filepath.ToSlash(filepath.Clean(filepath.FromSlash(job.ExternalPDFs[index].RelativePath)))
+		if next, ok := oldToNew[path]; ok {
+			job.ExternalPDFs[index].RelativePath = next
+		}
+	}
+	for source, document := range job.ObjectionSourcePDFs {
+		path := filepath.ToSlash(filepath.Clean(filepath.FromSlash(document.TargetPath)))
+		if next, ok := oldToNew[path]; ok {
+			document.TargetPath = next
+			job.ObjectionSourcePDFs[source] = document
+		}
+	}
+	if len(job.MergedDuplicates) > 0 {
+		updated := make(map[string][]string, len(job.MergedDuplicates))
+		for canonical, duplicates := range job.MergedDuplicates {
+			canonical = filepath.ToSlash(filepath.Clean(filepath.FromSlash(canonical)))
+			if next, ok := oldToNew[canonical]; ok {
+				canonical = next
+			}
+			for index, duplicate := range duplicates {
+				duplicate = filepath.ToSlash(filepath.Clean(filepath.FromSlash(duplicate)))
+				if next, ok := oldToNew[duplicate]; ok {
+					duplicates[index] = next
+				}
+			}
+			updated[canonical] = duplicates
+		}
+		job.MergedDuplicates = updated
+	}
+}
+
 func (s *server) renameWorkspacePDF(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeError(w, http.StatusMethodNotAllowed, "Método no permitido.")
@@ -1055,6 +1729,8 @@ func (s *server) renameWorkspacePDF(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "Indica el PDF y su nuevo nombre.")
 		return
 	}
+	s.ingestMu.Lock()
+	defer s.ingestMu.Unlock()
 	job, err := s.loadStagedJob(id)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "No se encontró el espacio de trabajo.")
@@ -1107,62 +1783,19 @@ func (s *server) renameWorkspacePDF(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"path": newRelative, "name": newName})
 		return
 	}
+	previousJob, err := cloneStagedJob(job)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "No se pudo preparar el historial del cambio.")
+		return
+	}
 	if err := os.Rename(oldPath, newPath); err != nil {
 		writeError(w, http.StatusInternalServerError, "No se pudo renombrar el PDF.")
 		return
 	}
 	oldRelative := filepath.ToSlash(filepath.Clean(filepath.FromSlash(input.Path)))
-	previousObjectionSelection := cloneBoolMap(job.ObjectionPDFSelection)
-	previousObjectionSourcePDFs := cloneObjectionSourcePDFs(job.ObjectionSourcePDFs)
-	if included, exists := job.ObjectionPDFSelection[oldRelative]; exists {
-		delete(job.ObjectionPDFSelection, oldRelative)
-		if job.ObjectionPDFSelection == nil {
-			job.ObjectionPDFSelection = make(map[string]bool)
-		}
-		job.ObjectionPDFSelection[newRelative] = included
-	}
-	if job.Renames == nil {
-		job.Renames = make(map[string]string)
-	}
-	original := oldRelative
-	for source, target := range job.Renames {
-		if target == oldRelative {
-			original = source
-			break
-		}
-	}
-	if original == newRelative {
-		delete(job.Renames, original)
-	} else {
-		job.Renames[original] = newRelative
-	}
-	if job.DocumentPlanillas != nil {
-		if planillaID, exists := job.DocumentPlanillas[oldRelative]; exists {
-			delete(job.DocumentPlanillas, oldRelative)
-			job.DocumentPlanillas[newRelative] = planillaID
-		}
-	}
-	for sourcePath, document := range job.ObjectionSourcePDFs {
-		if normalizedWorkspaceRelativePath(document.TargetPath) == oldRelative {
-			document.TargetPath = newRelative
-			job.ObjectionSourcePDFs[sourcePath] = document
-		}
-	}
-	for index := range job.ExternalPDFs {
-		if filepath.ToSlash(job.ExternalPDFs[index].RelativePath) == oldRelative {
-			job.ExternalPDFs[index].RelativePath = newRelative
-		}
-	}
-	if storedName, exists := job.Replacements[oldRelative]; exists {
-		delete(job.Replacements, oldRelative)
-		if job.Replacements == nil {
-			job.Replacements = make(map[string]string)
-		}
-		job.Replacements[newRelative] = storedName
-	}
+	applyWorkspacePDFRenameMetadata(&job, []workspacePDFRenameChange{{OldRelative: oldRelative, NewRelative: newRelative}})
 	if err := s.saveStagedJob(job); err != nil {
-		job.ObjectionPDFSelection = previousObjectionSelection
-		job.ObjectionSourcePDFs = previousObjectionSourcePDFs
+		job = previousJob
 		_ = os.Rename(newPath, oldPath)
 		writeError(w, http.StatusInternalServerError, "El PDF se renombró, pero no se pudo guardar el cambio.")
 		return

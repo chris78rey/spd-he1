@@ -39,16 +39,16 @@
 
 ## 2. Catálogo de señales confirmadas
 
-La fuente ejecutable del catálogo es [`../reglas_clasificacion.yaml`](../reglas_clasificacion.yaml). Las frases de cada regla se cuentan como coincidencias exactas distintas; varias apariciones de la misma frase cuentan una sola vez. Gana la regla con más frases coincidentes; si hay empate, gana la que tenga mayor especificidad total de frases (longitud normalizada). Si también empata la especificidad, el documento queda pendiente de revisión.
+La fuente ejecutable del catálogo es [`../reglas_clasificacion.yaml`](../reglas_clasificacion.yaml). La precedencia es: código confirmado en el nombre; frases de tipo documental en las primeras 12 líneas no vacías de la primera página; frases prioritarias; y cantidad de frases exactas distintas en el texto. Varias apariciones de la misma frase cuentan una sola vez. Si el encabezado apunta a más de un tipo documental o empatan las reglas de contenido, el documento queda pendiente de revisión. La longitud de una palabra no desempata códigos.
 
 | Código canónico | Señales discriminatorias y patrones OCR confirmados |
 | --- | --- |
 | `HCU_008.pdf` | `FORMULARIO 008`, `HCU FORM.008` (señales específicas; no usar `EMERGENCIA` ni `MOTIVO DE CONSULTA` por sí solas) |
 | `HCU_053.pdf` | `FORMULARIO 053`, `REFERENCIA`, `DERIVACION`, `CONTRARREFERENCIA`; discriminador adicional `ESTABLECIMIENTO QUE DERIVA` |
 | `HCU_006.pdf` | `FORMULARIO 006`, `EPICRISIS`, `RESUMEN DE ALTA`, `CUADRO CLINICO DE EGRESO` |
-| `HCU_017.pdf` | `FORMULARIO 017`, `PROTOCOLO QUIRURGICO`, `CIRUGIA` |
+| `HCU_017.pdf` | Encabezado `FORMULARIO 017`, `PROTOCOLO QUIRURGICO` o `PARTE OPERATORIO`; `CIRUGIA` como señal de contenido |
 | `HCU_007.pdf` | `FORMULARIO 7 – INTERCONSULTA` (señal prioritaria frente a palabras genéricas como `CIRUGIA`) |
-| `HCU_018A.pdf` | `FORMULARIO 018A`, `TRANSANESTESICO`, `ANESTESIA` |
+| `HCU_018A.pdf` | Encabezado `FORMULARIO 018A` o `PROTOCOLO TRANSANESTESICO`; `TRANSANESTESICO`, `ANESTESIA` como señales de contenido |
 | `HCU_012.pdf` | `FORMULARIO 12 IMAGENOLOGIA`, `RESULTADOS EXAMENES DE IMAGEN` |
 | `HCU_010.pdf` | `FORMULARIO 10 LABORATORIO CLINICO`, `RESULTADOS EXAMENES` |
 | `HCU_013.pdf` | `FORMULARIO 13`; `FORMULARIO 10 PATOLOGIA`, `RESULTADOS PAPANICOLAOUS`, `RESULTADOS PAP`, `ESTUDIO CITOLOGICO` (resultado de citología / 013B observado en expediente) |
@@ -57,7 +57,7 @@ La fuente ejecutable del catálogo es [`../reglas_clasificacion.yaml`](../reglas
 | `A_ENTREGA.pdf` | `ACTA DE ENTREGA`, `RECEPCION DEL SERVICIO` |
 | `I_PROCEDIMIENTO.pdf` | `PROCEDIMIENTO MENOR` |
 
-La separación HCU 006 / HCU 053 se basa especialmente en EPICRISIS, RESUMEN DE ALTA y CUADRO CLINICO DE EGRESO frente a REFERENCIA, DERIVACION, CONTRARREFERENCIA y ESTABLECIMIENTO QUE DERIVA.
+La separación HCU 006 / HCU 053 se basa especialmente en las frases del encabezado: EPICRISIS, RESUMEN DE ALTA y CUADRO CLINICO DE EGRESO frente a REFERENCIA, DERIVACION, CONTRARREFERENCIA y ESTABLECIMIENTO QUE DERIVA. Una mención de la otra clase dentro del cuerpo no desplaza un encabezado claro. Para distinguir HCU 017 de HCU 018A, `PARTE OPERATORIO` identifica el protocolo quirúrgico y `PROTOCOLO TRANSANESTESICO` identifica el registro transanestésico; las menciones de cirugía o anestesia dentro del procedimiento son evidencia secundaria.
 
 Para `HCU_007.pdf`, la frase `FORMULARIO 7 – INTERCONSULTA` es una señal prioritaria de contenido. Para los demás códigos conocidos de nombres de archivo sin frases OCR confirmadas, enviarlos a revisión manual.
 
@@ -137,7 +137,9 @@ Preparar: PDF vectorial con texto seleccionable, PDF escaneado gris 200–300 DP
 
 En objeciones se excluyen pacientes aprobados, `P_INDIVIDUAL.pdf` contiene explícitamente `ACEPTA` o `RECHAZA`, `4. EXPEDIENTES/` contiene documentos corregidos/ratificados y `5. ANEXOS/` los sustentos exclusivos por paciente objetado. La salida conserva extensión PDF explícita.
 
-Estado de implementación al 2026-09-30: el backend carga `reglas_clasificacion.yaml`, extrae texto vectorial de páginas 1 y 2 y resuelve coincidencias por cantidad de frases exactas distintas; empate o ausencia de señales se conserva como `PENDIENTE_tmp_*.pdf`. El OCR de respaldo se ejecuta con Poppler (`pdftoppm`) y Tesseract (`spa`) cuando están instalados; si faltan o no hay texto reconocible, el escaneado queda pendiente. Cada lote tiene un espacio fijo `FOLIO_DATA_DIR/expedientes/<JOB-ID>/`: `fuentes/`, `trabajo/`, `reportes/` y `job.json`. Reclasificar reemplaza atómicamente `trabajo/` y `reportes/` desde las fuentes originales; no crea otra carpeta de salida. Los lotes antiguos se migran copiando sus fuentes la primera vez que se procesan en esta versión. Siguen pendientes el checklist automático, la fusión cronológica de duplicados con `pdfcpu`, la carga parcial y las actualizaciones Oracle de `PDI_ESTADO_DIGITALIZACION`; no cambiar ese campo hasta confirmar el esquema y la política de escritura.
+Estado de implementación al 2026-09-30: el backend carga `reglas_clasificacion.yaml`, extrae texto vectorial de páginas 1 y 2 y conserva como `PENDIENTE_tmp_*.pdf` los documentos sin señales o con empate. El OCR de respaldo se ejecuta con Poppler (`pdftoppm`) y Tesseract (`spa`) cuando están instalados; si faltan o no hay texto reconocible, el escaneado queda pendiente. Cada lote tiene un espacio fijo `FOLIO_DATA_DIR/expedientes/<JOB-ID>/`: `fuentes/`, `trabajo/`, `reportes/` y `job.json`. Reclasificar reemplaza atómicamente `trabajo/` y `reportes/` desde las fuentes originales; no crea otra carpeta de salida. Los lotes antiguos se migran copiando sus fuentes la primera vez que se procesan en esta versión. Siguen pendientes el checklist automático, la fusión cronológica de duplicados con `pdfcpu`, la carga parcial y las actualizaciones Oracle de `PDI_ESTADO_DIGITALIZACION`; no cambiar ese campo hasta confirmar el esquema y la política de escritura.
+
+Actualización del 2026-10-23: al clasificar, un código confirmado en el nombre va primero; después se evalúa el encabezado de la primera página para que una mención interna aislada no gane por longitud de palabra. Si el encabezado es ambiguo, el PDF queda pendiente.
 
 ## 8. Añadir, renombrar y reemplazar PDFs desde la bandeja
 

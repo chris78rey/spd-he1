@@ -326,6 +326,11 @@ const workspacePDFRevision = ref(0)
 const workspacePatients = ref([])
 const selectedWorkspacePDF = ref('')
 const workspaceRename = ref('')
+const workspaceBulkRenameDialog = ref(false)
+const workspaceBulkRenamePreview = ref(null)
+const workspaceBulkRenameBusy = ref(false)
+const workspaceBulkRenameApplying = ref(false)
+const workspaceBulkRenameError = ref('')
 const workspacePatient = ref('')
 const workspaceUploadFiles = ref([])
 const workspaceBusy = ref(false)
@@ -365,6 +370,7 @@ watch(patientDocumentsDialog, (open, wasOpen) => {
     workspaceDocumentsAbortController?.abort()
     mergePDFDialog.value = false
     mergeAllConfirmDialog.value = false
+    if (!workspaceBulkRenameApplying.value) workspaceBulkRenameDialog.value = false
     deletePDFDialog.value = false
     replacePDFDialog.value = false
   }
@@ -384,6 +390,7 @@ const workspacePatientPDFs = computed(() => {
   const prefix = workspacePatient.value ? `4. EXPEDIENTES/${workspacePatient.value}/` : ''
   return prefix ? workspacePDFs.value.filter(document => document.path.startsWith(prefix)) : []
 })
+const workspaceBulkRenameProposals = computed(() => workspaceBulkRenamePreview.value?.items?.filter(item => item.status === 'proposed') || [])
 const patientCoverageRowsForFolder = computed(() => workspacePatient.value
   ? patientCoverageRows.value.filter(row => row.carpeta_paciente === workspacePatient.value)
   : [])
@@ -1117,6 +1124,68 @@ async function renameWorkspacePDF() {
     else snackbar.value = message
   }
   finally { workspaceBusy.value = false; workspaceMutationBusy.value = false }
+}
+async function previewWorkspacePDFNameSuggestions() {
+  const jobId = ingestResult.value?.job_id
+  const patient = workspacePatient.value
+  if (!jobId || !patient || !workspacePatientPDFs.value.length || workspaceBulkRenameBusy.value) return
+  workspaceBulkRenameError.value = ''
+  workspaceBulkRenameBusy.value = true
+  workspaceMutationBusy.value = true
+  try {
+    const { response, data } = await fetchWorkspaceJSON(`/api/v1/expedientes/documentos/renombrar-sugeridos/${encodeURIComponent(jobId)}`, {
+      method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ patient, apply: false }),
+    }, 600000, 'revisar los nombres sugeridos')
+    if (!response.ok) throw new Error(data.error || 'No se pudieron revisar los nombres sugeridos.')
+    if (ingestResult.value?.job_id !== jobId || workspacePatient.value !== patient) return
+    workspaceBulkRenamePreview.value = data
+    workspaceBulkRenameDialog.value = true
+  } catch (error) {
+    const message = error.message || 'No se pudieron revisar los nombres sugeridos.'
+    if (patientDocumentsDialog.value && ingestResult.value?.job_id === jobId) workspaceNotice.value = message
+    else snackbar.value = message
+  } finally {
+    workspaceBulkRenameBusy.value = false
+    workspaceMutationBusy.value = false
+  }
+}
+async function applyWorkspacePDFNameSuggestions() {
+  const jobId = ingestResult.value?.job_id
+  const preview = workspaceBulkRenamePreview.value
+  if (!jobId || !preview?.preview_id || !preview.suggested_count || workspaceBulkRenameBusy.value) return
+  workspaceBulkRenameError.value = ''
+  workspaceBulkRenameBusy.value = true
+  workspaceBulkRenameApplying.value = true
+  workspaceMutationBusy.value = true
+  try {
+    const { response, data } = await fetchWorkspaceJSON(`/api/v1/expedientes/documentos/renombrar-sugeridos/${encodeURIComponent(jobId)}`, {
+      method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ patient: preview.patient, apply: true, preview_id: preview.preview_id }),
+    }, 600000, 'actualizar los nombres de los PDFs')
+    if (!response.ok && response.status === 409 && data.preview) {
+      workspaceBulkRenamePreview.value = data.preview
+      workspaceBulkRenameError.value = data.error || 'La carpeta cambió. Revisa la vista previa actualizada.'
+      return
+    }
+    if (!response.ok && !data.applied) throw new Error(data.error || 'No se pudieron actualizar los nombres.')
+    const selectedChange = data.items?.find(item => item.path === selectedWorkspacePDF.value && item.status === 'renamed')
+    await loadWorkspaceDocuments(jobId, selectedChange?.new_path || selectedWorkspacePDF.value)
+    workspaceBulkRenameDialog.value = false
+    if (data.error) {
+      workspaceNotice.value = data.error
+    } else if (data.renamed_count) {
+      workspaceNotice.value = `Se actualizaron ${data.renamed_count} nombre(s). ${data.coverage_excluded_count || 0} hoja(s) de cobertura y ${data.pending_count || 0} PDF(s) pendiente(s) quedaron sin cambios.`
+    } else {
+      workspaceNotice.value = 'No había nombres que actualizar. Las hojas de cobertura y los PDFs pendientes se conservaron.'
+    }
+  } catch (error) {
+    workspaceBulkRenameError.value = error.message || 'No se pudieron actualizar los nombres.'
+  } finally {
+    workspaceBulkRenameBusy.value = false
+    workspaceBulkRenameApplying.value = false
+    workspaceMutationBusy.value = false
+  }
 }
 function openWorkspaceFusion(group) {
   if (!group || mergeAllSending.value) return
@@ -3008,21 +3077,21 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
       <v-card class="patient-documents-modal">
         <div class="patient-documents-header">
           <div><h2 id="patient-documents-title">Documentos del paciente</h2><p>{{ coverageServiceLabel(ingestResult?.tipo_servicio) }} · {{ coverageMonthLabel(ingestResult?.mes) }} {{ ingestResult?.anio }}</p></div>
-          <div class="patient-documents-header-actions"><v-btn type="button" icon="mdi-refresh" variant="text" aria-label="Actualizar lista de PDFs" :loading="workspaceBusy" :disabled="workspaceBusy" @click="loadWorkspaceDocuments(ingestResult.job_id, selectedWorkspacePDF)"/><v-btn type="button" variant="tonal" prepend-icon="mdi-close" @click="patientDocumentsDialog = false">Cerrar</v-btn></div>
+          <div class="patient-documents-header-actions"><v-btn type="button" icon="mdi-refresh" variant="text" aria-label="Actualizar lista de PDFs" :loading="workspaceBusy" :disabled="workspaceBusy || workspaceBulkRenameBusy" @click="loadWorkspaceDocuments(ingestResult.job_id, selectedWorkspacePDF)"/><v-btn type="button" variant="tonal" prepend-icon="mdi-close" :disabled="workspaceBulkRenameApplying" @click="patientDocumentsDialog = false">Cerrar</v-btn></div>
         </div>
         <v-card-text v-if="ingestResult?.output" class="patient-documents-body">
               <v-alert v-if="workspaceSending || workspaceMutationBusy || mergeSending || mergeAllSending" type="info" variant="tonal" density="comfortable" class="workspace-notice">
-                Puedes cerrar este visor y seguir navegando. La operación ya enviada continuará en el servidor; si vence el tiempo de espera, revisa los PDFs antes de repetirla.
+                La revisión o actualización está en curso. Si vence el tiempo de espera, revisa la carpeta antes de repetir una operación.
               </v-alert>
-              <v-alert v-if="workspaceNotice" :type="workspaceNotice.includes('Se guardó') || workspaceNotice.includes('añadidos') || workspaceNotice.includes('reemplazado') || workspaceNotice.includes('quitado') || workspaceNotice.includes('descargó') || workspaceNotice.includes('fusionaron') ? 'success' : 'warning'" variant="tonal" density="compact" class="workspace-notice">{{ workspaceNotice }}</v-alert>
+              <v-alert v-if="workspaceNotice" :type="workspaceNotice.includes('Se guardó') || workspaceNotice.includes('añadidos') || workspaceNotice.includes('reemplazado') || workspaceNotice.includes('quitado') || workspaceNotice.includes('descargó') || workspaceNotice.includes('fusionaron') || workspaceNotice.includes('Se actualizaron') || workspaceNotice.includes('No había nombres') ? 'success' : 'warning'" variant="tonal" density="compact" class="workspace-notice">{{ workspaceNotice }}</v-alert>
               <v-alert v-if="workspaceFusionGroups.length" type="warning" variant="tonal" density="comfortable" prepend-icon="mdi-content-copy">Hay {{ workspaceFusionGroups.length }} grupo(s) de documentos repetidos. Se conservaron con nombres numerados para revisarlos y fusionarlos después. Las fuentes originales se mantienen.</v-alert>
               <div v-if="workspaceFusionQueue.length" class="workspace-fusion-quick-access">
-                <div class="workspace-fusion-quick-heading"><div class="workspace-fusion-quick-copy"><strong>Grupos pendientes de fusión</strong><span>Busca un paciente para revisar un grupo o fusiona todos en su orden actual.</span></div><v-btn type="button" color="warning" variant="outlined" prepend-icon="mdi-playlist-check" :disabled="mergeSending || mergeAllSending" @click="requestMergeAllPending">Fusionar todos sin revisar</v-btn></div>
+                <div class="workspace-fusion-quick-heading"><div class="workspace-fusion-quick-copy"><strong>Grupos pendientes de fusión</strong><span>Busca un paciente para revisar un grupo o fusiona todos en su orden actual.</span></div><v-btn type="button" color="warning" variant="outlined" prepend-icon="mdi-playlist-check" :disabled="mergeSending || mergeAllSending || workspaceBulkRenameBusy" @click="requestMergeAllPending">Fusionar todos sin revisar</v-btn></div>
                 <div class="workspace-fusion-quick-controls"><v-autocomplete v-model="pendingFusionSelection" :items="workspaceFusionQueue" item-title="title" item-value="value" label="Paciente y tipo de documento" placeholder="Busca un grupo por revisar" prepend-inner-icon="mdi-magnify" density="comfortable" variant="outlined" hide-details clearable :disabled="mergeAllSending"/><v-btn type="button" color="warning" prepend-icon="mdi-file-document-multiple-outline" :disabled="!pendingFusionSelection || mergeSending || mergeAllSending" @click="reviewPendingFusion">Revisar</v-btn></div>
                 <div v-if="selectedPendingFusionGroup" class="workspace-fusion-selected"><v-icon icon="mdi-account-box-outline" size="22"/><div><small>PACIENTE</small><strong>{{ selectedPendingFusionGroup.patient }}</strong></div><div><small>DOCUMENTO REPETIDO</small><strong>{{ selectedPendingFusionGroup.code }}<template v-if="selectedPendingFusionGroup.pdi_id"> · PDI_ID {{ selectedPendingFusionGroup.pdi_id }}</template> · {{ selectedPendingFusionGroup.paths.length }} PDFs</strong></div></div>
                 <div v-if="mergeAllSending" class="workspace-fusion-bulk-progress"><span>Fusionando grupos: {{ mergeAllProgress.done }} de {{ mergeAllProgress.total }}</span><v-progress-linear :model-value="mergeAllProgress.total ? mergeAllProgress.done / mergeAllProgress.total * 100 : 0" color="warning" rounded/></div>
               </div>
-              <v-select v-model="workspacePatient" :items="workspacePatients" label="Carpeta del paciente" prepend-inner-icon="mdi-folder-account-outline" density="comfortable" class="workspace-patient-select" :disabled="!workspacePatients.length || replacePDFDialog" @update:model-value="selectWorkspacePatient"/>
+              <v-select v-model="workspacePatient" :items="workspacePatients" label="Carpeta del paciente" prepend-inner-icon="mdi-folder-account-outline" density="comfortable" class="workspace-patient-select" :disabled="!workspacePatients.length || replacePDFDialog || workspaceBulkRenameBusy" @update:model-value="selectWorkspacePatient"/>
               <section v-if="!ingestResult?.es_objeciones" class="patient-coverage-panel" aria-labelledby="patient-coverage-title">
                 <div class="patient-coverage-heading">
                   <div><h3 id="patient-coverage-title">Consultar cobertura con otra fecha</h3><p>Los PDFs se guardarán en esta carpeta y aparecerán en la lista de documentos.</p></div>
@@ -3061,17 +3130,17 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
                 <div class="workspace-patient-fusions-heading"><strong>PDFs repetidos de este paciente</strong><span>Revisa y fusiona cada tipo por separado. Las coberturas se agrupan por trámite.</span></div>
                 <div v-for="group in workspacePatientFusionGroups" :key="group.paths[0]" class="workspace-patient-fusion-item">
                   <div><strong>{{ group.code }}<template v-if="group.pdi_id"> · PDI_ID {{ group.pdi_id }}</template></strong><small>{{ group.paths.length }} PDFs · {{ group.paths.map(path => path.split('/').at(-1)).join(', ') }}</small></div>
-                  <v-btn type="button" color="warning" variant="tonal" prepend-icon="mdi-file-document-multiple-outline" :disabled="workspaceBusy || mergeSending || mergeAllSending" @click="openWorkspaceFusion(group)">Revisar y fusionar</v-btn>
+                  <v-btn type="button" color="warning" variant="tonal" prepend-icon="mdi-file-document-multiple-outline" :disabled="workspaceBusy || mergeSending || mergeAllSending || workspaceBulkRenameBusy" @click="openWorkspaceFusion(group)">Revisar y fusionar</v-btn>
                 </div>
               </div>
               <div class="workspace-file-layout">
                 <div class="workspace-file-list">
-                  <div class="workspace-file-count">{{ workspacePatientPDFs.length }} PDFs en esta carpeta</div>
+                  <div class="workspace-file-list-toolbar"><div class="workspace-file-count">{{ workspacePatientPDFs.length }} PDFs en esta carpeta</div><v-btn type="button" size="small" color="primary" variant="tonal" prepend-icon="mdi-rename-box-outline" :loading="workspaceBulkRenameBusy && !workspaceBulkRenameApplying" :disabled="!workspacePatientPDFs.length || workspaceBusy || workspaceBulkRenameBusy || mergeSending || mergeAllSending" @click="previewWorkspacePDFNameSuggestions">Actualizar nombres</v-btn></div>
                   <div v-for="document in workspacePatientPDFs" :key="document.path" class="workspace-file-entry">
                     <button type="button" class="workspace-file-row" :title="document.name" :aria-pressed="selectedWorkspacePDF === document.path" :class="{ selected: selectedWorkspacePDF === document.path }" @click.prevent="selectWorkspacePDF(document.path)">
                       <v-icon icon="mdi-file-pdf-box" color="error" size="20"/><span><strong>{{ document.name }}</strong><small>{{ prettySize(document.size) }}</small><small v-if="document.fecha_cobertura || document.cedula_cobertura">{{ coverageDocumentSummary(document) }}</small></span><v-chip v-if="isPendingWorkspaceDocument(document)" size="x-small" color="warning" variant="tonal">Sin nombre MSP</v-chip><v-chip v-else-if="workspaceFusionGroups.some(group => group.paths.includes(document.path))" size="x-small" color="warning" variant="tonal">Fusionar después</v-chip><v-icon v-if="selectedWorkspacePDF === document.path" icon="mdi-eye-outline" size="18"/>
                     </button>
-                    <v-btn type="button" prepend-icon="mdi-delete-outline" variant="tonal" size="small" color="error" class="workspace-delete-pdf-btn" :aria-label="`Quitar ${document.name}`" title="Quitar PDF de esta carpeta" @click="requestDeleteWorkspacePDF(document.path)">Quitar</v-btn>
+                    <v-btn type="button" prepend-icon="mdi-delete-outline" variant="tonal" size="small" color="error" class="workspace-delete-pdf-btn" :aria-label="`Quitar ${document.name}`" title="Quitar PDF de esta carpeta" :disabled="workspaceBulkRenameBusy" @click="requestDeleteWorkspacePDF(document.path)">Quitar</v-btn>
                   </div>
                   <div v-if="!workspacePatientPDFs.length && !workspaceBusy" class="workspace-empty">Esta carpeta todavía no tiene PDFs.</div>
                 </div>
@@ -3083,7 +3152,7 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
                     <div class="workspace-rename-copy"><strong>{{ isPendingWorkspaceDocument(selectedWorkspaceDocument) ? 'Asigna un nombre del catálogo MSP' : 'Cambiar nombre del documento' }}</strong><small>La vista previa ayuda a revisar el contenido. Asignar un nombre organiza el PDF, pero no confirma su clasificación.</small></div>
                     <div class="workspace-edit-row">
                       <v-autocomplete v-model="workspaceRename" :items="mspPDFOptions" item-title="title" item-value="value" :label="isPendingWorkspaceDocument(selectedWorkspaceDocument) ? 'Nombre MSP' : 'Nombre estándar MSP'" placeholder="Selecciona el tipo de documento" prepend-inner-icon="mdi-rename-box-outline" density="comfortable" variant="outlined" clearable hide-details/>
-                      <v-btn type="button" color="primary" variant="tonal" prepend-icon="mdi-content-save-outline" :loading="workspaceBusy" :disabled="!workspaceRename" @click="renameWorkspacePDF">{{ isPendingWorkspaceDocument(selectedWorkspaceDocument) ? 'Asignar nombre' : 'Guardar nombre' }}</v-btn>
+                      <v-btn type="button" color="primary" variant="tonal" prepend-icon="mdi-content-save-outline" :loading="workspaceBusy" :disabled="!workspaceRename || workspaceBulkRenameBusy" @click="renameWorkspacePDF">{{ isPendingWorkspaceDocument(selectedWorkspaceDocument) ? 'Asignar nombre' : 'Guardar nombre' }}</v-btn>
                     </div>
                   </div>
                 </div>
@@ -3091,9 +3160,9 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
               <p v-if="selectedWorkspaceDocument" class="workspace-hint">Si añades un tipo que ya existe, se conserva como una copia numerada para revisar o fusionar después. Para sustituir una versión, usa “Reemplazar PDF seleccionado”.</p>
               <div class="workspace-add-row">
                 <input ref="workspacePDFInput" type="file" accept=".pdf,application/pdf" multiple hidden @change="selectWorkspacePDFs" />
-                <v-btn type="button" variant="outlined" prepend-icon="mdi-file-pdf-box" :disabled="workspaceSending" @click="workspacePDFInput?.click()">{{ workspaceUploadFiles.length ? 'Añadir más PDFs a la selección' : 'Seleccionar PDFs para añadir' }}</v-btn>
+                <v-btn type="button" variant="outlined" prepend-icon="mdi-file-pdf-box" :disabled="workspaceSending || workspaceBulkRenameBusy" @click="workspacePDFInput?.click()">{{ workspaceUploadFiles.length ? 'Añadir más PDFs a la selección' : 'Seleccionar PDFs para añadir' }}</v-btn>
                 <input ref="replacePDFInput" type="file" accept=".pdf,application/pdf" hidden @change="selectReplacementPDF" />
-                <v-btn type="button" color="warning" variant="tonal" prepend-icon="mdi-file-replace-outline" :disabled="!selectedWorkspaceDocument || workspaceSending" @click="replacePDFInput?.click()">Reemplazar PDF seleccionado</v-btn>
+                <v-btn type="button" color="warning" variant="tonal" prepend-icon="mdi-file-replace-outline" :disabled="!selectedWorkspaceDocument || workspaceSending || workspaceBulkRenameBusy" @click="replacePDFInput?.click()">Reemplazar PDF seleccionado</v-btn>
               </div>
               <div v-if="workspaceUploadFiles.length" class="workspace-upload-queue">
                 <div class="workspace-upload-queue-heading"><strong>{{ workspaceUploadFiles.length }} PDF{{ workspaceUploadFiles.length === 1 ? '' : 's' }} para añadir</strong><span>Asigna el paciente y nombre MSP. Si ya existe ese tipo de documento, se añadirá con el siguiente sufijo disponible para revisar o fusionar después.</span></div>
@@ -3124,6 +3193,37 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
                   <v-card-title>Fusionar todos los grupos pendientes</v-card-title>
                   <v-card-text><p>Se fusionarán {{ workspaceFusionQueue.length }} grupos por paciente y tipo de documento. Las coberturas se agrupan además por PDI_ID, así se pueden unir hojas de varias fechas y cédulas del mismo trámite sin mezclar trámites distintos. El orden actual de cada grupo define las páginas. Las fuentes originales se conservarán en el historial privado; si una fusión falla, las siguientes quedarán pendientes.</p></v-card-text>
                   <v-card-actions><v-spacer/><v-btn type="button" variant="text" @click="mergeAllConfirmDialog=false">Cancelar</v-btn><v-btn type="button" color="warning" prepend-icon="mdi-playlist-check" @click="confirmMergeAllPending">Fusionar {{ workspaceFusionQueue.length }} grupos</v-btn></v-card-actions>
+                </v-card>
+              </v-dialog>
+              <v-dialog v-model="workspaceBulkRenameDialog" max-width="980" :persistent="workspaceBulkRenameApplying">
+                <v-card class="action-dialog workspace-name-preview-dialog">
+                  <v-card-title>Vista previa de nombres sugeridos</v-card-title>
+                  <v-alert v-if="workspaceBulkRenameError" type="warning" variant="tonal" role="alert" class="mx-6">{{ workspaceBulkRenameError }}</v-alert>
+                  <v-card-text v-if="workspaceBulkRenamePreview">
+                    <p>Se actualizarán únicamente los PDFs con una clasificación clara. Las fuentes originales se conservarán en el historial del expediente; los duplicados recibirán un sufijo disponible.</p>
+                    <v-alert type="info" variant="tonal" density="compact" class="mb-3">Las hojas <code>C_COBERTURA</code> quedan excluidas. Los PDFs pendientes de revisión no cambiarán de nombre.</v-alert>
+                    <div class="workspace-name-preview-summary">
+                      <v-chip size="small" color="primary" variant="tonal">{{ workspaceBulkRenamePreview.suggested_count }} cambios sugeridos</v-chip>
+                      <v-chip size="small" color="success" variant="tonal">{{ workspaceBulkRenamePreview.already_correct_count }} ya correctos</v-chip>
+                      <v-chip size="small" color="info" variant="tonal">{{ workspaceBulkRenamePreview.coverage_excluded_count }} coberturas excluidas</v-chip>
+                      <v-chip size="small" color="warning" variant="tonal">{{ workspaceBulkRenamePreview.pending_count }} pendientes</v-chip>
+                    </div>
+                    <div v-if="workspaceBulkRenamePreview.items?.length" class="workspace-name-preview-list">
+                      <div v-for="item in workspaceBulkRenamePreview.items" :key="item.path" class="workspace-name-preview-row" :class="`is-${item.status}`">
+                        <div class="workspace-name-preview-name"><strong>{{ item.current_name }}</strong><small>{{ item.status === 'proposed' ? item.code : item.status === 'coverage' ? 'Cobertura protegida' : item.status === 'correct' ? 'Nombre MSP coincide' : 'Requiere revisión manual' }}</small></div>
+                        <v-icon v-if="item.status === 'proposed'" icon="mdi-arrow-right" size="19"/>
+                        <div class="workspace-name-preview-name"><strong>{{ item.suggested_name || (item.status === 'proposed' ? item.code : 'Sin cambios') }}</strong></div>
+                        <v-chip size="x-small" :color="item.status === 'proposed' ? 'primary' : item.status === 'correct' ? 'success' : item.status === 'coverage' ? 'info' : 'warning'" variant="tonal">{{ item.status === 'proposed' ? 'Actualizar' : item.status === 'correct' ? 'Correcto' : item.status === 'coverage' ? 'Excluida' : 'Pendiente' }}</v-chip>
+                      </div>
+                    </div>
+                    <div v-else class="workspace-empty">Esta carpeta no contiene PDFs para revisar.</div>
+                    <p v-if="!workspaceBulkRenameProposals.length" class="workspace-name-preview-empty">No hay nombres que actualizar en esta carpeta.</p>
+                  </v-card-text>
+                  <v-card-actions>
+                    <v-spacer/>
+                    <v-btn type="button" variant="text" :disabled="workspaceBulkRenameApplying" @click="workspaceBulkRenameDialog=false">Cancelar</v-btn>
+                    <v-btn type="button" color="primary" prepend-icon="mdi-rename-box-outline" :loading="workspaceBulkRenameApplying" :disabled="!workspaceBulkRenameProposals.length || workspaceBulkRenameBusy" @click="applyWorkspacePDFNameSuggestions">{{ workspaceBulkRenameApplying ? 'Actualizando…' : `Aplicar ${workspaceBulkRenameProposals.length} cambios` }}</v-btn>
+                  </v-card-actions>
                 </v-card>
               </v-dialog>
               <v-dialog v-model="deletePDFDialog" max-width="440">

@@ -29,6 +29,7 @@ type classificationRules struct {
 		Code             string   `yaml:"codigo"`
 		Keywords         []string `yaml:"palabras_clave"`
 		PriorityKeywords []string `yaml:"palabras_clave_prioritarias"`
+		TitleKeywords    []string `yaml:"palabras_clave_titulo"`
 	} `yaml:"reglas"`
 }
 
@@ -120,8 +121,8 @@ func resolvePDFClassification(text, filenameCode string, rules classificationRul
 	if filenameCode != "" {
 		return filenameCode, 0, "CODIGO_RECONOCIDO_POR_NOMBRE"
 	}
-	if code, matches, tie := matchClassification(text, rules); code != "" && !tie {
-		return code, matches, ""
+	if code, matches, reason, tie := matchClassificationWithReason(text, rules); code != "" && !tie {
+		return code, matches, reason
 	}
 	return "", 0, ""
 }
@@ -250,6 +251,9 @@ func extractPDFText(filePath string) (string, error) {
 		if err != nil {
 			continue
 		}
+		if pageNo > 1 {
+			text.WriteByte('\f')
+		}
 		text.WriteString(pageText)
 		text.WriteByte('\n')
 	}
@@ -286,7 +290,16 @@ func runOCR(ctx context.Context, filePath string) (string, error) {
 }
 
 func matchClassification(text string, rules classificationRules) (string, int, bool) {
+	code, matches, _, tied := matchClassificationWithReason(text, rules)
+	return code, matches, tied
+}
+
+func matchClassificationWithReason(text string, rules classificationRules) (string, int, string, bool) {
 	normalized := normalizeOCRText(text)
+	if code, matches, tied := matchTitleClassification(text, rules); code != "" || tied {
+		return code, matches, "ENCABEZADO_DOCUMENTAL", tied
+	}
+
 	priorityCode := ""
 	priorityCount := 0
 	for _, rule := range rules.Rules {
@@ -302,7 +315,7 @@ func matchClassification(text string, rules classificationRules) (string, int, b
 			seen[normalizedKeyword] = struct{}{}
 			if strings.Contains(normalized, normalizedKeyword) {
 				if priorityCode != "" && priorityCode != rule.Code {
-					return "", priorityCount + 1, true
+					return "", priorityCount + 1, "FRASE_PRIORITARIA", true
 				}
 				priorityCode = rule.Code
 				priorityCount++
@@ -310,12 +323,12 @@ func matchClassification(text string, rules classificationRules) (string, int, b
 		}
 	}
 	if priorityCode != "" {
-		return priorityCode, priorityCount, false
+		return priorityCode, priorityCount, "FRASE_PRIORITARIA", false
 	}
-	bestCode, bestCount, bestSpecificity := "", 0, 0
+	bestCode, bestCount := "", 0
 	tied := false
 	for _, rule := range rules.Rules {
-		count, specificity := 0, 0
+		count := 0
 		seen := make(map[string]struct{}, len(rule.Keywords))
 		for _, keyword := range rule.Keywords {
 			normalizedKeyword := normalizeOCRText(keyword)
@@ -328,20 +341,64 @@ func matchClassification(text string, rules classificationRules) (string, int, b
 			seen[normalizedKeyword] = struct{}{}
 			if strings.Contains(normalized, normalizedKeyword) {
 				count++
-				specificity += len(normalizedKeyword)
 			}
 		}
 		if count > bestCount {
-			bestCode, bestCount, bestSpecificity, tied = rule.Code, count, specificity, false
+			bestCode, bestCount, tied = rule.Code, count, false
 		} else if count > 0 && count == bestCount {
-			if specificity > bestSpecificity {
-				bestCode, bestSpecificity, tied = rule.Code, specificity, false
-			} else if specificity == bestSpecificity && rule.Code != bestCode {
+			if rule.Code != bestCode {
 				tied = true
 			}
 		}
 	}
-	return bestCode, bestCount, tied
+	return bestCode, bestCount, "", tied
+}
+
+func matchTitleClassification(text string, rules classificationRules) (string, int, bool) {
+	pages := strings.SplitN(text, "\f", 2)
+	lines := strings.Split(pages[0], "\n")
+	headerLines := make([]string, 0, 12)
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		headerLines = append(headerLines, line)
+		if len(headerLines) == 12 {
+			break
+		}
+	}
+	header := normalizeOCRText(strings.Join(headerLines, " "))
+	if header == "" {
+		return "", 0, false
+	}
+
+	code, matches := "", 0
+	for _, rule := range rules.Rules {
+		seen := make(map[string]struct{}, len(rule.TitleKeywords))
+		ruleMatches := 0
+		for _, keyword := range rule.TitleKeywords {
+			normalizedKeyword := normalizeOCRText(keyword)
+			if normalizedKeyword == "" {
+				continue
+			}
+			if _, duplicate := seen[normalizedKeyword]; duplicate {
+				continue
+			}
+			seen[normalizedKeyword] = struct{}{}
+			if strings.Contains(header, normalizedKeyword) {
+				ruleMatches++
+			}
+		}
+		if ruleMatches == 0 {
+			continue
+		}
+		if code != "" && code != rule.Code {
+			return "", matches + ruleMatches, true
+		}
+		code = rule.Code
+		matches += ruleMatches
+	}
+	return code, matches, false
 }
 
 func normalizeOCRText(text string) string {

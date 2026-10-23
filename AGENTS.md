@@ -13,7 +13,7 @@ Rules:
 
 ## Runtime build freshness
 
-- For runtime freshness checks in this project, use the `folio-runtime-freshness` skill and its `scripts/verify-runtime.sh` helper. It compares a fresh Go/Vue build with the active process, installed binary, local `dist/`, and HTTP-served frontend; it does not deploy. For an explicitly authorized deployment, inspect pending source changes and use `scripts/deploy-runtime.sh --confirm-deploy`, which builds candidates, checks for child jobs, creates recovery copies, deploys, and verifies or rolls back.
+- For runtime freshness checks in this project, use `.agents/skills/runtime-freshness/SKILL.md` and its referenced `folio-runtime-freshness/scripts/verify-runtime.sh` helper. It compares a fresh Go/Vue build with the active process, installed binary, local `dist/`, and HTTP-served frontend; it does not deploy. For an explicitly authorized deployment, inspect pending source changes and use `scripts/deploy-runtime.sh --confirm-deploy`, which builds candidates, checks for child jobs, creates recovery copies, deploys, and verifies or rolls back.
 - When a user asks to verify a change in the running application, identify the active service process and the executable it has loaded. Do not infer that the running application uses the current source or `bin/folio-server` from file timestamps alone.
 - Build the current source to a temporary candidate and compare its SHA-256 with `/proc/<MainPID>/exe`; also compare with `bin/folio-server` when that is the service executable. If the hashes differ, state that the running instance is stale.
 - Before replacing an ignored or otherwise untracked executable, back it up and confirm a rollback path. Check that no child job is active before restarting the service.

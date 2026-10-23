@@ -20,7 +20,11 @@ normalizacion_texto:
   mayusculas: true
   diacriticos_a_ascii: true
 coincidencias:
-  regla: ganar_mayor_cantidad_de_frases_exactas_distintas
+  precedencia:
+    - codigo_confirmado_en_nombre
+    - frases_de_tipo_documental_en_las_primeras_12_lineas_de_la_pagina_1
+    - frases_prioritarias
+    - mayor_cantidad_de_frases_exactas_distintas
   empate: pendiente_revision
   sin_coincidencia: pendiente_revision
   texto_vacio_o_ilegible: pendiente_revision
@@ -40,15 +44,23 @@ reglas:
     palabras_clave: ["REPORTE DE NOTAS DE EVOLUCION", "NOTAS DE EVOLUCION DE"]
   - codigo: HCU_053.pdf
     palabras_clave: ["FORMULARIO 053", "REFERENCIA", "DERIVACION", "CONTRARREFERENCIA", "ESTABLECIMIENTO QUE DERIVA"]
+    palabras_clave_prioritarias: ["FORMULARIO 053"]
+    palabras_clave_titulo: ["FORMULARIO 053", "REFERENCIA", "DERIVACION", "CONTRARREFERENCIA", "ESTABLECIMIENTO QUE DERIVA"]
   - codigo: HCU_006.pdf
     palabras_clave: ["FORMULARIO 006", "EPICRISIS", "RESUMEN DE ALTA", "CUADRO CLINICO DE EGRESO"]
+    palabras_clave_prioritarias: ["FORMULARIO 006"]
+    palabras_clave_titulo: ["FORMULARIO 006", "EPICRISIS", "RESUMEN DE ALTA", "CUADRO CLINICO DE EGRESO"]
   - codigo: HCU_017.pdf
-    palabras_clave: ["FORMULARIO 017", "PROTOCOLO QUIRURGICO", "CIRUGIA"]
+    palabras_clave: ["FORMULARIO 017", "PROTOCOLO QUIRURGICO", "PARTE OPERATORIO", "CIRUGIA"]
+    palabras_clave_prioritarias: ["FORMULARIO 017"]
+    palabras_clave_titulo: ["FORMULARIO 017", "PROTOCOLO QUIRURGICO", "PARTE OPERATORIO"]
   - codigo: HCU_007.pdf
     palabras_clave: ["FORMULARIO 7 – INTERCONSULTA"]
     palabras_clave_prioritarias: ["FORMULARIO 7 – INTERCONSULTA"]
   - codigo: HCU_018A.pdf
     palabras_clave: ["FORMULARIO 018A", "TRANSANESTESICO", "ANESTESIA"]
+    palabras_clave_prioritarias: ["FORMULARIO 018A"]
+    palabras_clave_titulo: ["FORMULARIO 018A", "PROTOCOLO TRANSANESTESICO"]
   - codigo: HCU_012.pdf
     palabras_clave: ["FORMULARIO 12 IMAGENOLOGIA", "RESULTADOS EXAMENES DE IMAGEN"]
   - codigo: HCU_010.pdf
