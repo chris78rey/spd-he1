@@ -22,6 +22,11 @@ import (
 	"golang.org/x/text/unicode/norm"
 )
 
+const (
+	maxWorkspaceFusionPDFs        = 1000
+	maxWorkspaceFusionRequestSize = 1 << 20
+)
+
 type workspacePDF struct {
 	Path           string                     `json:"path"`
 	Name           string                     `json:"name"`
@@ -1187,9 +1192,9 @@ func (s *server) mergeWorkspacePDFs(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		Paths []string `json:"rutas"`
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, 64*1024)
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil || len(input.Paths) < 2 || len(input.Paths) > 50 {
-		writeError(w, http.StatusBadRequest, "Selecciona entre 2 y 50 PDFs repetidos para fusionar.")
+	r.Body = http.MaxBytesReader(w, r.Body, maxWorkspaceFusionRequestSize)
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil || len(input.Paths) < 2 || len(input.Paths) > maxWorkspaceFusionPDFs {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("Selecciona entre 2 y %d PDFs repetidos para fusionar.", maxWorkspaceFusionPDFs))
 		return
 	}
 	s.ingestMu.Lock()

@@ -38,6 +38,7 @@ type historicalArchiveRecord struct {
 }
 
 func (s *server) historicalArchives(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
 	if _, ok := s.getSession(r); !ok {
 		writeError(w, http.StatusUnauthorized, "Inicia sesión para continuar.")
 		return

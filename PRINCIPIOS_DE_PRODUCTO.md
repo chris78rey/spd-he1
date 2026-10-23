@@ -112,4 +112,8 @@ Los ZIP originales del Archivo histórico solo se pueden eliminar con el rol per
 
 ## Decisión de producto: un ZIP histórico por servicio y período
 
-El Archivo histórico admite un solo ZIP por combinación de servicio, mes y año. Al seleccionar una combinación ya guardada, la pantalla identifica los ZIP existentes y bloquea la selección y el envío de otra carga. El servidor aplica la misma regla y rechaza con HTTP 409 cualquier repetición, incluso si varias cargas llegan al mismo tiempo. Los duplicados que ya existan se conservan sin borrar ni fusionar sus archivos; la regla impide crear nuevos.
+El Archivo histórico admite un solo ZIP por combinación de servicio, mes y año. Por ejemplo, Ambulatorio · Enero 2026 y Ambulatorio · Febrero 2026 son registros diferentes, igual que Emergencia · Febrero 2026 y Emergencia · Marzo 2026. Al seleccionar una combinación ya guardada, la pantalla identifica los ZIP existentes y bloquea la selección y el envío de otra carga. El servidor aplica la misma regla y rechaza con HTTP 409 cualquier repetición, incluso si varias cargas llegan al mismo tiempo. Los duplicados que ya existan se conservan sin borrar ni fusionar sus archivos; la regla impide crear nuevos. Después de guardar, la búsqueda y los filtros de la lista se limpian, y el inventario completo se vuelve a consultar sin caché para mostrar todos los ZIP: una nueva carga no debe parecer que reemplazó la anterior.
+
+## Decisión de producto: fusionar grupos de hasta 1000 PDFs
+
+El usuario reportó un grupo `HCU_010.pdf` con 277 PDFs que no podía fusionarse porque el máximo de 100 seguía siendo bajo. Se eleva el límite a 1000 PDFs por grupo para permitir fusionar el grupo completo en una sola operación. La interfaz espera hasta diez minutos por la respuesta. Se mantiene el requisito de seleccionar el grupo completo, respetar el orden elegido y conservar las fuentes originales en el historial privado.

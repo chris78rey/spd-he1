@@ -537,7 +537,7 @@ async function loadHistoricalArchives() {
   historicalArchiveLoading.value = true
   historicalArchiveLoadError.value = ''
   try {
-    const response = await fetch('/api/v1/archivo-historico', { credentials: 'same-origin' })
+    const response = await fetch('/api/v1/archivo-historico', { credentials: 'same-origin', cache: 'no-store' })
     const data = await response.json().catch(() => ({}))
     if (response.status === 401) { await signOut(); return }
     if (!response.ok) throw new Error(data.error || 'No se pudo cargar el archivo histórico.')
@@ -551,6 +551,10 @@ async function loadHistoricalArchives() {
 function setHistoricalArchiveFile(event) {
   historicalArchiveFile.value = event.target?.files?.[0] || null
   historicalArchiveUploadError.value = ''
+  historicalArchiveNotice.value = ''
+}
+function clearHistoricalArchiveUploadNotice() {
+  historicalArchiveNotice.value = ''
 }
 function clearHistoricalArchiveFilters() {
   historicalArchiveSearch.value = ''
@@ -595,13 +599,17 @@ async function uploadHistoricalArchive() {
     const record = data.archive
     if (record?.id) {
       historicalArchiveRecords.value = [...historicalArchiveRecords.value.filter(item => item.id !== record.id), record]
-      historicalArchiveServiceFilter.value = record.tipo_servicio
-      historicalArchiveMonthFilter.value = record.mes
-      historicalArchiveYearFilter.value = String(record.anio)
     }
     historicalArchiveSearch.value = ''
+    historicalArchiveServiceFilter.value = 'ALL'
+    historicalArchiveMonthFilter.value = 'ALL'
+    historicalArchiveYearFilter.value = 'ALL'
+    historicalArchiveService.value = ''
+    historicalArchiveMonth.value = ''
+    historicalArchiveYear.value = String(new Date().getFullYear())
     historicalArchiveFile.value = null
     if (historicalArchiveInput.value) historicalArchiveInput.value.value = ''
+    await loadHistoricalArchives()
     historicalArchiveNotice.value = 'El ZIP original se guardó sin extraer ni modificar su contenido.'
   } catch (error) {
     historicalArchiveUploadError.value = error.message || 'No se pudo guardar el ZIP histórico.'
@@ -1143,7 +1151,7 @@ async function confirmMergeAllPending() {
       const { response, data } = await fetchWorkspaceJSON(`/api/v1/expedientes/documentos/fusionar/${encodeURIComponent(jobId)}`, {
         method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ rutas: group.paths }),
-      }, 60000, 'fusionar PDFs')
+      }, 600000, 'fusionar PDFs')
       if (!response.ok) throw new Error(data.error || `Falló la fusión de ${group.patient} · ${group.code}.`)
       merged++
       mergeAllProgress.value = { done: merged, total: groups.length }
@@ -1206,7 +1214,7 @@ async function confirmWorkspaceFusion() {
     const { response, data } = await fetchWorkspaceJSON(`/api/v1/expedientes/documentos/fusionar/${encodeURIComponent(jobId)}`, {
       method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ rutas: mergePDFPaths.value }),
-    }, 60000, 'fusionar PDFs')
+    }, 600000, 'fusionar PDFs')
     if (!response.ok) throw new Error(data.error || 'No se pudieron fusionar los PDFs.')
     mergePDFDialog.value = false
     mergePDFPaths.value = []
@@ -2470,9 +2478,9 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
           <v-card class="planilla-card saved-workspaces-card historical-archive-card" rounded="xl" elevation="0">
             <div class="ingest-card-heading"><span class="ingest-step"><v-icon icon="mdi-archive-arrow-down-outline" size="20"/></span><div><h2>Guardar un ZIP histórico</h2><p>Indica el período y carga el archivo original. El sistema lo conserva tal como lo recibimos; no lo extrae, reorganiza ni modifica.</p></div></div>
             <div class="historical-archive-upload-grid">
-              <v-select v-model="historicalArchiveService" :items="ingestServices" item-title="title" item-value="value" label="Servicio" prepend-inner-icon="mdi-hospital-building" />
-              <v-select v-model="historicalArchiveMonth" :items="ingestMonths" item-title="title" item-value="value" label="Mes del período" prepend-inner-icon="mdi-calendar-month-outline" />
-              <v-text-field v-model="historicalArchiveYear" type="number" min="1900" max="9999" step="1" label="Año del período" prepend-inner-icon="mdi-calendar-outline" />
+              <v-select v-model="historicalArchiveService" :items="ingestServices" item-title="title" item-value="value" label="Servicio" prepend-inner-icon="mdi-hospital-building" @update:model-value="clearHistoricalArchiveUploadNotice" />
+              <v-select v-model="historicalArchiveMonth" :items="ingestMonths" item-title="title" item-value="value" label="Mes del período" prepend-inner-icon="mdi-calendar-month-outline" @update:model-value="clearHistoricalArchiveUploadNotice" />
+              <v-text-field v-model="historicalArchiveYear" type="number" min="1900" max="9999" step="1" label="Año del período" prepend-inner-icon="mdi-calendar-outline" @update:model-value="clearHistoricalArchiveUploadNotice" />
             </div>
             <div class="historical-archive-file-row">
               <label class="historical-archive-file" :class="{'is-disabled': historicalArchiveUploading || historicalArchivePeriodAlreadyExists}"><input ref="historicalArchiveInput" type="file" accept=".zip,application/zip" :disabled="historicalArchiveUploading || historicalArchivePeriodAlreadyExists" @change="setHistoricalArchiveFile"><v-icon icon="mdi-folder-zip-outline" size="21"/><span><strong>{{ historicalArchiveFile?.name || 'Seleccionar ZIP original' }}</strong><small>{{ historicalArchiveFile ? prettySize(historicalArchiveFile.size) : 'Archivo .zip' }}</small></span></label>
