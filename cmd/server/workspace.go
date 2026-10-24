@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -34,6 +35,8 @@ type workspacePDF struct {
 	Name           string                     `json:"name"`
 	Size           int64                      `json:"size_bytes"`
 	PlanillaID     int64                      `json:"pdi_id,omitempty"`
+	PendingOracle  bool                       `json:"pendiente_asociacion_oracle,omitempty"`
+	ReceiptID      string                     `json:"registro_recepcion_oracle,omitempty"`
 	CoverageDate   string                     `json:"fecha_cobertura,omitempty"`
 	CoverageCedula string                     `json:"cedula_cobertura,omitempty"`
 	CoverageItems  []coverageDocumentMetadata `json:"coberturas,omitempty"`
@@ -107,7 +110,7 @@ func loadMSPPDFCodeSet() (map[string]struct{}, error) {
 	return allowed, nil
 }
 
-func (s *server) planillaForPatient(ctx context.Context, job stagedJob, patient string) (int64, error) {
+func (s *server) planillaIDsForPatient(ctx context.Context, job stagedJob, patient string) ([]int64, error) {
 	if job.IsObjections {
 		ids := make(map[int64]bool)
 		for _, row := range job.ObjectionRows {
@@ -115,15 +118,7 @@ func (s *server) planillaForPatient(ctx context.Context, job stagedJob, patient 
 				ids[row.PlanillaID] = true
 			}
 		}
-		if len(ids) == 1 {
-			for id := range ids {
-				return id, nil
-			}
-		}
-		if len(ids) > 1 {
-			return 0, errors.New("Esta carpeta contiene más de un trámite objetado. Elige un trámite antes de añadir el PDF.")
-		}
-		return 0, errors.New("No se encontró un trámite objetado para esta carpeta.")
+		return sortedPlanillaIDs(ids), nil
 	}
 	ids := make(map[int64]bool)
 	for relative, id := range job.DocumentPlanillas {
@@ -138,12 +133,17 @@ func (s *server) planillaForPatient(ctx context.Context, job stagedJob, patient 
 			ids[document.PlanillaID] = true
 		}
 	}
+	for _, planilla := range job.OraclePlanillas {
+		if planilla.PlanillaID > 0 && planilla.PatientFolder == patient {
+			ids[planilla.PlanillaID] = true
+		}
+	}
 	if len(ids) == 0 {
 		tramites, zipErr := collectZIPPlanillaNumbers(filepath.Join(s.jobSourcesDir(job.ID), "lote.zip"))
 		if zipErr == nil {
 			identities, lookupErr := s.loadPlanillaIdentitiesByTramites(ctx, tramites)
 			if lookupErr != nil {
-				return 0, lookupErr
+				return nil, lookupErr
 			}
 			for _, identity := range identities {
 				if normalizePatientFolder(identity.Patient) == patient {
@@ -152,16 +152,74 @@ func (s *server) planillaForPatient(ctx context.Context, job stagedJob, patient 
 			}
 		}
 	}
+	return sortedPlanillaIDs(ids), nil
+}
+
+func sortedPlanillaIDs(ids map[int64]bool) []int64 {
+	result := make([]int64, 0, len(ids))
+	for id := range ids {
+		result = append(result, id)
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i] < result[j] })
+	return result
+}
+
+func (s *server) planillaForPatient(ctx context.Context, job stagedJob, patient string) (int64, error) {
+	ids, err := s.planillaIDsForPatient(ctx, job, patient)
+	if err != nil {
+		return 0, err
+	}
 	if len(ids) == 0 {
+		if job.IsObjections {
+			return 0, errors.New("No se encontró un trámite objetado para esta carpeta.")
+		}
+		if workspaceAuditorReceiptID(job, patient) != "" {
+			return 0, nil
+		}
 		return 0, errors.New("No se encontró una planilla Oracle asociada a esta carpeta de paciente.")
 	}
 	if len(ids) > 1 {
+		if job.IsObjections {
+			return 0, errors.New("Esta carpeta contiene más de un trámite objetado. Elige un trámite antes de añadir el PDF.")
+		}
 		return 0, errors.New("Esta carpeta corresponde a más de un PDI_TRAMITE. Para evitar asociar el PDF a una planilla incorrecta, se necesita elegir el trámite antes de añadirlo.")
 	}
-	for id := range ids {
-		return id, nil
+	return ids[0], nil
+}
+
+func workspaceAuditorReceiptID(job stagedJob, patient string) string {
+	for _, receipt := range job.AuditorReceipts {
+		if receipt.Patient == patient {
+			return receipt.ID
+		}
 	}
-	return 0, errors.New("No se pudo identificar la planilla Oracle de esta carpeta.")
+	return ""
+}
+
+func (s *server) planillaForPatientChoice(ctx context.Context, job stagedJob, patient, rawID string) (int64, error) {
+	if strings.TrimSpace(rawID) == "" {
+		return s.planillaForPatient(ctx, job, patient)
+	}
+	id, err := strconv.ParseInt(strings.TrimSpace(rawID), 10, 64)
+	if err != nil || id < 0 {
+		return 0, errors.New("Selecciona un PDI_ID válido para asociar el PDF.")
+	}
+	if id == 0 && workspaceAuditorReceiptID(job, patient) != "" {
+		return 0, nil
+	}
+	if id == 0 {
+		return 0, errors.New("Selecciona un PDI_ID válido para asociar el PDF.")
+	}
+	ids, err := s.planillaIDsForPatient(ctx, job, patient)
+	if err != nil {
+		return 0, err
+	}
+	for _, candidate := range ids {
+		if candidate == id {
+			return id, nil
+		}
+	}
+	return 0, errors.New("El PDI_ID seleccionado no pertenece a la carpeta de paciente.")
 }
 
 func planillaForPath(job stagedJob, relative string) int64 {
@@ -196,6 +254,49 @@ func nextMSPPDFName(dir, code, ignoredName string) (string, error) {
 	for suffix := 1; ; suffix++ {
 		candidate := fmt.Sprintf("%s_%d.pdf", base, suffix)
 		if !used[candidate] {
+			return candidate, nil
+		}
+	}
+}
+
+func nextPendingWorkspacePDFName(dir, originalName string) (string, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return "", err
+	}
+	used := make(map[string]bool, len(entries))
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			used[strings.ToLower(entry.Name())] = true
+		}
+	}
+	originalName = safeOriginalFilename(originalName)
+	base := strings.TrimSuffix(originalName, filepath.Ext(originalName))
+	var normalized strings.Builder
+	separator := false
+	for _, char := range base {
+		if unicode.IsLetter(char) || unicode.IsNumber(char) {
+			normalized.WriteRune(char)
+			separator = false
+		} else if !separator && normalized.Len() > 0 {
+			normalized.WriteByte('_')
+			separator = true
+		}
+		if normalized.Len() >= 100 {
+			break
+		}
+	}
+	base = strings.Trim(normalized.String(), "_")
+	if base == "" {
+		base = "documento"
+	}
+	stem := "PENDIENTE_tmp_" + base
+	for suffix := 0; ; suffix++ {
+		candidate := stem + ".pdf"
+		if suffix > 0 {
+			candidate = fmt.Sprintf("%s_%d.pdf", stem, suffix)
+		}
+		if !used[strings.ToLower(candidate)] {
 			return candidate, nil
 		}
 	}
@@ -339,11 +440,19 @@ func (s *server) workspaceDocuments(w http.ResponseWriter, r *http.Request) {
 	}
 	coverageByPath := make(map[string]workspaceDocument, len(job.ExternalPDFs))
 	planillaByPath := make(map[string]int64, len(job.DocumentPlanillas)+len(job.ExternalPDFs))
+	pendingOracleByPath := make(map[string]bool, len(job.ExternalPDFs))
+	receiptByPath := make(map[string]string, len(job.ExternalPDFs))
 	for relative, planillaID := range job.DocumentPlanillas {
 		planillaByPath[filepath.ToSlash(filepath.Clean(filepath.FromSlash(relative)))] = planillaID
 	}
 	for _, document := range job.ExternalPDFs {
 		path := filepath.ToSlash(filepath.Clean(filepath.FromSlash(document.RelativePath)))
+		if document.ReceiptID != "" {
+			receiptByPath[path] = document.ReceiptID
+		}
+		if document.OraclePending {
+			pendingOracleByPath[path] = true
+		}
 		if document.CoverageDate != "" || document.CoverageCedula != "" || len(document.CoverageItems) > 0 {
 			coverageByPath[path] = document
 		}
@@ -353,13 +462,20 @@ func (s *server) workspaceDocuments(w http.ResponseWriter, r *http.Request) {
 	}
 	for index := range documents {
 		documents[index].PlanillaID = planillaByPath[documents[index].Path]
+		documents[index].PendingOracle = pendingOracleByPath[documents[index].Path]
+		documents[index].ReceiptID = receiptByPath[documents[index].Path]
 		if coverage, ok := coverageByPath[documents[index].Path]; ok {
 			documents[index].CoverageDate = coverage.CoverageDate
 			documents[index].CoverageCedula = coverage.CoverageCedula
 			documents[index].CoverageItems = append([]coverageDocumentMetadata(nil), coverage.CoverageItems...)
 		}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"job_id": job.ID, "documents": documents, "patients": patients})
+	availablePlanillas, err := auditorImportPlanillas(r.Context(), s, job)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "No se pudieron cargar los trámites Oracle del período.")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"job_id": job.ID, "documents": documents, "patients": patients, "planillas": workspacePlanillaOptions(job, documents), "planillas_disponibles": availablePlanillas})
 }
 
 func (s *server) deleteWorkspacePDF(w http.ResponseWriter, r *http.Request, job stagedJob) {
@@ -1987,7 +2103,12 @@ func (s *server) mergeWorkspacePDFs(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	job.ExternalPDFs = activeExternal
-	mergedDocument := workspaceDocument{ID: strings.TrimSuffix(storedName, ".pdf"), StoredName: storedName, OriginalName: group.Code, RelativePath: canonicalRelative, PlanillaID: canonicalID, CoverageItems: coverageItems}
+	patientParts := strings.Split(filepath.ToSlash(canonicalRelative), "/")
+	receiptID := ""
+	if len(patientParts) >= 3 {
+		receiptID = workspaceAuditorReceiptID(job, patientParts[1])
+	}
+	mergedDocument := workspaceDocument{ID: strings.TrimSuffix(storedName, ".pdf"), StoredName: storedName, OriginalName: group.Code, RelativePath: canonicalRelative, PlanillaID: canonicalID, OraclePending: canonicalID == 0 && receiptID != "", ReceiptID: receiptID, CoverageItems: coverageItems}
 	if len(coverageItems) == 1 {
 		mergedDocument.CoverageCedula = coverageItems[0].Cedula
 		mergedDocument.CoverageDate = coverageItems[0].Date
@@ -2070,7 +2191,12 @@ func (s *server) addWorkspacePDFs(w http.ResponseWriter, r *http.Request, job st
 	}
 	codes := r.MultipartForm.Value["pdf_codes"]
 	if len(codes) != len(files) && r.FormValue("modo") != "reemplazar" {
-		writeError(w, http.StatusBadRequest, "Asigna un nombre MSP del catálogo a cada PDF.")
+		writeError(w, http.StatusBadRequest, "No se recibió la selección de nombres de los PDFs.")
+		return
+	}
+	requestedPlanillaIDs := r.MultipartForm.Value["pdf_planilla_ids"]
+	if len(requestedPlanillaIDs) > 0 && len(requestedPlanillaIDs) != len(files) {
+		writeError(w, http.StatusBadRequest, "Selecciona el trámite Oracle para cada PDF o deja todas las asociaciones automáticas.")
 		return
 	}
 	allowedCodes, err := loadMSPPDFCodeSet()
@@ -2081,8 +2207,11 @@ func (s *server) addWorkspacePDFs(w http.ResponseWriter, r *http.Request, job st
 	}
 	if r.FormValue("modo") != "reemplazar" {
 		for _, code := range codes {
+			if strings.TrimSpace(code) == "" {
+				continue
+			}
 			if _, ok := allowedCodes[code]; !ok {
-				writeError(w, http.StatusBadRequest, "Cada PDF debe tener un nombre del catálogo MSP.")
+				writeError(w, http.StatusBadRequest, "Cada nombre asignado debe pertenecer al catálogo MSP.")
 				return
 			}
 		}
@@ -2188,7 +2317,8 @@ func (s *server) addWorkspacePDFs(w http.ResponseWriter, r *http.Request, job st
 			writeError(w, http.StatusConflict, mapErr.Error())
 			return
 		}
-		job.ExternalPDFs = append(job.ExternalPDFs, workspaceDocument{ID: strings.TrimSuffix(storedName, ".pdf"), StoredName: storedName, OriginalName: safeOriginalFilename(files[0].Filename), RelativePath: replaceRelative, Size: size, PlanillaID: planillaID})
+		receiptID := workspaceAuditorReceiptID(job, patient)
+		job.ExternalPDFs = append(job.ExternalPDFs, workspaceDocument{ID: strings.TrimSuffix(storedName, ".pdf"), StoredName: storedName, OriginalName: safeOriginalFilename(files[0].Filename), RelativePath: replaceRelative, Size: size, PlanillaID: planillaID, OraclePending: planillaID == 0 && receiptID != "", ReceiptID: receiptID})
 		if err := s.saveStagedJob(job); err != nil {
 			_ = os.Remove(destination)
 			_ = os.Rename(backupPath, destination)
@@ -2250,7 +2380,13 @@ func (s *server) addWorkspacePDFs(w http.ResponseWriter, r *http.Request, job st
 			writeError(w, http.StatusBadRequest, "Uno de los archivos no contiene un PDF válido.")
 			return
 		}
-		planillaID, mapErr := s.planillaForPatient(r.Context(), job, patient)
+		var planillaID int64
+		var mapErr error
+		if len(requestedPlanillaIDs) == len(files) {
+			planillaID, mapErr = s.planillaForPatientChoice(r.Context(), job, patient, requestedPlanillaIDs[index])
+		} else {
+			planillaID, mapErr = s.planillaForPatient(r.Context(), job, patient)
+		}
 		if mapErr != nil {
 			_ = os.Remove(sourcePath)
 			rollback()
@@ -2259,7 +2395,12 @@ func (s *server) addWorkspacePDFs(w http.ResponseWriter, r *http.Request, job st
 		}
 		// Adding a document never replaces another one. Repeated MSP codes get
 		// the next free suffix; replacement is handled by the explicit replace mode above.
-		filename, err := nextMSPPDFName(patientRoot, codes[index], "")
+		var filename string
+		if strings.TrimSpace(codes[index]) == "" {
+			filename, err = nextPendingWorkspacePDFName(patientRoot, file.Filename)
+		} else {
+			filename, err = nextMSPPDFName(patientRoot, codes[index], "")
+		}
 		if err != nil {
 			_ = os.Remove(sourcePath)
 			rollback()
@@ -2281,7 +2422,8 @@ func (s *server) addWorkspacePDFs(w http.ResponseWriter, r *http.Request, job st
 			return
 		}
 		newTargets[relative] = true
-		added = append(added, workspaceDocument{ID: strings.TrimSuffix(storedName, ".pdf"), StoredName: storedName, OriginalName: safeOriginalFilename(file.Filename), RelativePath: relative, Size: size, PlanillaID: planillaID})
+		receiptID := workspaceAuditorReceiptID(job, patient)
+		added = append(added, workspaceDocument{ID: strings.TrimSuffix(storedName, ".pdf"), StoredName: storedName, OriginalName: safeOriginalFilename(file.Filename), RelativePath: relative, Size: size, PlanillaID: planillaID, OraclePending: planillaID == 0 && receiptID != "", ReceiptID: receiptID})
 	}
 	for _, document := range added {
 		path := filepath.ToSlash(document.RelativePath)

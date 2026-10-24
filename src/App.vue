@@ -148,6 +148,16 @@ const ingestPreviewPageSize = 10
 const savedWorkspaces = ref([])
 const selectedSavedWorkspace = ref('')
 const patientDocumentsWorkspaceID = ref('')
+const auditorImportWorkspaceID = ref('')
+const auditorImportFile = ref(null)
+const auditorImportPreview = ref(null)
+const auditorImportMappings = ref({})
+const auditorImportFolderDefaults = ref({})
+const auditorImportPerFileFolders = ref({})
+const auditorImportBusy = ref(false)
+const auditorImportError = ref('')
+const auditorImportNotice = ref('')
+const auditorImportResultJobID = ref('')
 const savedWorkspacesLoading = ref(false)
 const savedWorkspacesError = ref('')
 const showWorkspaceDetails = ref(false)
@@ -324,7 +334,10 @@ function objectionPatientPDFs(patient) {
 const workspacePDFs = ref([])
 const workspacePDFRevision = ref(0)
 const workspacePatients = ref([])
+const workspacePlanillas = ref([])
+const workspaceAvailablePlanillas = ref([])
 const selectedWorkspacePDF = ref('')
+const selectedPendingPlanillaID = ref('')
 const workspaceRename = ref('')
 const workspaceBulkRenameDialog = ref(false)
 const workspaceBulkRenamePreview = ref(null)
@@ -335,6 +348,11 @@ const workspacePatient = ref('')
 const workspaceUploadFiles = ref([])
 const workspaceBusy = ref(false)
 const workspaceMutationBusy = ref(false)
+const oracleWorkspaceSyncDialog = ref(false)
+const oracleWorkspaceSyncPreview = ref(null)
+const oracleWorkspaceSyncBusy = ref(false)
+const oracleWorkspaceSyncApplying = ref(false)
+const oracleWorkspaceSyncError = ref('')
 const workspaceSending = ref(false)
 const workspaceNotice = ref('')
 const patientCoverageRows = ref([])
@@ -390,6 +408,24 @@ const workspacePatientPDFs = computed(() => {
   const prefix = workspacePatient.value ? `4. EXPEDIENTES/${workspacePatient.value}/` : ''
   return prefix ? workspacePDFs.value.filter(document => document.path.startsWith(prefix)) : []
 })
+const workspacePatientPlanillaOptions = computed(() => {
+  const options = workspacePlanillas.value
+    .filter(item => item.patient_folder === workspacePatient.value)
+    .map(item => ({
+    title: `PDI_ID ${item.pdi_id}${item.pdi_tramite ? ` · Trámite ${item.pdi_tramite}` : ''}`,
+    value: String(item.pdi_id),
+    }))
+  if (workspacePatientPDFs.value.some(document => document.registro_recepcion_oracle)) {
+    options.push({ title: 'Guardar en el registro externo · sin planilla', value: '0' })
+  }
+  return options
+})
+const workspaceAvailablePlanillaOptions = computed(() => workspaceAvailablePlanillas.value.map(item => ({
+  title: `Trámite ${item.pdi_tramite} · PDI_ID ${item.pdi_id} · ${item.pdi_servicio}`,
+  value: String(item.pdi_id),
+})))
+const workspaceUploadMissingPlanillaChoice = computed(() => workspacePatientPlanillaOptions.value.length > 1
+  && workspaceUploadFiles.value.some(item => !item.planillaId))
 const workspaceBulkRenameProposals = computed(() => workspaceBulkRenamePreview.value?.items?.filter(item => item.status === 'proposed') || [])
 const patientCoverageRowsForFolder = computed(() => workspacePatient.value
   ? patientCoverageRows.value.filter(row => row.carpeta_paciente === workspacePatient.value)
@@ -1040,6 +1076,8 @@ async function loadWorkspaceDocuments(jobId, preferPath = '') {
     workspacePDFs.value = data.documents || []
     workspacePDFRevision.value++
     workspacePatients.value = data.patients || []
+    workspacePlanillas.value = data.planillas || []
+    workspaceAvailablePlanillas.value = data.planillas_disponibles || []
     workspaceNotice.value = ''
     workspacePatient.value = workspacePatients.value.includes(workspacePatient.value) ? workspacePatient.value : (workspacePatients.value[0] || '')
     const patientPrefix = workspacePatient.value ? `4. EXPEDIENTES/${workspacePatient.value}/` : ''
@@ -1047,6 +1085,7 @@ async function loadWorkspaceDocuments(jobId, preferPath = '') {
     selectedWorkspacePDF.value = patientDocuments.some(file => file.path === preferPath)
       ? preferPath
       : patientDocuments.some(file => file.path === selectedWorkspacePDF.value) ? selectedWorkspacePDF.value : (patientDocuments[0]?.path || '')
+    selectedPendingPlanillaID.value = ''
     workspaceRename.value = standardCodeForFilename(selectedWorkspaceDocument.value?.name || '')
   } catch (error) {
     if (timedOut) workspaceNotice.value = 'La carga de PDFs tardó demasiado. Puedes cerrar el visor y volver a intentarlo.'
@@ -1084,6 +1123,7 @@ async function fetchWorkspaceJSON(url, options, timeoutMs, operation) {
 }
 function selectWorkspacePDF(path) {
   selectedWorkspacePDF.value = path
+  selectedPendingPlanillaID.value = ''
   workspaceRename.value = standardCodeForFilename(selectedWorkspaceDocument.value?.name || '')
 }
 function selectLatestPatientCoveragePDF() {
@@ -1099,6 +1139,11 @@ function coverageDocumentSequence(name = '') {
 }
 function selectWorkspacePatient(patient) {
   workspacePatient.value = patient
+  const options = workspacePatientPlanillaOptions.value
+  for (const item of workspaceUploadFiles.value) {
+    if (options.some(option => option.value === String(item.planillaId))) continue
+    item.planillaId = options.length === 1 ? options[0].value : ''
+  }
   const prefix = `4. EXPEDIENTES/${patient}/`
   if (!selectedWorkspacePDF.value.startsWith(prefix)) selectWorkspacePDF(workspacePDFs.value.find(file => file.path.startsWith(prefix))?.path || '')
 }
@@ -1125,6 +1170,26 @@ async function renameWorkspacePDF() {
   }
   finally { workspaceBusy.value = false; workspaceMutationBusy.value = false }
 }
+async function associatePendingWorkspacePDF() {
+  const jobId = ingestResult.value?.job_id
+  const document = selectedWorkspaceDocument.value
+  const planillaID = Number(selectedPendingPlanillaID.value)
+  if (!jobId || !document?.pendiente_asociacion_oracle || !planillaID || workspaceBusy.value) return
+  workspaceNotice.value = ''
+  workspaceBusy.value = true
+  workspaceMutationBusy.value = true
+  try {
+    const { response, data } = await fetchWorkspaceJSON(`/api/v1/expedientes/documentos/asociar-oracle/${encodeURIComponent(jobId)}`, {
+      method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: document.path, pdi_id: planillaID }),
+    }, 60000, 'asociar el PDF a un trámite Oracle')
+    if (!response.ok) throw new Error(data.error || 'No se pudo asociar el PDF al trámite Oracle.')
+    await loadWorkspaceDocuments(jobId, document.path)
+    workspaceNotice.value = data.message || 'El PDF quedó asociado al trámite Oracle.'
+  } catch (error) {
+    workspaceNotice.value = error.message || 'No se pudo asociar el PDF al trámite Oracle.'
+  } finally { workspaceBusy.value = false; workspaceMutationBusy.value = false }
+}
 async function previewWorkspacePDFNameSuggestions() {
   const jobId = ingestResult.value?.job_id
   const patient = workspacePatient.value
@@ -1147,6 +1212,63 @@ async function previewWorkspacePDFNameSuggestions() {
     else snackbar.value = message
   } finally {
     workspaceBulkRenameBusy.value = false
+    workspaceMutationBusy.value = false
+  }
+}
+async function previewWorkspaceOracleSync() {
+  const jobId = ingestResult.value?.job_id
+  if (!jobId || oracleWorkspaceSyncBusy.value || workspaceMutationBusy.value) return
+  oracleWorkspaceSyncError.value = ''
+  oracleWorkspaceSyncBusy.value = true
+  workspaceMutationBusy.value = true
+  try {
+    const { response, data } = await fetchWorkspaceJSON(`/api/v1/expedientes/oracle-nuevos/${encodeURIComponent(jobId)}`, {
+      method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ apply: false }),
+    }, 60000, 'buscar trámites nuevos en Oracle')
+    if (!response.ok) throw new Error(data.error || 'No se pudieron buscar trámites nuevos.')
+    if (ingestResult.value?.job_id !== jobId) return
+    oracleWorkspaceSyncPreview.value = data
+    oracleWorkspaceSyncDialog.value = true
+  } catch (error) {
+    oracleWorkspaceSyncError.value = error.message || 'No se pudieron buscar trámites nuevos.'
+    workspaceNotice.value = oracleWorkspaceSyncError.value
+  } finally {
+    oracleWorkspaceSyncBusy.value = false
+    workspaceMutationBusy.value = false
+  }
+}
+async function applyWorkspaceOracleSync() {
+  const jobId = ingestResult.value?.job_id
+  const preview = oracleWorkspaceSyncPreview.value
+  if (!jobId || !preview?.preview_id || !preview.importables || oracleWorkspaceSyncBusy.value) return
+  oracleWorkspaceSyncError.value = ''
+  oracleWorkspaceSyncBusy.value = true
+  oracleWorkspaceSyncApplying.value = true
+  workspaceMutationBusy.value = true
+  try {
+    const { response, data } = await fetchWorkspaceJSON(`/api/v1/expedientes/oracle-nuevos/${encodeURIComponent(jobId)}`, {
+      method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ apply: true, preview_id: preview.preview_id }),
+    }, 60000, 'incorporar los trámites nuevos')
+    if (!response.ok && response.status === 409 && data.preview) {
+      oracleWorkspaceSyncPreview.value = data.preview
+      oracleWorkspaceSyncError.value = data.error || 'Oracle cambió desde la vista previa. Revisa los trámites actualizados.'
+      return
+    }
+    if (!response.ok) throw new Error(data.error || 'No se pudieron incorporar los trámites nuevos.')
+    if (ingestResult.value?.job_id !== jobId) return
+    const selectedPatient = workspacePatient.value
+    await loadWorkspaceDocuments(jobId, selectedWorkspacePDF.value)
+    if (selectedPatient && workspacePatients.value.includes(selectedPatient)) workspacePatient.value = selectedPatient
+    if (workspacePatient.value) void loadPatientCoveragePlanillas(jobId)
+    workspaceNotice.value = data.message || 'Se actualizó la lista de trámites del período.'
+    oracleWorkspaceSyncDialog.value = false
+  } catch (error) {
+    oracleWorkspaceSyncError.value = error.message || 'No se pudieron incorporar los trámites nuevos.'
+  } finally {
+    oracleWorkspaceSyncBusy.value = false
+    oracleWorkspaceSyncApplying.value = false
     workspaceMutationBusy.value = false
   }
 }
@@ -1313,6 +1435,7 @@ function selectWorkspacePDFs(event) {
     id: `${file.name}-${file.size}-${file.lastModified}-${index}`,
     file,
     code: standardCodeForFilename(file.name),
+    planillaId: workspacePatientPlanillaOptions.value.length === 1 ? workspacePatientPlanillaOptions.value[0].value : '',
   }))
   event.target.value = ''
 }
@@ -1337,9 +1460,11 @@ async function addWorkspacePDFs() {
   workspaceNotice.value = ''; workspaceSending.value = true; ingestProgress.value = 0
   const form = new FormData()
   form.append('paciente', patient)
+  const allHavePlanillaChoice = workspaceUploadFiles.value.every(item => item.planillaId)
   for (const item of workspaceUploadFiles.value) {
     form.append('pdf_files', item.file)
-    form.append('pdf_codes', item.code)
+    form.append('pdf_codes', item.code || '')
+    if (allHavePlanillaChoice) form.append('pdf_planilla_ids', item.planillaId)
   }
   try {
     const data = await new Promise((resolve, reject) => {
@@ -1838,6 +1963,24 @@ const zipDownloadPreparedWorkspaces = computed(() => orderedSavedWorkspaces.valu
   .filter(workspace => ['PROCESSED', 'INCOMPLETE'].includes(workspace.status)))
 const zipDownloadWorkspaces = computed(() => zipDownloadPreparedWorkspaces.value
   .filter(workspace => zipDownloadType.value === 'OBJECIONES' ? workspace.es_objeciones : !workspace.es_objeciones))
+const auditorImportWorkspaces = computed(() => orderedSavedWorkspaces.value
+  .filter(workspace => !workspace.es_objeciones && ['PROCESSED', 'INCOMPLETE'].includes(workspace.status)))
+const auditorImportWorkspaceItems = computed(() => auditorImportWorkspaces.value.map(workspaceSavedOption))
+const auditorImportAllFilesMapped = computed(() => {
+  const folders = auditorImportPreview.value?.folders || []
+  return folders.length > 0 && folders.every(folder => folder.files.every(file => {
+    const key = `${folder.name}/${file.name}`
+    const value = auditorImportMappings.value[key]
+    return Object.prototype.hasOwnProperty.call(auditorImportMappings.value, key) && value !== null && value !== undefined && String(value) !== ''
+  }))
+})
+const auditorImportPlanillaItems = computed(() => [
+  ...((auditorImportPreview.value?.planillas || []).map(item => ({
+    title: `Trámite ${item.pdi_tramite} · PDI_ID ${item.pdi_id} · ${item.pdi_servicio}`,
+    value: String(item.pdi_id),
+  }))),
+  { title: 'No aparece en Oracle · dejar pendiente', value: '0' },
+])
 const zipDownloadTypeCounts = computed(() => ({
   RECEPCION: zipDownloadPreparedWorkspaces.value.filter(workspace => !workspace.es_objeciones).length,
   OBJECIONES: zipDownloadPreparedWorkspaces.value.filter(workspace => workspace.es_objeciones).length,
@@ -1978,6 +2121,109 @@ async function openPatientDocumentsPage() {
   patientDocumentsDialog.value = false
   patientDocumentsError.value = ''
   await loadSavedWorkspaces()
+}
+async function openAuditorFolderImportPage() {
+  activePage.value = 'auditor-folder-import'
+  auditorImportError.value = ''
+  auditorImportNotice.value = ''
+  auditorImportPreview.value = null
+  auditorImportResultJobID.value = ''
+  await loadSavedWorkspaces()
+  const preferred = patientDocumentsWorkspaceID.value || selectedSavedWorkspace.value
+  auditorImportWorkspaceID.value = auditorImportWorkspaceItems.value.some(item => item.value === preferred)
+    ? preferred
+    : (auditorImportWorkspaceItems.value[0]?.value || '')
+}
+function clearAuditorImportPreview() {
+  auditorImportPreview.value = null
+  auditorImportMappings.value = {}
+  auditorImportFolderDefaults.value = {}
+  auditorImportPerFileFolders.value = {}
+  auditorImportError.value = ''
+  auditorImportNotice.value = ''
+  auditorImportResultJobID.value = ''
+}
+function selectAuditorImportFile(value) {
+  auditorImportFile.value = Array.isArray(value) ? (value[0] || null) : (value || null)
+  clearAuditorImportPreview()
+}
+function setAuditorFolderPlanilla(folder, value) {
+  const selected = value === null || value === undefined ? '' : String(value)
+  auditorImportFolderDefaults.value = { ...auditorImportFolderDefaults.value, [folder]: selected }
+  const mappings = { ...auditorImportMappings.value }
+  for (const item of auditorImportPreview.value?.folders?.find(candidate => candidate.name === folder)?.files || []) {
+    mappings[`${folder}/${item.name}`] = selected
+  }
+  auditorImportMappings.value = mappings
+}
+function setAuditorPerFileMode(folder, enabled) {
+  auditorImportPerFileFolders.value = { ...auditorImportPerFileFolders.value, [folder]: Boolean(enabled) }
+  if (!enabled && auditorImportFolderDefaults.value[folder]) setAuditorFolderPlanilla(folder, auditorImportFolderDefaults.value[folder])
+}
+async function previewAuditorFolderImport() {
+  const jobId = auditorImportWorkspaceID.value
+  if (!jobId || !auditorImportFile.value || auditorImportBusy.value) return
+  auditorImportBusy.value = true
+  auditorImportError.value = ''
+  auditorImportNotice.value = ''
+  clearAuditorImportPreview()
+  const form = new FormData()
+  form.append('zip_file', auditorImportFile.value)
+  try {
+    const response = await fetch(`/api/v1/expedientes/importar-carpetas/${encodeURIComponent(jobId)}`, { method: 'POST', credentials: 'same-origin', body: form })
+    if (response.status === 401) { await signOut(); return }
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok) throw new Error(data.error || 'No se pudo revisar el ZIP de carpetas.')
+    auditorImportPreview.value = data
+    const defaults = {}
+    const mappings = {}
+    for (const folder of data.folders || []) {
+      defaults[folder.name] = '0'
+      for (const file of folder.files || []) mappings[`${folder.name}/${file.name}`] = '0'
+    }
+    auditorImportFolderDefaults.value = defaults
+    auditorImportMappings.value = mappings
+  } catch (error) {
+    auditorImportError.value = error.message || 'No se pudo revisar el ZIP de carpetas.'
+  } finally { auditorImportBusy.value = false }
+}
+async function applyAuditorFolderImport() {
+  const jobId = auditorImportWorkspaceID.value
+  const preview = auditorImportPreview.value
+  if (!jobId || !preview?.preview_id || !auditorImportAllFilesMapped.value || auditorImportBusy.value) return
+  auditorImportBusy.value = true
+  auditorImportError.value = ''
+  auditorImportNotice.value = ''
+  const fileMappings = {}
+  for (const folder of preview.folders) {
+    for (const file of folder.files) fileMappings[`${folder.name}/${file.name}`] = Number(auditorImportMappings.value[`${folder.name}/${file.name}`])
+  }
+  try {
+    const response = await fetch(`/api/v1/expedientes/importar-carpetas/${encodeURIComponent(jobId)}`, {
+      method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ preview_id: preview.preview_id, file_mappings: fileMappings }),
+    })
+    if (response.status === 401) { await signOut(); return }
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok) throw new Error(data.error || 'No se pudieron incorporar las carpetas.')
+    auditorImportNotice.value = data.message || 'Las carpetas quedaron incorporadas al período.'
+    auditorImportResultJobID.value = jobId
+    auditorImportPreview.value = null
+    auditorImportFile.value = null
+    auditorImportMappings.value = {}
+    auditorImportFolderDefaults.value = {}
+    auditorImportPerFileFolders.value = {}
+    await loadSavedWorkspaces()
+  } catch (error) {
+    auditorImportError.value = error.message || 'No se pudieron incorporar las carpetas.'
+  } finally { auditorImportBusy.value = false }
+}
+async function openImportedAuditorWorkspace() {
+  const jobId = auditorImportResultJobID.value
+  if (!jobId) return
+  patientDocumentsWorkspaceID.value = jobId
+  await openPatientDocumentsPage()
+  await openPatientDocumentsWorkspace(jobId)
 }
 async function openPatientDocumentsWorkspace(jobId = patientDocumentsWorkspaceID.value) {
   if (!jobId || openingSavedWorkspace.value) return
@@ -2450,7 +2696,7 @@ const visibleDocs = computed(() => {
   else items.sort((a,b) => (b.addedAt||0)-(a.addedAt||0))
   return items
 })
-  const title = computed(() => activePage.value === 'historical-archive' ? 'Archivo histórico' : activePage.value === 'planilla' ? 'Planilla digital' : activePage.value === 'coberturas' ? 'Hojas de cobertura' : activePage.value === 'individual-coverage' ? 'Cobertura individual' : activePage.value === 'objeciones' ? 'Subsanar objeciones' : activePage.value === 'patient-documents' ? 'Revisar documentos del paciente' : activePage.value === 'zip-download' ? 'Descargar expediente ZIP' : activePage.value === 'ingesta' ? 'Recepción de planillas' : activeFolder.value === 'Todos los documentos' ? 'Mis documentos' : activeFolder.value)
+  const title = computed(() => activePage.value === 'historical-archive' ? 'Archivo histórico' : activePage.value === 'planilla' ? 'Planilla digital' : activePage.value === 'coberturas' ? 'Hojas de cobertura' : activePage.value === 'individual-coverage' ? 'Cobertura individual' : activePage.value === 'objeciones' ? 'Subsanar objeciones' : activePage.value === 'patient-documents' ? 'Revisar documentos del paciente' : activePage.value === 'auditor-folder-import' ? 'Cargar carpetas de auditoría' : activePage.value === 'zip-download' ? 'Descargar expediente ZIP' : activePage.value === 'ingesta' ? 'Recepción de planillas' : activeFolder.value === 'Todos los documentos' ? 'Mis documentos' : activeFolder.value)
 function prettySize(n) { return n < 1024*1024 ? `${Math.max(1, Math.round(n/1024))} KB` : `${(n/1024/1024).toFixed(1)} MB` }
 function handleShortcut(event) {
   if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); searchInput.value?.focus() }
@@ -2529,6 +2775,7 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
         <div class="nav-label">EXPEDIENTES</div>
         <p class="nav-hint">Usa solo las opciones que necesite cada lote.</p>
         <button class="nav-item" :class="{selected:activePage==='ingesta'}" aria-label="Recibir planillas" title="Recibir planillas" @click="activePage='ingesta'"><v-icon icon="mdi-cloud-upload-outline" size="19"/><span>Recibir planillas</span></button>
+        <button class="nav-item" :class="{selected:activePage==='auditor-folder-import'}" aria-label="Cargar carpetas de auditoría" title="Cargar carpetas de auditoría" @click="openAuditorFolderImportPage"><v-icon icon="mdi-folder-zip-outline" size="19"/><span>Cargar carpetas de auditoría</span></button>
         <button class="nav-item" :class="{selected:activePage==='patient-documents'}" aria-label="Revisar documentos del paciente" title="Revisar documentos del paciente" @click="openPatientDocumentsPage"><v-icon icon="mdi-folder-account-outline" size="19"/><span>Revisar documentos del paciente</span></button>
         <button class="nav-item" :class="{selected:activePage==='coberturas'}" aria-label="Hojas de cobertura" title="Hojas de cobertura" @click="openCoverageDownloads"><v-icon icon="mdi-file-download-outline" size="19"/><span>Hojas de cobertura</span></button>
         <button class="nav-item" :class="{selected:activePage==='individual-coverage'}" aria-label="Consultar cobertura individual por cédula" title="Cobertura individual" @click="openIndividualCoveragePage"><v-icon icon="mdi-card-account-details-outline" size="19"/><span>Cobertura individual</span></button>
@@ -2841,6 +3088,93 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
             </template>
           </v-card>
         </section>
+        <section v-else-if="activePage==='auditor-folder-import'" class="content-wrap">
+          <div class="welcome-line"><div><div class="eyebrow">IMPORTAR DOCUMENTOS ORGANIZADOS</div><h1>Cargar carpetas de auditoría<span class="title-period">.</span></h1><p class="subtitle">Sube un ZIP con una carpeta por paciente y sus PDFs. Después podrás revisarlos y renombrarlos en Revisar documentos del paciente.</p></div></div>
+          <v-card class="planilla-card saved-workspaces-card" rounded="xl" elevation="0">
+            <div class="patient-documents-picker-row">
+              <WorkspacePicker
+                v-model="auditorImportWorkspaceID"
+                :workspaces="auditorImportWorkspaces"
+                label="Período de destino"
+                placeholder="Busca servicio, período o ID"
+                icon="mdi-folder-clock-outline"
+                :loading="savedWorkspacesLoading"
+                :service-label="coverageServiceLabel"
+                :month-label="coverageMonthLabel"
+                :status-label="workspaceStatusLabel"
+                :received-at="workspaceReceivedAt"
+                empty-message="No hay períodos preparados para recibir carpetas."
+                @update:model-value="clearAuditorImportPreview"
+              />
+              <v-btn type="button" icon="mdi-refresh" variant="text" aria-label="Actualizar períodos" :loading="savedWorkspacesLoading" @click="loadSavedWorkspaces"/>
+            </div>
+            <v-alert class="mt-4" type="info" variant="tonal" density="comfortable">
+              El ZIP debe contener carpetas con nombres de pacientes y PDFs directamente dentro. Puedes comprimir una carpeta contenedora; la aplicación conservará los nombres de paciente y la descarga final las numerará en orden alfabético.
+            </v-alert>
+            <v-file-input
+              class="mt-4"
+              :model-value="auditorImportFile"
+              label="ZIP de carpetas de pacientes"
+              accept=".zip,application/zip"
+              prepend-icon="mdi-folder-zip-outline"
+              :disabled="auditorImportBusy || !auditorImportWorkspaceID"
+              @update:model-value="selectAuditorImportFile"
+            />
+            <div class="coverage-toolbar">
+              <span class="coverage-footnote">Asocia los PDFs a su trámite Oracle. Si aún no existe, elige «No aparece en Oracle · dejar pendiente»; podrás vincularlo después sin perder el archivo.</span>
+              <v-btn type="button" color="primary" prepend-icon="mdi-magnify" :loading="auditorImportBusy && !auditorImportPreview" :disabled="!auditorImportFile || !auditorImportWorkspaceID || auditorImportBusy" @click="previewAuditorFolderImport">Revisar ZIP</v-btn>
+            </div>
+            <v-alert v-if="auditorImportError" class="mt-4" type="error" variant="tonal" density="comfortable">{{ auditorImportError }}</v-alert>
+            <v-alert v-if="auditorImportNotice" class="mt-4" type="success" variant="tonal" density="comfortable">
+              {{ auditorImportNotice }}
+              <v-btn v-if="auditorImportResultJobID" type="button" size="small" variant="text" @click="openImportedAuditorWorkspace">Abrir en Revisar documentos del paciente</v-btn>
+            </v-alert>
+            <template v-if="auditorImportPreview">
+              <v-alert class="mt-4" type="info" variant="tonal" density="comfortable">
+              Vista previa: {{ auditorImportPreview.folders.length }} carpetas y {{ auditorImportPreview.total_pdfs }} PDFs. Cada carpeta tendrá un registro Oracle propio; asocia cada PDF a un trámite real o vincúlalo más tarde. La incorporación conserva las fuentes originales.
+              </v-alert>
+              <v-alert v-if="!auditorImportPreview.planillas?.length" class="mt-4" type="warning" variant="tonal" density="comfortable">Oracle no devolvió trámites para este período. Los PDFs quedarán registrados en Oracle bajo el registro externo de su carpeta y podrás vincularlos cuando aparezca la planilla.</v-alert>
+              <v-card v-for="folder in auditorImportPreview.folders" :key="folder.name" class="mt-4 pa-4" rounded="lg" variant="outlined">
+                <div class="d-flex align-center justify-space-between flex-wrap ga-2 mb-3">
+                  <strong>{{ folder.name }}</strong><v-chip size="small" color="primary" variant="tonal">{{ folder.files.length }} PDFs</v-chip>
+                  <v-select
+                    class="auditor-folder-default-select"
+                    :model-value="auditorImportFolderDefaults[folder.name] || ''"
+                    :items="auditorImportPlanillaItems"
+                    label="Aplicar un trámite a todos"
+                    density="compact"
+                    variant="outlined"
+                    hide-details
+                    clearable
+                    :disabled="auditorImportBusy"
+                    @update:model-value="setAuditorFolderPlanilla(folder.name, $event)"
+                  />
+                </div>
+                <div v-for="file in folder.files" :key="file.name" class="d-flex align-center flex-wrap ga-3 py-2">
+                  <span class="flex-grow-1">{{ file.name }} <small>· {{ prettySize(file.size) }}</small></span>
+                </div>
+                <v-checkbox :model-value="auditorImportPerFileFolders[folder.name] || false" density="compact" hide-details label="Esta carpeta contiene varios trámites; elegir uno por PDF" :disabled="auditorImportBusy" @update:model-value="setAuditorPerFileMode(folder.name, $event)"/>
+                <div v-if="auditorImportPerFileFolders[folder.name]" v-for="file in folder.files" :key="`${folder.name}/${file.name}`" class="d-flex align-center flex-wrap ga-3 py-2">
+                  <span class="flex-grow-1">{{ file.name }}</span>
+                  <v-select
+                    v-model="auditorImportMappings[folder.name + '/' + file.name]"
+                    :items="auditorImportPlanillaItems"
+                    :label="`Trámite de ${file.name}`"
+                    density="compact"
+                    variant="outlined"
+                    hide-details
+                    class="auditor-file-planilla-select"
+                    :disabled="auditorImportBusy"
+                  />
+                </div>
+              </v-card>
+              <div class="coverage-toolbar mt-4">
+                <span class="coverage-footnote">La descarga del período numerará las carpetas por orden alfabético.</span>
+                <v-btn type="button" color="primary" prepend-icon="mdi-folder-plus-outline" :loading="auditorImportBusy && Boolean(auditorImportPreview)" :disabled="!auditorImportAllFilesMapped || auditorImportBusy" @click="applyAuditorFolderImport">Incorporar carpetas</v-btn>
+              </div>
+            </template>
+          </v-card>
+        </section>
         <section v-else-if="activePage==='patient-documents'" class="content-wrap">
           <div class="welcome-line"><div><div class="eyebrow">DOCUMENTOS DEL PACIENTE</div><h1>Revisar documentos del paciente<span class="title-period">.</span></h1><p class="subtitle">Elige un período guardado para revisar las carpetas de pacientes y sus PDFs.</p></div></div>
           <v-card class="planilla-card saved-workspaces-card" rounded="xl" elevation="0">
@@ -3077,7 +3411,7 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
       <v-card class="patient-documents-modal">
         <div class="patient-documents-header">
           <div><h2 id="patient-documents-title">Documentos del paciente</h2><p>{{ coverageServiceLabel(ingestResult?.tipo_servicio) }} · {{ coverageMonthLabel(ingestResult?.mes) }} {{ ingestResult?.anio }}</p></div>
-          <div class="patient-documents-header-actions"><v-btn type="button" icon="mdi-refresh" variant="text" aria-label="Actualizar lista de PDFs" :loading="workspaceBusy" :disabled="workspaceBusy || workspaceBulkRenameBusy" @click="loadWorkspaceDocuments(ingestResult.job_id, selectedWorkspacePDF)"/><v-btn type="button" variant="tonal" prepend-icon="mdi-close" :disabled="workspaceBulkRenameApplying" @click="patientDocumentsDialog = false">Cerrar</v-btn></div>
+          <div class="patient-documents-header-actions"><v-btn type="button" size="small" color="primary" variant="tonal" prepend-icon="mdi-database-sync-outline" :loading="oracleWorkspaceSyncBusy && !oracleWorkspaceSyncApplying" :disabled="workspaceBusy || workspaceMutationBusy || workspaceBulkRenameBusy || oracleWorkspaceSyncBusy || workspaceSending || mergeSending || mergeAllSending" @click="previewWorkspaceOracleSync">Buscar trámites nuevos</v-btn><v-btn type="button" icon="mdi-refresh" variant="text" aria-label="Actualizar lista de PDFs" :loading="workspaceBusy" :disabled="workspaceBusy || workspaceBulkRenameBusy || oracleWorkspaceSyncBusy" @click="loadWorkspaceDocuments(ingestResult.job_id, selectedWorkspacePDF)"/><v-btn type="button" variant="tonal" prepend-icon="mdi-close" :disabled="workspaceBulkRenameApplying || oracleWorkspaceSyncApplying" @click="patientDocumentsDialog = false">Cerrar</v-btn></div>
         </div>
         <v-card-text v-if="ingestResult?.output" class="patient-documents-body">
               <v-alert v-if="workspaceSending || workspaceMutationBusy || mergeSending || mergeAllSending" type="info" variant="tonal" density="comfortable" class="workspace-notice">
@@ -3138,7 +3472,7 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
                   <div class="workspace-file-list-toolbar"><div class="workspace-file-count">{{ workspacePatientPDFs.length }} PDFs en esta carpeta</div><v-btn type="button" size="small" color="primary" variant="tonal" prepend-icon="mdi-rename-box-outline" :loading="workspaceBulkRenameBusy && !workspaceBulkRenameApplying" :disabled="!workspacePatientPDFs.length || workspaceBusy || workspaceBulkRenameBusy || mergeSending || mergeAllSending" @click="previewWorkspacePDFNameSuggestions">Actualizar nombres</v-btn></div>
                   <div v-for="document in workspacePatientPDFs" :key="document.path" class="workspace-file-entry">
                     <button type="button" class="workspace-file-row" :title="document.name" :aria-pressed="selectedWorkspacePDF === document.path" :class="{ selected: selectedWorkspacePDF === document.path }" @click.prevent="selectWorkspacePDF(document.path)">
-                      <v-icon icon="mdi-file-pdf-box" color="error" size="20"/><span><strong>{{ document.name }}</strong><small>{{ prettySize(document.size) }}</small><small v-if="document.fecha_cobertura || document.cedula_cobertura">{{ coverageDocumentSummary(document) }}</small></span><v-chip v-if="isPendingWorkspaceDocument(document)" size="x-small" color="warning" variant="tonal">Sin nombre MSP</v-chip><v-chip v-else-if="workspaceFusionGroups.some(group => group.paths.includes(document.path))" size="x-small" color="warning" variant="tonal">Fusionar después</v-chip><v-icon v-if="selectedWorkspacePDF === document.path" icon="mdi-eye-outline" size="18"/>
+                      <v-icon icon="mdi-file-pdf-box" color="error" size="20"/><span><strong>{{ document.name }}</strong><small>{{ prettySize(document.size) }}</small><small v-if="document.fecha_cobertura || document.cedula_cobertura">{{ coverageDocumentSummary(document) }}</small></span><v-chip v-if="document.registro_recepcion_oracle" size="x-small" :color="document.pendiente_asociacion_oracle ? 'warning' : 'success'" variant="tonal">{{ document.pendiente_asociacion_oracle ? `Registro Oracle ${document.registro_recepcion_oracle} · sin planilla` : `Registro Oracle ${document.registro_recepcion_oracle}` }}</v-chip><v-chip v-if="isPendingWorkspaceDocument(document)" size="x-small" color="warning" variant="tonal">Sin nombre MSP</v-chip><v-chip v-else-if="workspaceFusionGroups.some(group => group.paths.includes(document.path))" size="x-small" color="warning" variant="tonal">Fusionar después</v-chip><v-icon v-if="selectedWorkspacePDF === document.path" icon="mdi-eye-outline" size="18"/>
                     </button>
                     <v-btn type="button" prepend-icon="mdi-delete-outline" variant="tonal" size="small" color="error" class="workspace-delete-pdf-btn" :aria-label="`Quitar ${document.name}`" title="Quitar PDF de esta carpeta" :disabled="workspaceBulkRenameBusy" @click="requestDeleteWorkspacePDF(document.path)">Quitar</v-btn>
                   </div>
@@ -3149,6 +3483,13 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
                   <iframe v-if="workspacePDFURL" :key="workspacePDFURL" :src="workspacePDFURL" :title="selectedWorkspaceDocument?.name || 'Vista previa del PDF'" />
                   <div v-else class="workspace-empty">Selecciona un PDF de la lista para verlo aquí.</div>
                   <div v-if="selectedWorkspaceDocument" class="workspace-rename-panel">
+                    <template v-if="selectedWorkspaceDocument.pendiente_asociacion_oracle">
+                      <v-alert class="mb-3" type="warning" variant="tonal" density="comfortable">Este PDF ya está registrado en Oracle con el identificador {{ selectedWorkspaceDocument.registro_recepcion_oracle }} y puedes descargar el expediente. Cuando exista la planilla real, asócialo aquí para que también aparezca vinculado a su PDI_ID.</v-alert>
+                      <div class="workspace-edit-row mb-3">
+                        <v-autocomplete v-model="selectedPendingPlanillaID" :items="workspaceAvailablePlanillaOptions" item-title="title" item-value="value" label="Asociar al trámite Oracle" placeholder="Busca por PDI_TRAMITE o PDI_ID" prepend-inner-icon="mdi-database-search-outline" density="comfortable" variant="outlined" clearable hide-details/>
+                        <v-btn type="button" color="primary" variant="tonal" prepend-icon="mdi-link-variant" :loading="workspaceBusy" :disabled="!selectedPendingPlanillaID || workspaceBulkRenameBusy" @click="associatePendingWorkspacePDF">Asociar trámite</v-btn>
+                      </div>
+                    </template>
                     <div class="workspace-rename-copy"><strong>{{ isPendingWorkspaceDocument(selectedWorkspaceDocument) ? 'Asigna un nombre del catálogo MSP' : 'Cambiar nombre del documento' }}</strong><small>La vista previa ayuda a revisar el contenido. Asignar un nombre organiza el PDF, pero no confirma su clasificación.</small></div>
                     <div class="workspace-edit-row">
                       <v-autocomplete v-model="workspaceRename" :items="mspPDFOptions" item-title="title" item-value="value" :label="isPendingWorkspaceDocument(selectedWorkspaceDocument) ? 'Nombre MSP' : 'Nombre estándar MSP'" placeholder="Selecciona el tipo de documento" prepend-inner-icon="mdi-rename-box-outline" density="comfortable" variant="outlined" clearable hide-details/>
@@ -3165,13 +3506,14 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
                 <v-btn type="button" color="warning" variant="tonal" prepend-icon="mdi-file-replace-outline" :disabled="!selectedWorkspaceDocument || workspaceSending || workspaceBulkRenameBusy" @click="replacePDFInput?.click()">Reemplazar PDF seleccionado</v-btn>
               </div>
               <div v-if="workspaceUploadFiles.length" class="workspace-upload-queue">
-                <div class="workspace-upload-queue-heading"><strong>{{ workspaceUploadFiles.length }} PDF{{ workspaceUploadFiles.length === 1 ? '' : 's' }} para añadir</strong><span>Asigna el paciente y nombre MSP. Si ya existe ese tipo de documento, se añadirá con el siguiente sufijo disponible para revisar o fusionar después.</span></div>
+                <div class="workspace-upload-queue-heading"><strong>{{ workspaceUploadFiles.length }} PDF{{ workspaceUploadFiles.length === 1 ? '' : 's' }} para añadir</strong><span>Asigna el paciente. El nombre MSP es opcional: puedes subirlos como pendientes y luego usar «Actualizar nombres» para clasificarlos en lote.</span></div>
                 <div v-for="(item, index) in workspaceUploadFiles" :key="item.id" class="workspace-upload-item">
                   <div class="workspace-upload-source"><v-icon icon="mdi-file-pdf-box" color="error"/><span><strong>{{ item.file.name }}</strong><small>{{ prettySize(item.file.size) }}</small></span></div>
-                <v-autocomplete v-model="item.code" :items="mspPDFOptions" item-title="title" item-value="value" label="Nombre estándar MSP" placeholder="Selecciona el documento" density="compact" variant="outlined" clearable hide-details @update:model-value="item.replaceExisting = workspacePatientPDFs.some(document => document.name.toLowerCase() === (item.code || '').toLowerCase())"/>
+                  <v-select v-if="workspacePatientPlanillaOptions.length > 1" v-model="item.planillaId" :items="workspacePatientPlanillaOptions" label="Trámite Oracle" density="compact" variant="outlined" clearable hide-details/>
+                  <v-autocomplete v-model="item.code" :items="mspPDFOptions" item-title="title" item-value="value" label="Nombre MSP (opcional)" placeholder="Dejar para clasificar después" density="compact" variant="outlined" clearable hide-details @update:model-value="item.replaceExisting = workspacePatientPDFs.some(document => document.name.toLowerCase() === (item.code || '').toLowerCase())"/>
                   <v-btn type="button" icon="mdi-close" variant="text" size="small" :aria-label="`Quitar ${item.file.name} de la selección`" @click="removeQueuedWorkspacePDF(index)"/>
                 </div>
-                <div class="workspace-upload-submit"><span>{{ queuedWorkspaceDuplicates ? `${queuedWorkspaceDuplicates} PDF(s) se añadirán con sufijo; el documento actual se conserva. ` : '' }}Para sustituir uno existente, usa “Reemplazar PDF seleccionado”.</span><v-btn type="button" color="primary" prepend-icon="mdi-cloud-upload-outline" :loading="workspaceSending" :disabled="!workspacePatient || workspaceUploadFiles.some(item => !item.code)" @click="addWorkspacePDFs">Añadir PDFs</v-btn></div>
+                <div class="workspace-upload-submit"><span>{{ queuedWorkspaceDuplicates ? `${queuedWorkspaceDuplicates} PDF(s) se añadirán con sufijo; el documento actual se conserva. ` : '' }}{{ workspaceUploadMissingPlanillaChoice ? 'Elige el trámite Oracle para cada PDF.' : 'Los pendientes recibirán un nombre temporal y se conservarán las fuentes originales.' }}</span><v-btn type="button" color="primary" prepend-icon="mdi-cloud-upload-outline" :loading="workspaceSending" :disabled="!workspacePatient || workspaceUploadMissingPlanillaChoice" @click="addWorkspacePDFs">Añadir PDFs</v-btn></div>
               </div>
               <div v-if="workspaceSending" class="ingest-progress"><div><span>Guardando PDFs en el espacio de trabajo…</span><strong>{{ ingestProgress }}%</strong></div><v-progress-linear :model-value="ingestProgress" color="primary" rounded/></div>
               <v-dialog v-model="mergePDFDialog" max-width="1400">
@@ -3193,6 +3535,33 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
                   <v-card-title>Fusionar todos los grupos pendientes</v-card-title>
                   <v-card-text><p>Se fusionarán {{ workspaceFusionQueue.length }} grupos por paciente y tipo de documento. Las coberturas se agrupan además por PDI_ID, así se pueden unir hojas de varias fechas y cédulas del mismo trámite sin mezclar trámites distintos. El orden actual de cada grupo define las páginas. Las fuentes originales se conservarán en el historial privado; si una fusión falla, las siguientes quedarán pendientes.</p></v-card-text>
                   <v-card-actions><v-spacer/><v-btn type="button" variant="text" @click="mergeAllConfirmDialog=false">Cancelar</v-btn><v-btn type="button" color="warning" prepend-icon="mdi-playlist-check" @click="confirmMergeAllPending">Fusionar {{ workspaceFusionQueue.length }} grupos</v-btn></v-card-actions>
+                </v-card>
+              </v-dialog>
+              <v-dialog v-model="oracleWorkspaceSyncDialog" max-width="880" :persistent="oracleWorkspaceSyncApplying">
+                <v-card class="action-dialog">
+                  <v-card-title>Trámites nuevos de Oracle</v-card-title>
+                  <v-alert v-if="oracleWorkspaceSyncError" type="warning" variant="tonal" role="alert" class="mx-6">{{ oracleWorkspaceSyncError }}</v-alert>
+                  <v-card-text v-if="oracleWorkspaceSyncPreview">
+                    <p>Se consultó el mismo servicio y período. Al incorporar, se crearán las carpetas que falten y se conservarán los PDFs y correcciones existentes. Las carpetas nuevas quedan vacías para que después subas uno o varios PDFs y uses «Actualizar nombres» para clasificarlos.</p>
+                    <v-alert v-if="!oracleWorkspaceSyncPreview.baseline_ready" type="info" variant="tonal" density="compact" class="mb-3">Este expediente se preparó antes de guardar una línea base de Oracle. La lista incluye trámites que aún no están asociados a los PDFs actuales; revisa si ya existían antes de incorporarlos.</v-alert>
+                    <div class="workspace-name-preview-summary">
+                      <v-chip size="small" color="primary" variant="tonal">{{ oracleWorkspaceSyncPreview.importables }} trámites para incorporar</v-chip>
+                      <v-chip v-if="oracleWorkspaceSyncPreview.sin_paciente" size="small" color="warning" variant="tonal">{{ oracleWorkspaceSyncPreview.sin_paciente }} sin nombre de paciente</v-chip>
+                    </div>
+                    <div v-if="oracleWorkspaceSyncPreview.items?.length" class="workspace-name-preview-list">
+                      <div v-for="item in oracleWorkspaceSyncPreview.items" :key="item.pdi_id" class="workspace-name-preview-row">
+                        <div class="workspace-name-preview-name"><strong>{{ item.paciente || 'Paciente sin nombre en Oracle' }}</strong><small>{{ item.carpeta_paciente || 'Requiere corregir el registro en Oracle' }}</small></div>
+                        <div class="workspace-name-preview-name"><strong>PDI_TRAMITE {{ item.pdi_tramite }}</strong><small>PDI_ID {{ item.pdi_id }} · {{ item.pdi_servicio }}</small></div>
+                        <v-chip size="x-small" :color="item.carpeta_paciente ? 'primary' : 'warning'" variant="tonal">{{ item.carpeta_paciente ? 'Nuevo' : 'Pendiente' }}</v-chip>
+                      </div>
+                    </div>
+                    <div v-else class="workspace-empty">Oracle no tiene trámites nuevos para este período.</div>
+                  </v-card-text>
+                  <v-card-actions>
+                    <v-spacer/>
+                    <v-btn type="button" variant="text" :disabled="oracleWorkspaceSyncApplying" @click="oracleWorkspaceSyncDialog=false">Cerrar</v-btn>
+                    <v-btn type="button" color="primary" prepend-icon="mdi-folder-plus-outline" :loading="oracleWorkspaceSyncApplying" :disabled="!oracleWorkspaceSyncPreview?.importables || oracleWorkspaceSyncBusy" @click="applyWorkspaceOracleSync">{{ oracleWorkspaceSyncApplying ? 'Incorporando…' : `Incorporar ${oracleWorkspaceSyncPreview?.importables || 0} trámites` }}</v-btn>
+                  </v-card-actions>
                 </v-card>
               </v-dialog>
               <v-dialog v-model="workspaceBulkRenameDialog" max-width="980" :persistent="workspaceBulkRenameApplying">

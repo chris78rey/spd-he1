@@ -15,15 +15,29 @@ Usa esta skill para compilar y desplegar SPD MSP en `folio.service`. No la uses 
 
 ## Despliegue
 
-Con autorización explícita del usuario, ejecuta esta secuencia exacta desde cualquier directorio:
+La autorización administrativa sin contraseña se instala una sola vez. Antes del primer despliegue, comprueba si el wrapper limitado ya está autorizado:
 
 ```bash
-cd /home/spd-he1/codex_projects/spd_msp && sudo -v && sudo systemctl start folio.service && /home/spd-he1/.codex/skills/folio-runtime-freshness/scripts/deploy-runtime.sh --confirm-deploy
+sudo -n -l /usr/local/sbin/spd-deploy-runtime /tmp/folio-runtime-deploy.ABC123
 ```
 
-El helper compila Go y Vue, verifica que el proceso del servicio no haya cambiado ni tenga trabajos hijos activos, guarda una copia de recuperación, instala los candidatos y valida el ejecutable cargado y los recursos HTTP. Conserva las copias de recuperación que informa.
+Si el wrapper aún no está autorizado, indícale al usuario que ejecute una vez desde una terminal del servidor:
 
-Si `sudo` pide una contraseña y esta sesión no permite introducirla de forma segura, interrumpe el comando y proporciona al usuario la misma línea para ejecutarla en una terminal del servidor. Nunca solicites ni aceptes la contraseña por chat. No reintentes automáticamente si el helper aborta por trabajos activos, por un cambio de proceso o por otro fallo.
+```bash
+cd /home/spd-he1/codex_projects/spd_msp && bash scripts/install-runtime-deploy-access.sh
+```
+
+La instalación pide la contraseña de `sudo` para crear una regla `NOPASSWD` limitada al wrapper root de SPD MSP. No guarda la contraseña. Cuando termine, los siguientes despliegues no requieren ingresarla.
+
+Con autorización explícita del usuario y con `folio.service` activo, ejecuta el helper directamente, sin `sudo -v` ni `sudo systemctl`:
+
+```bash
+cd /home/spd-he1/codex_projects/spd_msp && /home/spd-he1/.codex/skills/folio-runtime-freshness/scripts/deploy-runtime.sh --confirm-deploy
+```
+
+El helper compila Go y Vue, verifica que el proceso del servicio no haya cambiado ni tenga trabajos hijos activos, guarda una copia de recuperación, instala los candidatos mediante el wrapper limitado y valida el ejecutable cargado y los recursos HTTP. Conserva las copias de recuperación que informa. Si el wrapper indica que el servicio no está activo, detente e informa el estado; no invoques `systemctl` directamente.
+
+Si la instalación inicial requiere contraseña, el usuario debe ejecutarla en una terminal interactiva. Nunca solicites ni aceptes la contraseña por chat. No reintentes automáticamente si el helper aborta por trabajos activos, por un cambio de proceso o por otro fallo.
 
 Después de `DEPLOY_OK`, ejecuta el verificador de solo lectura:
 

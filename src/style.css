@@ -457,6 +457,8 @@ body{min-width:320px}
 .objection-existing-choices .v-btn__content{white-space:normal;overflow-wrap:anywhere}
 .patient-documents-picker-row,.zip-download-picker-row{align-items:start}
 .patient-documents-picker-row>.v-btn,.zip-download-picker-row>.v-btn{width:48px;height:48px;min-width:48px;margin-top:4px}
+.auditor-folder-default-select{flex:0 1 480px;min-width:min(100%,360px)}
+.auditor-file-planilla-select{flex:0 1 480px;min-width:min(100%,360px)}
 .workspace-picker:focus-within{min-width:0}
 .zip-readiness-alert p{margin:0 0 8px;font-size:15px;line-height:1.5}
 .zip-readiness-list{display:grid;gap:5px;margin:6px 0 0;padding-left:24px;font-size:14px;line-height:1.5;overflow-wrap:anywhere}
@@ -473,6 +475,7 @@ body{min-width:320px}
   .objection-source-picker-row>.v-btn,.objection-workspace-picker-buttons>.v-btn{width:100%}
   .objection-workspace-picker-buttons{display:grid;grid-template-columns:1fr 1fr}
   .patient-documents-picker-row>.v-btn,.zip-download-picker-row>.v-btn{justify-self:end;margin-top:0}
+  .auditor-folder-default-select,.auditor-file-planilla-select{flex-basis:100%;min-width:100%}
   .coverage-picker-buttons{display:grid;grid-template-columns:1fr}
   .coverage-picker-buttons>.v-btn{width:100%}
   .workspace-picker-results{align-items:flex-start;flex-direction:column}

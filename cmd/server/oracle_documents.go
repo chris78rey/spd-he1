@@ -16,6 +16,8 @@ import (
 
 const pdiDocumentTable = "PDI_DOCUMENTO_DIGITAL"
 const pdiDocumentSequence = "SEQ_PDI_DOCUMENTO"
+const auditorReceiptTable = "SPD_AUDITORIA_RECEPCION"
+const auditorReceiptPDFTable = "SPD_AUDITORIA_RECEPCION_PDF"
 
 type oracleDocument struct {
 	path       string
@@ -59,6 +61,139 @@ func canonicalPath(filePath string) (string, error) {
 	return abs, nil
 }
 
+func syncOracleAuditorReceipts(ctx context.Context, tx *sql.Tx, schema string, job *stagedJob, packageRoot string) error {
+	if len(job.AuditorReceipts) == 0 {
+		return nil
+	}
+	receiptTable := oracleQualified(schema, auditorReceiptTable)
+	documentTable := oracleQualified(schema, auditorReceiptPDFTable)
+	receipts := make(map[string]auditorReceipt, len(job.AuditorReceipts))
+	for _, receipt := range job.AuditorReceipts {
+		if len(receipt.ID) != 40 || receipt.Patient == "" {
+			return errors.New("el registro externo de auditoría tiene una identidad inválida")
+		}
+		receipts[receipt.ID] = receipt
+		merge := "MERGE INTO " + receiptTable + " t USING (SELECT :b_receipt_id AER_ID FROM DUAL) s ON (t.AER_ID = s.AER_ID) " +
+			"WHEN MATCHED THEN UPDATE SET t.AER_JOB_ID=:b_job_id, t.AER_CARPETA=:b_folder, t.AER_SERVICIO=:b_service, t.AER_MES=:b_month, t.AER_ANIO=:b_year, t.AER_ESTADO=:b_status, t.AER_FECHA_ACTUALIZACION=SYSDATE " +
+			"WHEN NOT MATCHED THEN INSERT (AER_ID,AER_JOB_ID,AER_CARPETA,AER_SERVICIO,AER_MES,AER_ANIO,AER_ESTADO,AER_USUARIO,AER_FECHA_REGISTRO,AER_FECHA_ACTUALIZACION) VALUES (:b_receipt_id,:b_job_id,:b_folder,:b_service,:b_month,:b_year,:b_status,:b_username,SYSDATE,SYSDATE)"
+		if _, err := tx.ExecContext(ctx, merge,
+			sql.Named("b_receipt_id", receipt.ID), sql.Named("b_job_id", job.ID), sql.Named("b_folder", receipt.Patient),
+			sql.Named("b_service", receipt.Service), sql.Named("b_month", receipt.Month), sql.Named("b_year", receipt.Year),
+			sql.Named("b_status", receipt.Status), sql.Named("b_username", job.Username)); err != nil {
+			return fmt.Errorf("no se pudo guardar el registro Oracle de la carpeta %s: %w", receipt.Patient, err)
+		}
+	}
+	activeByReceipt := make(map[string]map[string]bool, len(receipts))
+	latestByPath := make(map[string]workspaceDocument)
+	for _, doc := range job.ExternalPDFs {
+		if doc.ReceiptID != "" && receiptsHas(receipts, doc.ReceiptID) {
+			path := filepath.ToSlash(filepath.Clean(filepath.FromSlash(doc.RelativePath)))
+			latestByPath[path] = doc
+		}
+	}
+	for _, doc := range latestByPath {
+		if doc.ReceiptID == "" || !receiptsHas(receipts, doc.ReceiptID) {
+			continue
+		}
+		path := filepath.ToSlash(filepath.Clean(filepath.FromSlash(doc.RelativePath)))
+		fullPath, err := safeWorkspacePath(packageRoot, path)
+		if err != nil {
+			return fmt.Errorf("ruta inválida para PDF de auditoría: %s", path)
+		}
+		if info, statErr := os.Stat(fullPath); statErr != nil || !info.Mode().IsRegular() {
+			continue
+		}
+		hash, err := fileSHA256(fullPath)
+		if err != nil {
+			return fmt.Errorf("no se pudo calcular la huella del PDF de auditoría %s: %w", doc.OriginalName, err)
+		}
+		if activeByReceipt[doc.ReceiptID] == nil {
+			activeByReceipt[doc.ReceiptID] = make(map[string]bool)
+		}
+		activeByReceipt[doc.ReceiptID][doc.ID] = true
+		var pdi any
+		if doc.PlanillaID > 0 && !doc.OraclePending {
+			pdi = doc.PlanillaID
+		}
+		var currentVersion int
+		var currentHash, currentPath string
+		lookup := "SELECT AED_VERSION, NVL(AED_SHA256,'-'), AED_RUTA FROM " + documentTable + " WHERE AED_UUID=:b_uuid AND AED_ESTADO='VIGENTE'"
+		err = tx.QueryRowContext(ctx, lookup, sql.Named("b_uuid", doc.ID)).Scan(&currentVersion, &currentHash, &currentPath)
+		if err == nil && strings.EqualFold(currentHash, hash) && currentPath == fullPath {
+			update := "UPDATE " + documentTable + " SET AED_PDI_ID=:b_pdi_id, AED_NOMBRE_ARCHIVO=:b_name, AED_NOMBRE_ORIGEN=:b_original, AED_USUARIO=:b_username WHERE AED_UUID=:b_uuid AND AED_VERSION=:b_version"
+			if _, err := tx.ExecContext(ctx, update, sql.Named("b_pdi_id", pdi), sql.Named("b_name", filepath.Base(fullPath)), sql.Named("b_original", doc.OriginalName), sql.Named("b_username", job.Username), sql.Named("b_uuid", doc.ID), sql.Named("b_version", currentVersion)); err != nil {
+				return fmt.Errorf("no se pudo actualizar el registro del PDF %s: %w", doc.OriginalName, err)
+			}
+			continue
+		}
+		if err != nil && err != sql.ErrNoRows {
+			return fmt.Errorf("no se pudo consultar el historial del PDF %s: %w", doc.OriginalName, err)
+		}
+		if err == nil {
+			if _, err := tx.ExecContext(ctx, "UPDATE "+documentTable+" SET AED_ESTADO='REEMPLAZADO' WHERE AED_UUID=:b_uuid AND AED_VERSION=:b_version", sql.Named("b_uuid", doc.ID), sql.Named("b_version", currentVersion)); err != nil {
+				return fmt.Errorf("no se pudo conservar la versión previa del PDF %s: %w", doc.OriginalName, err)
+			}
+		}
+		var maxVersion int
+		if err := tx.QueryRowContext(ctx, "SELECT NVL(MAX(AED_VERSION),0) FROM "+documentTable+" WHERE AED_UUID=:b_uuid", sql.Named("b_uuid", doc.ID)).Scan(&maxVersion); err != nil {
+			return fmt.Errorf("no se pudo calcular la versión del PDF %s: %w", doc.OriginalName, err)
+		}
+		insert := "INSERT INTO " + documentTable + " (AED_UUID,AER_ID,AED_VERSION,AED_PDI_ID,AED_NOMBRE_ARCHIVO,AED_NOMBRE_ORIGEN,AED_RUTA,AED_SHA256,AED_ESTADO,AED_USUARIO,AED_FECHA_REGISTRO) VALUES (:b_uuid,:b_receipt_id,:b_version,:b_pdi_id,:b_name,:b_original,:b_path,:b_sha,'VIGENTE',:b_username,SYSDATE)"
+		if _, err := tx.ExecContext(ctx, insert, sql.Named("b_uuid", doc.ID), sql.Named("b_receipt_id", doc.ReceiptID), sql.Named("b_version", maxVersion+1), sql.Named("b_pdi_id", pdi), sql.Named("b_name", filepath.Base(fullPath)), sql.Named("b_original", doc.OriginalName), sql.Named("b_path", fullPath), sql.Named("b_sha", hash), sql.Named("b_username", job.Username)); err != nil {
+			return fmt.Errorf("no se pudo registrar en Oracle el PDF %s: %w", doc.OriginalName, err)
+		}
+	}
+	for id, receipt := range receipts {
+		rows, err := tx.QueryContext(ctx, "SELECT AED_UUID,AED_VERSION FROM "+documentTable+" WHERE AER_ID=:b_receipt_id AND AED_ESTADO='VIGENTE'", sql.Named("b_receipt_id", id))
+		if err != nil {
+			return fmt.Errorf("no se pudo revisar el historial Oracle de la carpeta %s: %w", receipt.Patient, err)
+		}
+		type stale struct {
+			uuid    string
+			version int
+		}
+		var staleRows []stale
+		for rows.Next() {
+			var item stale
+			if err := rows.Scan(&item.uuid, &item.version); err != nil {
+				rows.Close()
+				return err
+			}
+			if !activeByReceipt[id][item.uuid] {
+				staleRows = append(staleRows, item)
+			}
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return err
+		}
+		rows.Close()
+		for _, item := range staleRows {
+			if _, err := tx.ExecContext(ctx, "UPDATE "+documentTable+" SET AED_ESTADO='ELIMINADO' WHERE AED_UUID=:b_uuid AND AED_VERSION=:b_version", sql.Named("b_uuid", item.uuid), sql.Named("b_version", item.version)); err != nil {
+				return fmt.Errorf("no se pudo actualizar el historial de la carpeta %s: %w", receipt.Patient, err)
+			}
+		}
+		var pending int
+		if err := tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM "+documentTable+" WHERE AER_ID=:b_receipt_id AND AED_ESTADO='VIGENTE' AND AED_PDI_ID IS NULL", sql.Named("b_receipt_id", id)).Scan(&pending); err != nil {
+			return fmt.Errorf("no se pudo consultar el estado de asociación de la carpeta %s: %w", receipt.Patient, err)
+		}
+		status := "VINCULADO"
+		if pending > 0 {
+			status = "PENDIENTE_PLANILLA"
+		}
+		if _, err := tx.ExecContext(ctx, "UPDATE "+receiptTable+" SET AER_ESTADO=:b_status,AER_FECHA_ACTUALIZACION=SYSDATE WHERE AER_ID=:b_receipt_id", sql.Named("b_status", status), sql.Named("b_receipt_id", id)); err != nil {
+			return fmt.Errorf("no se pudo actualizar el estado Oracle de la carpeta %s: %w", receipt.Patient, err)
+		}
+		receipt.Status = status
+	}
+	return nil
+}
+
+func receiptsHas(receipts map[string]auditorReceipt, id string) bool {
+	_, ok := receipts[id]
+	return ok
+}
+
 // syncOracleWorkspace records the active PDFs and version history after the
 // workspace and report have been atomically published on disk.
 func (s *server) syncOracleWorkspace(ctx context.Context, job *stagedJob, packageRoot string) error {
@@ -88,6 +223,7 @@ func (s *server) syncOracleWorkspace(ctx context.Context, job *stagedJob, packag
 	planillas := make(map[int64]string)
 	planillaByPath := make(map[string]int64)
 	originalByPath := make(map[string]string)
+	pendingOracleByPath := make(map[string]bool)
 	for _, item := range report.Files {
 		if item.Output == "" || item.PlanillaID <= 0 {
 			continue
@@ -106,6 +242,11 @@ func (s *server) syncOracleWorkspace(ctx context.Context, job *stagedJob, packag
 		planillaByPath[path] = item.PlanillaID
 		originalByPath[path] = item.Original
 	}
+	for _, item := range job.OraclePlanillas {
+		if item.PlanillaID > 0 && item.PatientFolder != "" {
+			planillas[item.PlanillaID] = filepath.Join(packageRoot, "4. EXPEDIENTES", item.PatientFolder)
+		}
+	}
 	for path, id := range job.DocumentPlanillas {
 		if id > 0 {
 			planillaByPath[filepath.ToSlash(path)] = id
@@ -113,6 +254,11 @@ func (s *server) syncOracleWorkspace(ctx context.Context, job *stagedJob, packag
 	}
 	for _, doc := range job.ExternalPDFs {
 		path := filepath.ToSlash(doc.RelativePath)
+		if doc.OraclePending {
+			pendingOracleByPath[path] = true
+			originalByPath[path] = doc.OriginalName
+			continue
+		}
 		if doc.PlanillaID > 0 {
 			planillaByPath[path] = doc.PlanillaID
 			originalByPath[path] = doc.OriginalName
@@ -149,6 +295,9 @@ func (s *server) syncOracleWorkspace(ctx context.Context, job *stagedJob, packag
 		if !strings.HasPrefix(doc.Path, "4. EXPEDIENTES/") {
 			continue
 		}
+		if pendingOracleByPath[doc.Path] {
+			continue
+		}
 		id := planillaByPath[doc.Path]
 		if id <= 0 {
 			return fmt.Errorf("no se pudo asociar %s a una planilla Oracle; seleccione un expediente con PDI_TRAMITE inequívoco", doc.Path)
@@ -158,13 +307,20 @@ func (s *server) syncOracleWorkspace(ctx context.Context, job *stagedJob, packag
 		if err != nil {
 			return fmt.Errorf("no se pudo calcular la huella de %s: %w", doc.Path, err)
 		}
-		active = append(active, oracleDocument{path: full, name: doc.Name, code: strings.TrimSuffix(doc.Name, ".pdf"), status: "VIGENTE", planillaID: id, original: originalByPath[doc.Path], hash: hash})
+		code := strings.TrimSuffix(doc.Name, ".pdf")
+		if strings.HasPrefix(strings.ToUpper(code), "PENDIENTE_TMP_") {
+			code = ""
+		}
+		active = append(active, oracleDocument{path: full, name: doc.Name, code: code, status: "VIGENTE", planillaID: id, original: originalByPath[doc.Path], hash: hash})
 	}
 	tx, err := s.serviceDB.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("no se pudo iniciar la transacción Oracle: %w", err)
 	}
 	defer tx.Rollback()
+	if err := syncOracleAuditorReceipts(ctx, tx, s.schema, job, packageRoot); err != nil {
+		return err
+	}
 	touchedPlanillas := make(map[int64]bool)
 	for _, id := range planillaByPath {
 		touchedPlanillas[id] = true

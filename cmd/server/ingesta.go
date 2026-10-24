@@ -46,6 +46,8 @@ type workspaceDocument struct {
 	RelativePath   string                     `json:"relative_path"`
 	Size           int64                      `json:"size_bytes"`
 	PlanillaID     int64                      `json:"pdi_id,omitempty"`
+	OraclePending  bool                       `json:"pendiente_asociacion_oracle,omitempty"`
+	ReceiptID      string                     `json:"registro_recepcion_oracle,omitempty"`
 	CoverageCedula string                     `json:"coverage_cedula,omitempty"`
 	CoverageDate   string                     `json:"coverage_date,omitempty"`
 	CoverageItems  []coverageDocumentMetadata `json:"coverage_items,omitempty"`
@@ -62,11 +64,14 @@ type stagedJob struct {
 	Files                 []stagedUpload                `json:"files"`
 	Aliases               []string                      `json:"legacy_ids,omitempty"`
 	ExternalPDFs          []workspaceDocument           `json:"external_pdfs,omitempty"`
+	AuditorReceipts       []auditorReceipt              `json:"registros_recepcion_auditoria,omitempty"`
 	Renames               map[string]string             `json:"renames,omitempty"`
 	Replacements          map[string]string             `json:"replacements,omitempty"`
 	MergedDuplicates      map[string][]string           `json:"merged_duplicates,omitempty"`
 	DeletedPDFs           map[string]bool               `json:"deleted_pdfs,omitempty"`
 	DocumentPlanillas     map[string]int64              `json:"document_planillas,omitempty"`
+	OracleBaselineIDs     []int64                       `json:"oracle_baseline_pdi_ids,omitempty"`
+	OraclePlanillas       []workspaceOraclePlanilla     `json:"oracle_planillas_importadas,omitempty"`
 	TramiteMappings       map[string]string             `json:"tramite_mappings,omitempty"`
 	CoverageFailures      map[int64]coverageFailure     `json:"coverage_failures,omitempty"`
 	IsObjections          bool                          `json:"es_objeciones,omitempty"`
@@ -675,6 +680,17 @@ func (s *server) processStagedJob(w http.ResponseWriter, r *http.Request) {
 	if err := s.ensureJobWorkspace(job); err != nil {
 		writeError(w, http.StatusInternalServerError, "No se pudo preparar el espacio permanente del lote.")
 		return
+	}
+	if job.OracleBaselineIDs == nil {
+		baseline, baselineErr := s.workspaceOraclePlanillas(ctx, job)
+		if baselineErr != nil {
+			writeError(w, http.StatusBadGateway, baselineErr.Error())
+			return
+		}
+		job.OracleBaselineIDs = make([]int64, 0, len(baseline))
+		for _, item := range baseline {
+			job.OracleBaselineIDs = append(job.OracleBaselineIDs, item.PlanillaID)
+		}
 	}
 	outputRoot := filepath.Join(s.jobRoot(job.ID), "trabajo")
 	report, err := s.buildPatientFolders(ctx, &job, outputRoot)
