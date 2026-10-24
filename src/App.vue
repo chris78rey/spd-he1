@@ -149,6 +149,19 @@ const savedWorkspaces = ref([])
 const selectedSavedWorkspace = ref('')
 const patientDocumentsWorkspaceID = ref('')
 const auditorImportWorkspaceID = ref('')
+const auditorImportPeriodService = ref('AMBULATORIO')
+const auditorImportPeriodMonth = ref(String(new Date().getMonth() + 1).padStart(2, '0'))
+const auditorImportPeriodYear = ref(String(new Date().getFullYear()))
+const auditorImportPeriodBusy = ref(false)
+const auditorTeamPatientFolders = ref([])
+const auditorTeamPatientFoldersLoading = ref(false)
+const auditorTeamPatientFoldersError = ref('')
+const auditorTeamPatientSelection = ref([])
+const auditorTeamRemoveDialog = ref(false)
+const auditorTeamRemoveCheckOne = ref(false)
+const auditorTeamRemoveCheckTwo = ref(false)
+const auditorTeamRemovePhrase = ref('')
+const auditorTeamRemoving = ref(false)
 const auditorImportFile = ref(null)
 const auditorImportPreview = ref(null)
 const auditorImportMappings = ref({})
@@ -1966,6 +1979,8 @@ const zipDownloadWorkspaces = computed(() => zipDownloadPreparedWorkspaces.value
 const auditorImportWorkspaces = computed(() => orderedSavedWorkspaces.value
   .filter(workspace => !workspace.es_objeciones && ['PROCESSED', 'INCOMPLETE'].includes(workspace.status)))
 const auditorImportWorkspaceItems = computed(() => auditorImportWorkspaces.value.map(workspaceSavedOption))
+const auditorTeamRemoveExpectedPhrase = computed(() => `QUITAR ${auditorTeamPatientSelection.value.length} ${auditorTeamPatientSelection.value.length === 1 ? 'CARPETA' : 'CARPETAS'}`)
+const auditorTeamRemovePhraseMatches = computed(() => auditorTeamRemovePhrase.value.trim().toUpperCase() === auditorTeamRemoveExpectedPhrase.value)
 const auditorImportAllFilesMapped = computed(() => {
   const folders = auditorImportPreview.value?.folders || []
   return folders.length > 0 && folders.every(folder => folder.files.every(file => {
@@ -2133,6 +2148,81 @@ async function openAuditorFolderImportPage() {
   auditorImportWorkspaceID.value = auditorImportWorkspaceItems.value.some(item => item.value === preferred)
     ? preferred
     : (auditorImportWorkspaceItems.value[0]?.value || '')
+  await loadAuditorTeamPatientFolders(auditorImportWorkspaceID.value)
+}
+watch(auditorImportWorkspaceID, jobId => {
+  auditorTeamPatientSelection.value = []
+  void loadAuditorTeamPatientFolders(jobId)
+})
+async function loadAuditorTeamPatientFolders(jobId = auditorImportWorkspaceID.value) {
+  auditorTeamPatientFolders.value = []
+  auditorTeamPatientFoldersError.value = ''
+  if (!jobId) return
+  auditorTeamPatientFoldersLoading.value = true
+  try {
+    const response = await fetch(`/api/v1/expedientes/carpetas-equipo/pacientes/${encodeURIComponent(jobId)}`, { credentials: 'same-origin' })
+    if (response.status === 401) { await signOut(); return }
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok) throw new Error(data.error || 'No se pudieron consultar las carpetas de pacientes.')
+    auditorTeamPatientFolders.value = data.carpetas || []
+  } catch (error) {
+    auditorTeamPatientFoldersError.value = error.message || 'No se pudieron consultar las carpetas de pacientes.'
+  } finally { auditorTeamPatientFoldersLoading.value = false }
+}
+function startRemovingTeamPatientFolders() {
+  if (!auditorTeamPatientSelection.value.length || auditorTeamRemoving.value) return
+  auditorTeamRemoveCheckOne.value = false
+  auditorTeamRemoveCheckTwo.value = false
+  auditorTeamRemovePhrase.value = ''
+  auditorTeamRemoveDialog.value = true
+}
+async function removeSelectedTeamPatientFolders() {
+  const jobId = auditorImportWorkspaceID.value
+  const folders = [...auditorTeamPatientSelection.value]
+  if (!jobId || !folders.length || !auditorTeamRemoveCheckOne.value || !auditorTeamRemoveCheckTwo.value || !auditorTeamRemovePhraseMatches.value || auditorTeamRemoving.value) return
+  auditorTeamRemoving.value = true
+  auditorTeamPatientFoldersError.value = ''
+  try {
+    const response = await fetch(`/api/v1/expedientes/carpetas-equipo/pacientes/${encodeURIComponent(jobId)}`, {
+      method: 'DELETE', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ carpetas: folders, confirmacion: auditorTeamRemovePhrase.value.trim().toUpperCase() }),
+    })
+    if (response.status === 401) { await signOut(); return }
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok) throw new Error(data.error || 'No se pudieron quitar las carpetas seleccionadas.')
+    auditorImportNotice.value = data.message || 'Se quitaron las carpetas seleccionadas.'
+    auditorTeamPatientSelection.value = []
+    auditorTeamRemoveDialog.value = false
+    await loadAuditorTeamPatientFolders(jobId)
+    await loadSavedWorkspaces()
+  } catch (error) {
+    auditorTeamPatientFoldersError.value = error.message || 'No se pudieron quitar las carpetas seleccionadas.'
+  } finally { auditorTeamRemoving.value = false }
+}
+async function createOrOpenAuditorPeriod() {
+  if (auditorImportPeriodBusy.value) return
+  auditorImportPeriodBusy.value = true
+  auditorImportError.value = ''
+  auditorImportNotice.value = ''
+  clearAuditorImportPreview()
+  try {
+    const response = await fetch('/api/v1/expedientes/carpetas-equipo/periodo', {
+      method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tipo_servicio: auditorImportPeriodService.value, mes: auditorImportPeriodMonth.value, anio: auditorImportPeriodYear.value }),
+    })
+    if (response.status === 401) { await signOut(); return }
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok) throw new Error(data.error || 'No se pudo abrir o crear el período.')
+    const period = data.period
+    await loadSavedWorkspaces()
+    auditorImportWorkspaceID.value = period?.job_id || ''
+    await loadAuditorTeamPatientFolders(auditorImportWorkspaceID.value)
+    auditorImportNotice.value = data.reused
+      ? 'Se abrió el período existente. Las carpetas nuevas se agregarán ahí.'
+      : 'Período creado. Ya puedes cargar las carpetas del equipo.'
+  } catch (error) {
+    auditorImportError.value = error.message || 'No se pudo abrir o crear el período.'
+  } finally { auditorImportPeriodBusy.value = false }
 }
 function clearAuditorImportPreview() {
   auditorImportPreview.value = null
@@ -2214,6 +2304,7 @@ async function applyAuditorFolderImport() {
     auditorImportFolderDefaults.value = {}
     auditorImportPerFileFolders.value = {}
     await loadSavedWorkspaces()
+    await loadAuditorTeamPatientFolders(jobId)
   } catch (error) {
     auditorImportError.value = error.message || 'No se pudieron incorporar las carpetas.'
   } finally { auditorImportBusy.value = false }
@@ -3091,6 +3182,12 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
         <section v-else-if="activePage==='auditor-folder-import'" class="content-wrap">
           <div class="welcome-line"><div><div class="eyebrow">CARPETAS COMPARTIDAS POR EL EQUIPO</div><h1>Carpetas del equipo<span class="title-period">.</span></h1><p class="subtitle">Sube un ZIP con una carpeta por paciente y sus PDFs. Después podrás revisarlos y renombrarlos en Revisar documentos del paciente.</p></div></div>
           <v-card class="planilla-card saved-workspaces-card" rounded="xl" elevation="0">
+            <div class="d-flex align-center flex-wrap ga-3 mb-4">
+              <v-select v-model="auditorImportPeriodService" :items="ingestServices" item-title="title" item-value="value" label="Servicio" prepend-inner-icon="mdi-hospital-building" hide-details="auto" style="min-width: 190px; flex: 1 1 190px" :disabled="auditorImportPeriodBusy" />
+              <v-select v-model="auditorImportPeriodMonth" :items="ingestMonths" item-title="title" item-value="value" label="Mes" prepend-inner-icon="mdi-calendar-month-outline" hide-details="auto" style="min-width: 160px; flex: 1 1 160px" :disabled="auditorImportPeriodBusy" />
+              <v-text-field v-model="auditorImportPeriodYear" label="Año" type="number" min="2000" max="2100" prepend-inner-icon="mdi-calendar" hide-details="auto" style="min-width: 130px; flex: 0 1 150px" :disabled="auditorImportPeriodBusy" />
+              <v-btn type="button" color="primary" variant="tonal" prepend-icon="mdi-folder-plus-outline" :loading="auditorImportPeriodBusy" :disabled="auditorImportBusy" @click="createOrOpenAuditorPeriod">Abrir o crear período</v-btn>
+            </div>
             <div class="patient-documents-picker-row">
               <WorkspacePicker
                 v-model="auditorImportWorkspaceID"
@@ -3108,6 +3205,19 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
               />
               <v-btn type="button" icon="mdi-refresh" variant="text" aria-label="Actualizar períodos" :loading="savedWorkspacesLoading" @click="loadSavedWorkspaces"/>
             </div>
+            <v-card v-if="auditorTeamPatientFolders.length || auditorTeamPatientFoldersLoading || auditorTeamPatientFoldersError" class="mt-4 pa-4" rounded="lg" variant="outlined">
+              <div class="d-flex align-center justify-space-between flex-wrap ga-2 mb-2">
+                <div><strong>Quitar carpetas de pacientes</strong><div class="coverage-footnote mt-1">Puedes elegir carpetas de la carga normal o de Carpetas del equipo.</div></div>
+                <v-btn type="button" color="error" variant="tonal" prepend-icon="mdi-folder-remove-outline" :disabled="!auditorTeamPatientSelection.length || auditorTeamPatientFoldersLoading || auditorTeamRemoving" @click="startRemovingTeamPatientFolders">Quitar seleccionadas ({{ auditorTeamPatientSelection.length }})</v-btn>
+              </div>
+              <v-alert v-if="auditorTeamPatientFoldersError" type="error" variant="tonal" density="comfortable">{{ auditorTeamPatientFoldersError }}<v-btn type="button" size="small" variant="text" @click="loadAuditorTeamPatientFolders()">Reintentar</v-btn></v-alert>
+              <div v-else-if="auditorTeamPatientFoldersLoading" class="planilla-state"><v-progress-circular indeterminate color="primary" size="20"/><span>Cargando carpetas del período…</span></div>
+              <div v-else class="d-flex flex-column">
+                <v-checkbox v-for="folder in auditorTeamPatientFolders" :key="folder.nombre" v-model="auditorTeamPatientSelection" :value="folder.nombre" density="compact" hide-details>
+                  <template #label><span>{{ folder.nombre }} <small>· {{ folder.pdfs }} PDF{{ folder.pdfs === 1 ? '' : 's' }} · {{ folder.origen }}</small></span></template>
+                </v-checkbox>
+              </div>
+            </v-card>
             <v-alert class="mt-4" type="info" variant="tonal" density="comfortable">
               El ZIP debe contener carpetas con nombres de pacientes y PDFs directamente dentro. Puedes comprimir una carpeta contenedora; la aplicación conservará los nombres de paciente y la descarga final las numerará en orden alfabético.
             </v-alert>
@@ -3174,6 +3284,21 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
               </div>
             </template>
           </v-card>
+          <v-dialog v-model="auditorTeamRemoveDialog" max-width="600" :persistent="auditorTeamRemoving">
+            <v-card class="action-dialog">
+              <v-card-title>Quitar carpetas seleccionadas</v-card-title>
+              <v-card-text>
+                <p>Se retirarán todos los PDFs activos de <strong>{{ auditorTeamPatientSelection.length }} carpetas</strong>:</p>
+                <ul class="mb-4"><li v-for="name in auditorTeamPatientSelection" :key="name">{{ name }}</li></ul>
+                <v-checkbox v-model="auditorTeamRemoveCheckOne" label="Primera confirmación: revisé la lista y seleccioné las carpetas correctas." density="compact"/>
+                <v-checkbox v-model="auditorTeamRemoveCheckTwo" label="Segunda confirmación: entiendo que se retirarán todos los PDFs activos de esas carpetas, tanto de la carga normal como del equipo; las fuentes originales se conservarán en el historial." density="compact"/>
+                <p>Tercera confirmación: escribe <strong>{{ auditorTeamRemoveExpectedPhrase }}</strong>.</p>
+                <v-text-field v-model="auditorTeamRemovePhrase" label="Confirmación final" autocomplete="off" autocapitalize="characters" spellcheck="false"/>
+                <v-alert v-if="auditorTeamRemoving" type="info" variant="tonal" density="comfortable">Oracle está registrando el retiro. Espera el resultado antes de volver a intentarlo.</v-alert>
+              </v-card-text>
+              <v-card-actions><v-spacer/><v-btn type="button" variant="text" :disabled="auditorTeamRemoving" @click="auditorTeamRemoveDialog=false">Cancelar</v-btn><v-btn type="button" color="error" prepend-icon="mdi-folder-remove-outline" :loading="auditorTeamRemoving" :disabled="!auditorTeamRemoveCheckOne || !auditorTeamRemoveCheckTwo || !auditorTeamRemovePhraseMatches || auditorTeamRemoving" @click="removeSelectedTeamPatientFolders">Confirmar y quitar</v-btn></v-card-actions>
+            </v-card>
+          </v-dialog>
         </section>
         <section v-else-if="activePage==='patient-documents'" class="content-wrap">
           <div class="welcome-line"><div><div class="eyebrow">DOCUMENTOS DEL PACIENTE</div><h1>Revisar documentos del paciente<span class="title-period">.</span></h1><p class="subtitle">Elige un período guardado para revisar las carpetas de pacientes y sus PDFs.</p></div></div>

@@ -115,6 +115,8 @@ func main() {
 	mux.HandleFunc("/api/v1/ingesta/previsualizar/", s.getIngestPreview)
 	mux.HandleFunc("/api/v1/ingesta/vincular-tramite/", s.setIngestTramiteMapping)
 	mux.HandleFunc("/api/v1/expedientes", s.listWorkspaces)
+	mux.HandleFunc("/api/v1/expedientes/carpetas-equipo/periodo", s.createTeamFoldersPeriod)
+	mux.HandleFunc("/api/v1/expedientes/carpetas-equipo/pacientes/", s.manageTeamPatientFolders)
 	mux.HandleFunc("/api/v1/expedientes/eliminar/", s.deleteWorkspace)
 	mux.HandleFunc("/api/v1/expedientes/documentos/renombrar/", s.renameWorkspacePDF)
 	mux.HandleFunc("/api/v1/expedientes/documentos/asociar-oracle/", s.associateAuditorPDF)

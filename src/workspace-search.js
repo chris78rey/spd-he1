@@ -7,6 +7,7 @@ export function normalizeWorkspaceSearch(value) {
 }
 
 export function workspaceTypeLabel(workspace) {
+  if (workspace?.carpetas_equipo) return 'Carpetas del equipo'
   return workspace?.es_objeciones ? 'Objeciones · espacio separado' : 'Recepción de planillas'
 }
 

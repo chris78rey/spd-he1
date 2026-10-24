@@ -48,6 +48,7 @@ type workspaceDocument struct {
 	PlanillaID     int64                      `json:"pdi_id,omitempty"`
 	OraclePending  bool                       `json:"pendiente_asociacion_oracle,omitempty"`
 	ReceiptID      string                     `json:"registro_recepcion_oracle,omitempty"`
+	TeamImport     bool                       `json:"carga_carpetas_equipo,omitempty"`
 	CoverageCedula string                     `json:"coverage_cedula,omitempty"`
 	CoverageDate   string                     `json:"coverage_date,omitempty"`
 	CoverageItems  []coverageDocumentMetadata `json:"coverage_items,omitempty"`
@@ -56,6 +57,7 @@ type workspaceDocument struct {
 type stagedJob struct {
 	ID                    string                        `json:"job_id"`
 	Status                string                        `json:"status"`
+	TeamFoldersPeriod     bool                          `json:"carpetas_equipo,omitempty"`
 	Username              string                        `json:"username"`
 	Month                 string                        `json:"mes"`
 	Year                  string                        `json:"anio"`
@@ -113,7 +115,7 @@ func jobResponse(s *server, job stagedJob, output string, summary any) map[strin
 	if (status == "PROCESSED" || status == "INCOMPLETE") && len(missing) > 0 {
 		status = "INCOMPLETE"
 	}
-	result := map[string]any{"status": status, "job_id": job.ID, "message": job.StatusDetail, "workspace": s.jobRoot(job.ID), "missing_documents": missing, "files": job.Files, "mes": job.Month, "anio": job.Year, "tipo_servicio": job.Service, "creado_por": job.Username}
+	result := map[string]any{"status": status, "job_id": job.ID, "message": job.StatusDetail, "workspace": s.jobRoot(job.ID), "missing_documents": missing, "files": job.Files, "mes": job.Month, "anio": job.Year, "tipo_servicio": job.Service, "creado_por": job.Username, "carpetas_equipo": job.TeamFoldersPeriod}
 	deliveryMissing, readyForDelivery := s.workspaceDeliveryMissing(job)
 	result["delivery_missing"] = deliveryMissing
 	result["ready_for_delivery"] = readyForDelivery
@@ -1036,7 +1038,7 @@ func (s *server) getStagedJobStatus(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "No se encontró este lote en el espacio permanente.")
 		return
 	}
-	if !s.hasClinicalSource(job) {
+	if !s.hasClinicalSource(job) && !job.TeamFoldersPeriod {
 		writeError(w, http.StatusGone, "Este lote ya no conserva el ZIP clínico fuente.")
 		return
 	}
@@ -1077,7 +1079,7 @@ func (s *server) listWorkspaces(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		job, loadErr := s.loadStagedJob(directory.Name())
-		if loadErr != nil || !s.hasClinicalSource(job) {
+		if loadErr != nil || (!s.hasClinicalSource(job) && !job.TeamFoldersPeriod) {
 			continue
 		}
 		response := jobResponse(s, job, "", nil)

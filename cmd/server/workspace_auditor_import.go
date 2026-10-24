@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -62,6 +63,366 @@ type auditorImportPreviewResponse struct {
 type auditorImportApplyRequest struct {
 	PreviewID    string           `json:"preview_id"`
 	FileMappings map[string]int64 `json:"file_mappings"`
+}
+
+func isTeamImportedPDF(doc workspaceDocument) bool {
+	if doc.TeamImport {
+		return true
+	}
+	// ZIP imports made before the origin flag was added used 12 random bytes;
+	// manual uploads use 8. Keep older team imports distinguishable on upgrade.
+	if doc.ReceiptID == "" {
+		return false
+	}
+	id := strings.TrimSuffix(strings.TrimSpace(doc.StoredName), filepath.Ext(doc.StoredName))
+	if id == "" {
+		id = strings.TrimSpace(doc.ID)
+	}
+	decoded, err := hex.DecodeString(id)
+	return err == nil && len(decoded) == 12
+}
+
+func (s *server) manageTeamPatientFolders(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.getSession(r); !ok {
+		writeError(w, http.StatusUnauthorized, "Inicia sesión para continuar.")
+		return
+	}
+	jobID := strings.TrimPrefix(r.URL.Path, "/api/v1/expedientes/carpetas-equipo/pacientes/")
+	if !validJobID(jobID) {
+		writeError(w, http.StatusBadRequest, "El identificador del período no es válido.")
+		return
+	}
+	s.ingestMu.Lock()
+	defer s.ingestMu.Unlock()
+	job, err := s.loadStagedJob(jobID)
+	if err != nil || job.IsObjections || (job.Status != "PROCESSED" && job.Status != "INCOMPLETE") {
+		writeError(w, http.StatusNotFound, "No se encontró un período disponible para administrar sus carpetas.")
+		return
+	}
+	packageRoot := filepath.Join(s.jobRoot(job.ID), "trabajo", packageFolderName(&job))
+	switch r.Method {
+	case http.MethodGet:
+		documents, patients, err := listWorkspacePDFs(packageRoot)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "No se pudieron leer las carpetas del período.")
+			return
+		}
+		teamPaths := make(map[string]bool)
+		latestByPath := make(map[string]workspaceDocument)
+		for _, doc := range job.ExternalPDFs {
+			path := filepath.ToSlash(filepath.Clean(filepath.FromSlash(doc.RelativePath)))
+			latestByPath[path] = doc
+		}
+		for path, doc := range latestByPath {
+			if isTeamImportedPDF(doc) {
+				teamPaths[path] = true
+			}
+		}
+		teamFolders := make(map[string]bool, len(job.AuditorReceipts))
+		for _, receipt := range job.AuditorReceipts {
+			teamFolders[receipt.Patient] = true
+		}
+		folders := make([]map[string]any, 0, len(patients))
+		for _, patient := range patients {
+			count, teamCount := 0, 0
+			prefix := "4. EXPEDIENTES/" + patient + "/"
+			for _, document := range documents {
+				if strings.HasPrefix(document.Path, prefix) {
+					count++
+					if teamPaths[document.Path] {
+						teamCount++
+					}
+				}
+			}
+			if count == 0 {
+				continue
+			}
+			origin := "Carga normal"
+			hasTeamFolder := teamFolders[patient] || teamCount > 0
+			if hasTeamFolder && teamCount < count {
+				origin = "Mixta · equipo y carga normal"
+			} else if hasTeamFolder {
+				origin = "Carpetas del equipo"
+			}
+			folders = append(folders, map[string]any{"nombre": patient, "pdfs": count, "origen": origin})
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"job_id": job.ID, "carpetas": folders})
+	case http.MethodDelete:
+		r.Body = http.MaxBytesReader(w, r.Body, 32*1024)
+		var input struct {
+			Folders      []string `json:"carpetas"`
+			Confirmation string   `json:"confirmacion"`
+		}
+		if json.NewDecoder(r.Body).Decode(&input) != nil || len(input.Folders) == 0 || len(input.Folders) > 100 {
+			writeError(w, http.StatusBadRequest, "Selecciona las carpetas de pacientes que quieres quitar.")
+			return
+		}
+		confirmationWord := "CARPETAS"
+		if len(input.Folders) == 1 {
+			confirmationWord = "CARPETA"
+		}
+		if strings.TrimSpace(input.Confirmation) != fmt.Sprintf("QUITAR %d %s", len(input.Folders), confirmationWord) {
+			writeError(w, http.StatusBadRequest, "Completa la tercera confirmación escribiendo el texto indicado.")
+			return
+		}
+		selected := make(map[string]bool, len(input.Folders))
+		for _, name := range input.Folders {
+			name = strings.TrimSpace(name)
+			if name == "" || selected[name] {
+				writeError(w, http.StatusBadRequest, "La selección de carpetas no es válida.")
+				return
+			}
+			selected[name] = true
+		}
+		documents, patients, err := listWorkspacePDFs(packageRoot)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "No se pudieron comprobar las carpetas seleccionadas.")
+			return
+		}
+		available := make(map[string]bool, len(patients))
+		for _, patient := range patients {
+			available[patient] = true
+		}
+		moving := make([]struct{ source, backup, patient string }, 0)
+		keptEmptyOracleFolders := make([]string, 0)
+		for patient := range selected {
+			if !available[patient] {
+				writeError(w, http.StatusConflict, "Una de las carpetas seleccionadas ya no existe en este período.")
+				return
+			}
+			prefix := "4. EXPEDIENTES/" + patient + "/"
+			for _, document := range documents {
+				if !strings.HasPrefix(document.Path, prefix) {
+					continue
+				}
+				parts := strings.Split(document.Path, "/")
+				if len(parts) != 3 || parts[0] != "4. EXPEDIENTES" || parts[1] != patient {
+					writeError(w, http.StatusConflict, "No se pudo validar una ruta de PDF de la carpeta seleccionada.")
+					return
+				}
+				full, pathErr := safeWorkspacePath(packageRoot, document.Path)
+				if pathErr != nil {
+					writeError(w, http.StatusBadRequest, "La ruta de un PDF no es válida.")
+					return
+				}
+				moving = append(moving, struct{ source, backup, patient string }{source: full, patient: patient})
+			}
+		}
+		if len(moving) == 0 {
+			writeError(w, http.StatusConflict, "Las carpetas seleccionadas ya no contienen PDFs.")
+			return
+		}
+		previousJob, err := cloneStagedJob(job)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "No se pudo preparar el retiro de las carpetas.")
+			return
+		}
+		backupRoot, err := os.MkdirTemp(s.jobRoot(job.ID), ".quitar-carpetas-")
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "No se pudo preparar la operación reversible.")
+			return
+		}
+		restore := func() {
+			for _, item := range moving {
+				if item.backup == "" {
+					continue
+				}
+				_ = os.MkdirAll(filepath.Dir(item.source), 0700)
+				_ = os.Rename(item.backup, item.source)
+			}
+			_ = os.RemoveAll(backupRoot)
+		}
+		for index := range moving {
+			moving[index].backup = filepath.Join(backupRoot, fmt.Sprintf("%04d.pdf", index))
+			if err := os.Rename(moving[index].source, moving[index].backup); err != nil {
+				restore()
+				writeError(w, http.StatusInternalServerError, "No se pudieron apartar los PDFs; se restauraron los archivos movidos.")
+				return
+			}
+			relative, _ := filepath.Rel(packageRoot, moving[index].source)
+			if job.DeletedPDFs == nil {
+				job.DeletedPDFs = make(map[string]bool)
+			}
+			job.DeletedPDFs[filepath.ToSlash(relative)] = true
+		}
+		if err := s.saveStagedJob(job); err != nil {
+			restore()
+			writeError(w, http.StatusInternalServerError, "No se pudo registrar el retiro; las carpetas y PDFs se restauraron.")
+			return
+		}
+		if err := s.syncOracleWorkspace(r.Context(), &job, packageRoot); err != nil {
+			restore()
+			_ = s.saveStagedJob(previousJob)
+			log.Printf("expediente %s: no se pudieron quitar carpetas del equipo: %v", job.ID, err)
+			writeError(w, http.StatusBadGateway, "Oracle no confirmó el cambio; las carpetas y PDFs se restauraron.")
+			return
+		}
+		if err := os.RemoveAll(backupRoot); err != nil {
+			log.Printf("expediente %s: PDFs quitados; quedó respaldo recuperable %s: %v", job.ID, backupRoot, err)
+		}
+		for patient := range selected {
+			hasPlanilla := false
+			for _, planilla := range job.OraclePlanillas {
+				if planilla.PatientFolder == patient {
+					hasPlanilla = true
+					break
+				}
+			}
+			if !hasPlanilla {
+				for _, doc := range job.ExternalPDFs {
+					if doc.PlanillaID > 0 && strings.HasPrefix(filepath.ToSlash(doc.RelativePath), "4. EXPEDIENTES/"+patient+"/") {
+						hasPlanilla = true
+						break
+					}
+				}
+			}
+			if !hasPlanilla {
+				for path, planillaID := range job.DocumentPlanillas {
+					if planillaID > 0 && strings.HasPrefix(filepath.ToSlash(path), "4. EXPEDIENTES/"+patient+"/") {
+						hasPlanilla = true
+						break
+					}
+				}
+			}
+			if !hasPlanilla {
+				if reportBytes, readErr := os.ReadFile(filepath.Join(s.jobRoot(job.ID), "reportes", "classification_report.json")); readErr == nil {
+					var report classificationReport
+					if json.Unmarshal(reportBytes, &report) == nil {
+						for _, file := range report.Files {
+							if file.PlanillaID > 0 && strings.HasPrefix(filepath.ToSlash(file.Output), "4. EXPEDIENTES/"+patient+"/") {
+								hasPlanilla = true
+								break
+							}
+						}
+					}
+				}
+			}
+			if !hasPlanilla {
+				_ = os.Remove(filepath.Join(packageRoot, "4. EXPEDIENTES", patient))
+			} else {
+				keptEmptyOracleFolders = append(keptEmptyOracleFolders, patient)
+			}
+		}
+		removed := make([]string, 0, len(selected))
+		for patient := range selected {
+			removed = append(removed, patient)
+		}
+		sort.Strings(removed)
+		sort.Strings(keptEmptyOracleFolders)
+		message := fmt.Sprintf("Se quitaron %d PDFs de %d carpetas. Las fuentes originales se conservaron en el historial.", len(moving), len(removed))
+		if len(keptEmptyOracleFolders) > 0 {
+			message += fmt.Sprintf(" %d carpetas asociadas a trámites Oracle se conservaron vacías.", len(keptEmptyOracleFolders))
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"job_id": job.ID, "carpetas_quitadas": removed, "carpetas_oracle_conservadas_vacias": keptEmptyOracleFolders, "pdfs_quitados": len(moving), "message": message})
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "Método no permitido.")
+	}
+}
+
+func (s *server) createTeamFoldersPeriod(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "Método no permitido.")
+		return
+	}
+	session, ok := s.getSession(r)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "Inicia sesión para continuar.")
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 8*1024)
+	var input struct {
+		Service string `json:"tipo_servicio"`
+		Month   string `json:"mes"`
+		Year    string `json:"anio"`
+	}
+	if json.NewDecoder(r.Body).Decode(&input) != nil {
+		writeError(w, http.StatusBadRequest, "Indica servicio, mes y año.")
+		return
+	}
+	input.Service = strings.ToUpper(strings.TrimSpace(input.Service))
+	input.Month = strings.TrimSpace(input.Month)
+	input.Year = strings.TrimSpace(input.Year)
+	month, monthErr := strconv.Atoi(input.Month)
+	year, yearErr := strconv.Atoi(input.Year)
+	if !validServiceCode(input.Service) || monthErr != nil || month < 1 || month > 12 || len(input.Month) != 2 || yearErr != nil || year < 2000 || year > 2100 || len(input.Year) != 4 {
+		writeError(w, http.StatusBadRequest, "Indica un servicio, mes y año válidos.")
+		return
+	}
+	s.ingestMu.Lock()
+	defer s.ingestMu.Unlock()
+	if err := os.MkdirAll(s.workspacesDir, 0700); err != nil {
+		writeError(w, http.StatusInternalServerError, "No se pudo preparar el período.")
+		return
+	}
+	// Reuse any saved workspace for this exact service and period, including a
+	// legacy job ID. The stable ID below is shared with normal planilla intake.
+	entries, err := os.ReadDir(s.workspacesDir)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "No se pudieron revisar los períodos existentes.")
+		return
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
+			continue
+		}
+		data, readErr := os.ReadFile(filepath.Join(s.workspacesDir, entry.Name(), "job.json"))
+		if readErr != nil {
+			continue
+		}
+		var existing stagedJob
+		if json.Unmarshal(data, &existing) != nil || existing.Service != input.Service || existing.Month != input.Month || existing.Year != input.Year || existing.IsObjections {
+			continue
+		}
+		if existing.Status != "PROCESSED" && existing.Status != "INCOMPLETE" {
+			writeError(w, http.StatusConflict, "Ya existe este período, pero todavía no está preparado para recibir carpetas.")
+			return
+		}
+		if existing.TeamFoldersPeriod || s.hasClinicalSource(existing) || len(existing.ExternalPDFs) > 0 {
+			output := filepath.Join(s.jobRoot(existing.ID), "trabajo", packageFolderName(&existing))
+			writeJSON(w, http.StatusOK, map[string]any{"period": jobResponse(s, existing, output, nil), "reused": true})
+			return
+		}
+	}
+	jobID := periodWorkspaceID(input.Service, input.Month, input.Year)
+	destination := s.jobRoot(jobID)
+	if _, err := os.Stat(filepath.Join(destination, "job.json")); err == nil {
+		writeError(w, http.StatusConflict, "Ya existe un espacio para este período que no se puede abrir. Actualiza la lista o revisa el período guardado.")
+		return
+	} else if !errors.Is(err, os.ErrNotExist) {
+		writeError(w, http.StatusInternalServerError, "No se pudo revisar el período existente.")
+		return
+	}
+	temporary, err := os.MkdirTemp(s.workspacesDir, ".team-period-")
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "No se pudo crear el período.")
+		return
+	}
+	defer os.RemoveAll(temporary)
+	job := stagedJob{ID: jobID, Status: "INCOMPLETE", TeamFoldersPeriod: true, Username: session.username, Month: input.Month, Year: input.Year, Service: input.Service, ReceivedAt: time.Now().UTC(), Files: []stagedUpload{}, StatusDetail: "Período creado para recibir carpetas del equipo."}
+	packageRoot := filepath.Join(temporary, "trabajo", packageFolderName(&job))
+	if err := os.MkdirAll(filepath.Join(packageRoot, "4. EXPEDIENTES"), 0700); err != nil {
+		writeError(w, http.StatusInternalServerError, "No se pudo preparar la carpeta del período.")
+		return
+	}
+	if err := os.Mkdir(filepath.Join(temporary, "fuentes"), 0700); err != nil {
+		writeError(w, http.StatusInternalServerError, "No se pudo preparar el historial del período.")
+		return
+	}
+	metadata, err := json.MarshalIndent(job, "", "  ")
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "No se pudo registrar el período.")
+		return
+	}
+	if err := os.WriteFile(filepath.Join(temporary, "job.json"), metadata, 0600); err != nil {
+		writeError(w, http.StatusInternalServerError, "No se pudo registrar el período.")
+		return
+	}
+	if err := os.Rename(temporary, destination); err != nil {
+		writeError(w, http.StatusConflict, "No se pudo crear el período porque ya existe otro espacio para esa combinación.")
+		return
+	}
+	output := filepath.Join(destination, "trabajo", packageFolderName(&job))
+	writeJSON(w, http.StatusCreated, map[string]any{"period": jobResponse(s, job, output, nil), "reused": false})
 }
 
 func auditorImportRoot(s *server) string {
@@ -712,7 +1073,7 @@ func (s *server) applyAuditorFolders(w http.ResponseWriter, r *http.Request, job
 				return
 			}
 			createdFiles = append(createdFiles, destination)
-			added = append(added, workspaceDocument{ID: strings.TrimSuffix(storedName, ".pdf"), StoredName: storedName, OriginalName: fileInfo.Name, RelativePath: relative, Size: int64(fileInfo.Size), PlanillaID: planillaID, OraclePending: planillaID == 0, ReceiptID: receiptByFolder[folder.Name]})
+			added = append(added, workspaceDocument{ID: strings.TrimSuffix(storedName, ".pdf"), StoredName: storedName, OriginalName: fileInfo.Name, RelativePath: relative, Size: int64(fileInfo.Size), PlanillaID: planillaID, OraclePending: planillaID == 0, ReceiptID: receiptByFolder[folder.Name], TeamImport: true})
 		}
 	}
 	for _, item := range added {

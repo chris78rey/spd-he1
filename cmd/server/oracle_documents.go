@@ -213,11 +213,17 @@ func (s *server) syncOracleWorkspace(ctx context.Context, job *stagedJob, packag
 	var report classificationReport
 	reportPath := filepath.Join(s.jobRoot(job.ID), "reportes", "classification_report.json")
 	data, err := os.ReadFile(reportPath)
-	if err != nil {
+	if errors.Is(err, os.ErrNotExist) && job.TeamFoldersPeriod {
+		// Team-created periods have no clinical ZIP to classify. Their Oracle
+		// document index is built from ExternalPDFs below.
+		err = nil
+	} else if err != nil {
 		return fmt.Errorf("no se pudo leer el reporte de PDFs: %w", err)
 	}
-	if err := json.Unmarshal(data, &report); err != nil {
-		return fmt.Errorf("reporte de PDFs inválido: %w", err)
+	if len(data) > 0 {
+		if err := json.Unmarshal(data, &report); err != nil {
+			return fmt.Errorf("reporte de PDFs inválido: %w", err)
+		}
 	}
 	patientIDs := make(map[string]map[int64]bool)
 	planillas := make(map[int64]string)
