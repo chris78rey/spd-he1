@@ -2696,7 +2696,7 @@ const visibleDocs = computed(() => {
   else items.sort((a,b) => (b.addedAt||0)-(a.addedAt||0))
   return items
 })
-  const title = computed(() => activePage.value === 'historical-archive' ? 'Archivo histórico' : activePage.value === 'planilla' ? 'Planilla digital' : activePage.value === 'coberturas' ? 'Hojas de cobertura' : activePage.value === 'individual-coverage' ? 'Cobertura individual' : activePage.value === 'objeciones' ? 'Subsanar objeciones' : activePage.value === 'patient-documents' ? 'Revisar documentos del paciente' : activePage.value === 'auditor-folder-import' ? 'Cargar carpetas de auditoría' : activePage.value === 'zip-download' ? 'Descargar expediente ZIP' : activePage.value === 'ingesta' ? 'Recepción de planillas' : activeFolder.value === 'Todos los documentos' ? 'Mis documentos' : activeFolder.value)
+  const title = computed(() => activePage.value === 'historical-archive' ? 'Archivo histórico' : activePage.value === 'planilla' ? 'Planilla digital' : activePage.value === 'coberturas' ? 'Hojas de cobertura' : activePage.value === 'individual-coverage' ? 'Cobertura individual' : activePage.value === 'objeciones' ? 'Subsanar objeciones' : activePage.value === 'patient-documents' ? 'Revisar documentos del paciente' : activePage.value === 'auditor-folder-import' ? 'Carpetas del equipo' : activePage.value === 'zip-download' ? 'Descargar expediente ZIP' : activePage.value === 'ingesta' ? 'Recepción de planillas' : activeFolder.value === 'Todos los documentos' ? 'Mis documentos' : activeFolder.value)
 function prettySize(n) { return n < 1024*1024 ? `${Math.max(1, Math.round(n/1024))} KB` : `${(n/1024/1024).toFixed(1)} MB` }
 function handleShortcut(event) {
   if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); searchInput.value?.focus() }
@@ -2775,10 +2775,10 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
         <div class="nav-label">EXPEDIENTES</div>
         <p class="nav-hint">Usa solo las opciones que necesite cada lote.</p>
         <button class="nav-item" :class="{selected:activePage==='ingesta'}" aria-label="Recibir planillas" title="Recibir planillas" @click="activePage='ingesta'"><v-icon icon="mdi-cloud-upload-outline" size="19"/><span>Recibir planillas</span></button>
-        <button class="nav-item" :class="{selected:activePage==='auditor-folder-import'}" aria-label="Cargar carpetas de auditoría" title="Cargar carpetas de auditoría" @click="openAuditorFolderImportPage"><v-icon icon="mdi-folder-zip-outline" size="19"/><span>Cargar carpetas de auditoría</span></button>
         <button class="nav-item" :class="{selected:activePage==='patient-documents'}" aria-label="Revisar documentos del paciente" title="Revisar documentos del paciente" @click="openPatientDocumentsPage"><v-icon icon="mdi-folder-account-outline" size="19"/><span>Revisar documentos del paciente</span></button>
         <button class="nav-item" :class="{selected:activePage==='coberturas'}" aria-label="Hojas de cobertura" title="Hojas de cobertura" @click="openCoverageDownloads"><v-icon icon="mdi-file-download-outline" size="19"/><span>Hojas de cobertura</span></button>
         <button class="nav-item" :class="{selected:activePage==='individual-coverage'}" aria-label="Consultar cobertura individual por cédula" title="Cobertura individual" @click="openIndividualCoveragePage"><v-icon icon="mdi-card-account-details-outline" size="19"/><span>Cobertura individual</span></button>
+        <button class="nav-item" :class="{selected:activePage==='auditor-folder-import'}" aria-label="Carpetas del equipo" title="Carpetas del equipo" @click="openAuditorFolderImportPage"><v-icon icon="mdi-folder-zip-outline" size="19"/><span>Carpetas del equipo</span></button>
         <button class="nav-item" :class="{selected:activePage==='objeciones'}" aria-label="Subsanar objeciones" title="Subsanar objeciones" @click="openObjectionsPage"><v-icon icon="mdi-file-alert-outline" size="19"/><span>Subsanar objeciones</span></button>
         <button class="nav-item" :class="{selected:activePage==='zip-download'}" aria-label="Descargar expediente ZIP" title="Descargar expediente ZIP" @click="openZipDownloadPage"><v-icon icon="mdi-folder-zip-outline" size="19"/><span>Descargar expediente ZIP</span></button>
         <div class="nav-label">BIBLIOTECA LOCAL</div>
@@ -3089,7 +3089,7 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
           </v-card>
         </section>
         <section v-else-if="activePage==='auditor-folder-import'" class="content-wrap">
-          <div class="welcome-line"><div><div class="eyebrow">IMPORTAR DOCUMENTOS ORGANIZADOS</div><h1>Cargar carpetas de auditoría<span class="title-period">.</span></h1><p class="subtitle">Sube un ZIP con una carpeta por paciente y sus PDFs. Después podrás revisarlos y renombrarlos en Revisar documentos del paciente.</p></div></div>
+          <div class="welcome-line"><div><div class="eyebrow">CARPETAS COMPARTIDAS POR EL EQUIPO</div><h1>Carpetas del equipo<span class="title-period">.</span></h1><p class="subtitle">Sube un ZIP con una carpeta por paciente y sus PDFs. Después podrás revisarlos y renombrarlos en Revisar documentos del paciente.</p></div></div>
           <v-card class="planilla-card saved-workspaces-card" rounded="xl" elevation="0">
             <div class="patient-documents-picker-row">
               <WorkspacePicker
