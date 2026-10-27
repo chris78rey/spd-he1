@@ -495,7 +495,7 @@ body{min-width:320px}
 .patient-coverage-heading h3{margin:0;color:#304738;font-size:16px;line-height:1.4}
 .patient-coverage-heading p,.patient-coverage-help,.patient-coverage-row-detail,.patient-coverage-empty,.patient-coverage-manual{margin:0;color:#526256;font-size:14px;line-height:1.5;overflow-wrap:anywhere}
 .patient-coverage-help{max-width:1000px}
-.patient-coverage-controls{display:grid;grid-template-columns:minmax(170px,1fr) minmax(180px,1fr) auto;align-items:end;gap:10px}
+.patient-coverage-controls{display:grid;grid-template-columns:repeat(3,minmax(150px,1fr)) auto;align-items:end;gap:10px}
 .patient-coverage-controls>.v-btn{min-height:48px}
 .patient-coverage-tramite{display:flex;min-height:56px;align-items:center;padding:0 12px;border:1px solid #d2ded4;border-radius:8px;background:#fff;color:#344b3a;font-size:15px;font-weight:650}
 .patient-coverage-row-detail{display:flex;flex-wrap:wrap;gap:5px 18px}

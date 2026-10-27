@@ -372,6 +372,7 @@ const patientCoverageRows = ref([])
 const patientCoverageLoading = ref(false)
 const patientCoverageSelectedID = ref(null)
 const patientCoverageDate = ref('')
+const patientCoverageCedula = ref('')
 const patientCoverageGenerating = ref(false)
 const patientCoverageError = ref('')
 const patientCoverageNotice = ref('')
@@ -444,6 +445,12 @@ const patientCoverageRowsForFolder = computed(() => workspacePatient.value
   ? patientCoverageRows.value.filter(row => row.carpeta_paciente === workspacePatient.value)
   : [])
 const patientCoverageSelectedRow = computed(() => patientCoverageRowsForFolder.value.find(row => Number(row.pdi_id) === Number(patientCoverageSelectedID.value)) || patientCoverageRowsForFolder.value[0] || null)
+const patientCoverageCedulaError = computed(() => {
+  const cedula = String(patientCoverageCedula.value || '').trim()
+  return patientCoverageSelectedRow.value?.cedula_manual_permitida && cedula && !/^\d{10}$/.test(cedula)
+    ? 'Escribe una cédula de exactamente 10 dígitos.'
+    : ''
+})
 const patientCoverageTramiteItems = computed(() => patientCoverageRowsForFolder.value.map(row => ({
   title: `Trámite ${row.pdi_tramite}${row.fechas_cobertura?.length ? ` · ${row.fechas_cobertura.length} fecha(s) guardada(s)` : ''}`,
   value: row.pdi_id,
@@ -456,6 +463,7 @@ watch([workspacePatient, patientCoverageRows], () => {
   patientCoverageError.value = ''
   patientCoverageNotice.value = ''
 })
+watch(patientCoverageSelectedID, () => { patientCoverageCedula.value = '' })
 const workspaceFusionGroups = computed(() => {
   const allowed = new Set(mspPdfCodes.map(option => option.value.toLowerCase()))
   const groups = new Map()
@@ -938,13 +946,17 @@ async function generatePatientCoverageAtChosenDate() {
     patientCoverageError.value = 'Elige la fecha que consultará el portal MSP.'
     return
   }
+  if (patientCoverageCedulaError.value) {
+    patientCoverageError.value = patientCoverageCedulaError.value
+    return
+  }
   patientCoverageGenerating.value = true
   patientCoverageError.value = ''
   patientCoverageNotice.value = ''
   try {
     const { response, data } = await fetchWorkspaceJSON(`/api/v1/coberturas/generar-fecha/${encodeURIComponent(jobId)}`, {
       method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pdi_ids: [row.pdi_id], fecha_consulta: patientCoverageDate.value }),
+      body: JSON.stringify({ pdi_ids: [row.pdi_id], fecha_consulta: patientCoverageDate.value, cedula: patientCoverageCedula.value.trim() }),
     }, 15 * 60 * 1000, 'consultar las coberturas del paciente')
     if (response.status === 401) { await signOut(); return }
     if (!response.ok) throw new Error(data.error || 'No se pudieron consultar las coberturas del paciente.')
@@ -2319,6 +2331,7 @@ async function openImportedAuditorWorkspace() {
 async function openPatientDocumentsWorkspace(jobId = patientDocumentsWorkspaceID.value) {
   if (!jobId || openingSavedWorkspace.value) return
   patientDocumentsError.value = ''
+  patientCoverageCedula.value = ''
   await openSavedWorkspace(jobId)
   if (ingestError.value) {
     patientDocumentsError.value = ingestError.value
@@ -3569,10 +3582,12 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
                     <v-select v-if="patientCoverageRowsForFolder.length > 1" v-model="patientCoverageSelectedID" :items="patientCoverageTramiteItems" item-title="title" item-value="value" label="Trámite al que asociar las hojas" density="comfortable" variant="outlined" hide-details/>
                     <div v-else class="patient-coverage-tramite">Trámite {{ patientCoverageSelectedRow?.pdi_tramite }}</div>
                     <v-text-field v-model="patientCoverageDate" type="date" label="Fecha de consulta" density="comfortable" variant="outlined" hide-details :disabled="patientCoverageGenerating || patientCoverageLoading"/>
-                    <v-btn type="button" color="primary" prepend-icon="mdi-cloud-download-outline" :loading="patientCoverageGenerating" :disabled="!patientCoverageSelectedRow || !patientCoverageDate || patientCoverageGenerating || patientCoverageLoading || workspaceMutationBusy || workspaceSending || mergeSending || mergeAllSending" @click="generatePatientCoverageAtChosenDate">Consultar y guardar</v-btn>
+                    <v-text-field v-if="patientCoverageSelectedRow?.cedula_manual_permitida" v-model="patientCoverageCedula" label="Cédula a consultar (opcional)" placeholder="10 dígitos" prepend-inner-icon="mdi-card-account-details-outline" inputmode="numeric" maxlength="10" density="comfortable" variant="outlined" :hint="patientCoverageCedula ? 'Se consultará solo esta cédula.' : 'Vacía: se usarán las cédulas de la planilla.'" persistent-hint :error-messages="patientCoverageCedulaError ? [patientCoverageCedulaError] : []" :disabled="patientCoverageGenerating || patientCoverageLoading"/>
+                    <v-btn type="button" color="primary" prepend-icon="mdi-cloud-download-outline" :loading="patientCoverageGenerating" :disabled="!patientCoverageSelectedRow || !patientCoverageDate || Boolean(patientCoverageCedulaError) || patientCoverageGenerating || patientCoverageLoading || workspaceMutationBusy || workspaceSending || mergeSending || mergeAllSending" @click="generatePatientCoverageAtChosenDate">Consultar y guardar</v-btn>
                   </div>
                   <div v-if="patientCoverageSelectedRow" class="patient-coverage-row-detail">
-                    <span v-if="patientCoverageSelectedRow.menor_edad === 'S'">Cédulas a consultar: {{ coverageQueryCedulas(patientCoverageSelectedRow).join(' · ') || 'No hay cédulas válidas registradas' }}</span>
+                    <span v-if="patientCoverageCedula">Cédula elegida para esta consulta: {{ patientCoverageCedula }}</span>
+                    <span v-else-if="patientCoverageSelectedRow.menor_edad === 'S'">Cédulas a consultar: {{ coverageQueryCedulas(patientCoverageSelectedRow).join(' · ') || 'No hay cédulas válidas registradas' }}</span>
                     <span v-else>Cédula a consultar: {{ coverageQueryCedulas(patientCoverageSelectedRow).join(' · ') || 'No hay cédula válida registrada' }}</span>
                     <span>Fechas guardadas: {{ patientCoverageSelectedRow.fechas_cobertura?.join(', ') || 'ninguna todavía' }}</span>
                   </div>

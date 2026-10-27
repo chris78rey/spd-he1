@@ -32,6 +32,7 @@ type coveragePlanilla struct {
 	Tramite          string                 `json:"pdi_tramite"`
 	Patient          string                 `json:"paciente"`
 	PatientFolder    string                 `json:"carpeta_paciente"`
+	ManualCedula     bool                   `json:"cedula_manual_permitida,omitempty"`
 	CareUntil        string                 `json:"fecha_hasta"`
 	Cedula           string                 `json:"cedula"`
 	Minor            string                 `json:"menor_edad"`
@@ -71,6 +72,7 @@ type coverageManualMember struct {
 type coverageGenerateRequest struct {
 	PlanillaIDs []int64 `json:"pdi_ids"`
 	QueryDate   string  `json:"fecha_consulta,omitempty"`
+	Cedula      string  `json:"cedula,omitempty"`
 }
 
 type individualCoverageRequest struct {
@@ -200,6 +202,17 @@ func (s *server) generateCoverageSheetsWithDate(w http.ResponseWriter, r *http.R
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("Selecciona entre 1 y %d planillas.", maxCoverageBatch))
 		return
 	}
+	input.Cedula = strings.TrimSpace(input.Cedula)
+	if input.Cedula != "" {
+		if !useChosenDate {
+			writeError(w, http.StatusBadRequest, "La cédula manual solo se admite al consultar con otra fecha.")
+			return
+		}
+		if !coverageCedulaPattern.MatchString(input.Cedula) {
+			writeError(w, http.StatusBadRequest, "Ingresa una cédula manual de exactamente 10 dígitos.")
+			return
+		}
+	}
 	queryDate := ""
 	if useChosenDate {
 		var ok bool
@@ -234,6 +247,10 @@ func (s *server) generateCoverageSheetsWithDate(w http.ResponseWriter, r *http.R
 		row, ok := byID[pdiID]
 		if !ok {
 			writeError(w, http.StatusUnprocessableEntity, "Una planilla seleccionada no pertenece al año, mes, servicio y ZIP de este lote.")
+			return
+		}
+		if input.Cedula != "" && !row.ManualCedula {
+			writeError(w, http.StatusBadRequest, "La cédula manual solo está disponible para trámites con PDFs importados desde Carpetas del equipo.")
 			return
 		}
 		if !useChosenDate && strings.EqualFold(row.CoverageStatus, "S") && !coverageHasDate(row, row.CareUntil) {
@@ -275,10 +292,26 @@ func (s *server) generateCoverageSheetsWithDate(w http.ResponseWriter, r *http.R
 		members := coverageMembersAt(row, rowQueryDate)
 		if useChosenDate {
 			rowQueryDate = queryDate
-			members = missingCoverageMembersForDate(s, job, row, queryDate)
-			if len(members) == 0 && len(coverageMembersAt(row, queryDate)) > 0 {
+			expectedMembers := coverageMembersAt(row, queryDate)
+			if input.Cedula != "" {
+				expectedMembers = []coverageMember{{Cedula: input.Cedula, Fecha: queryDate}}
+				members = missingCoverageMemberForDate(s, job, row, queryDate, input.Cedula)
+			} else {
+				members = missingCoverageMembersForDate(s, job, row, queryDate)
+			}
+			if len(members) == 0 && len(expectedMembers) > 0 {
 				generatedIDs = append(generatedIDs, row.ID)
 				delete(job.CoverageFailures, row.ID)
+				continue
+			}
+			if len(members) == 0 {
+				reason := "Oracle no registra una cédula válida de 10 dígitos para esta planilla."
+				if row.ManualCedula {
+					reason += " Como sus PDFs vienen de Carpetas del equipo, escribe la cédula que quieres consultar."
+				}
+				failure := coverageFailure{Reason: reason, QueryDate: rowQueryDate, CustomDate: true, Manual: false}
+				job.CoverageFailures[row.ID] = failure
+				failures = append(failures, coverageFailureItem{PlanillaID: row.ID, Tramite: row.Tramite, Reason: reason, Manual: false})
 				continue
 			}
 		} else if coverageHasDate(row, row.CareUntil) {
@@ -358,7 +391,10 @@ func (s *server) generateCoveragePlanilla(ctx context.Context, job stagedJob, pa
 	if len(members) == 0 {
 		return nil, nil, nil, &coverageFailure{Reason: "La planilla no tiene una cédula válida de 10 dígitos o una fecha de atención.", Manual: false}
 	}
-	patientFolder := normalizePatientFolder(row.Patient)
+	patientFolder := strings.TrimSpace(row.PatientFolder)
+	if patientFolder == "" {
+		patientFolder = normalizePatientFolder(row.Patient)
+	}
 	if patientFolder == "" {
 		return nil, nil, nil, &coverageFailure{Reason: "Oracle no devuelve un nombre de paciente utilizable para este trámite.", Manual: false}
 	}
@@ -756,35 +792,60 @@ func (s *server) coverageJob(id string) (stagedJob, error) {
 	if job.IsObjections {
 		return stagedJob{}, errors.New("Los espacios de objeciones no admiten generar coberturas del primer ingreso.")
 	}
-	if !s.hasClinicalSource(job) {
+	if !s.hasClinicalSource(job) && !job.TeamFoldersPeriod {
 		return stagedJob{}, errors.New("Este período ya no conserva el ZIP fuente.")
 	}
 	return job, nil
 }
 
 func (s *server) coverageRows(ctx context.Context, job stagedJob) ([]coveragePlanilla, error) {
-	zipPath := filepath.Join(s.jobSourcesDir(job.ID), "lote.zip")
-	archive, err := zip.OpenReader(zipPath)
-	if err != nil {
-		return nil, err
-	}
 	tramites := make(map[string]bool)
-	for _, entry := range archive.File {
-		if entry.FileInfo().IsDir() {
-			continue
+	planillaIDs := make(map[int64]bool)
+	patientFolders := make(map[int64]string)
+	manualCedulaPlanillas := make(map[int64]bool)
+	if s.hasClinicalSource(job) {
+		zipPath := filepath.Join(s.jobSourcesDir(job.ID), "lote.zip")
+		archive, err := zip.OpenReader(zipPath)
+		if err != nil {
+			return nil, err
 		}
-		parts := strings.Split(strings.Trim(strings.ReplaceAll(entry.Name, `\`, "/"), "/"), "/")
-		if len(parts) != 2 || !tramitePattern.MatchString(parts[0]) {
-			continue
+		for _, entry := range archive.File {
+			if entry.FileInfo().IsDir() {
+				continue
+			}
+			parts := strings.Split(strings.Trim(strings.ReplaceAll(entry.Name, `\`, "/"), "/"), "/")
+			if len(parts) != 2 || !tramitePattern.MatchString(parts[0]) {
+				continue
+			}
+			mapped := strings.TrimSpace(job.TramiteMappings[parts[0]])
+			if mapped == "" {
+				mapped = parts[0]
+			}
+			tramites[mapped] = true
 		}
-		mapped := strings.TrimSpace(job.TramiteMappings[parts[0]])
-		if mapped == "" {
-			mapped = parts[0]
-		}
-		tramites[mapped] = true
+		_ = archive.Close()
 	}
-	_ = archive.Close()
-	if len(tramites) == 0 {
+	for _, planilla := range job.OraclePlanillas {
+		if planilla.PlanillaID > 0 {
+			planillaIDs[planilla.PlanillaID] = true
+			if planilla.PatientFolder != "" {
+				patientFolders[planilla.PlanillaID] = planilla.PatientFolder
+			}
+		}
+	}
+	for _, document := range job.ExternalPDFs {
+		if document.PlanillaID > 0 && !document.OraclePending {
+			planillaIDs[document.PlanillaID] = true
+			if isTeamImportedPDF(document) {
+				manualCedulaPlanillas[document.PlanillaID] = true
+			}
+			parts := strings.Split(filepath.ToSlash(filepath.Clean(filepath.FromSlash(document.RelativePath))), "/")
+			if len(parts) >= 3 && parts[0] == "4. EXPEDIENTES" && patientFolders[document.PlanillaID] == "" {
+				patientFolders[document.PlanillaID] = parts[1]
+			}
+		}
+	}
+	if len(tramites) == 0 && len(planillaIDs) == 0 {
 		return []coveragePlanilla{}, nil
 	}
 	table := oracleTableName(s.schema)
@@ -813,11 +874,15 @@ func (s *server) coverageRows(ctx context.Context, job stagedJob) ([]coveragePla
 			continue
 		}
 		row.Tramite = strings.TrimSpace(rawTramite.String)
-		if !tramites[row.Tramite] {
+		if !tramites[row.Tramite] && !planillaIDs[row.ID] {
 			continue
 		}
 		row.Patient, row.CareUntil = strings.TrimSpace(patient.String), strings.TrimSpace(date.String)
 		row.PatientFolder = normalizePatientFolder(row.Patient)
+		if folder := patientFolders[row.ID]; folder != "" {
+			row.PatientFolder = folder
+		}
+		row.ManualCedula = manualCedulaPlanillas[row.ID]
 		row.Cedula, row.Minor = strings.TrimSpace(cedula.String), strings.ToUpper(strings.TrimSpace(minor.String))
 		row.Dependent1, row.Dependent2 = strings.TrimSpace(dep1.String), strings.TrimSpace(dep2.String)
 		row.CoverageStatus = strings.ToUpper(strings.TrimSpace(coverage.String))
@@ -964,6 +1029,15 @@ func missingCoverageMembersForDate(s *server, job stagedJob, row coveragePlanill
 		}
 	}
 	return missing
+}
+
+func missingCoverageMemberForDate(s *server, job stagedJob, row coveragePlanilla, queryDate, cedula string) []coverageMember {
+	for _, doc := range s.coverageDocumentsForPlanilla(job, row.ID) {
+		if coverageDocumentDate(doc, row) == queryDate && strings.TrimSpace(doc.CoverageCedula) == cedula {
+			return nil
+		}
+	}
+	return []coverageMember{{Cedula: cedula, Fecha: queryDate}}
 }
 
 func (s *server) indexCoverageDocuments(job stagedJob) map[int64]*coverageDateIndex {
