@@ -217,12 +217,16 @@ func TestWorkspaceArchivePatientFoldersSortsAndKeepsTransactionsSeparate(t *test
 
 	packageRoot := t.TempDir()
 	patientRoot := filepath.Join(packageRoot, "4. EXPEDIENTES")
-	for _, folder := range []string{"ZAMBRANO_NUNEZ_CARLOS", "ALVAREZ_GOMEZ_ANA"} {
+	for _, folder := range []string{"ZAMBRANO_NUNEZ_CARLOS", "ALVAREZ_GOMEZ_ANA", "ÁVILA_GARCIA_MARIA"} {
 		if err := os.MkdirAll(filepath.Join(patientRoot, folder), 0700); err != nil {
 			t.Fatal(err)
 		}
+		if err := os.WriteFile(filepath.Join(patientRoot, folder, "HCU_008.pdf"), []byte("%PDF-1.4"), 0600); err != nil {
+			t.Fatal(err)
+		}
 	}
-	if err := os.MkdirAll(filepath.Join(patientRoot, "ÁVILA_GARCIA_MARIA"), 0700); err != nil {
+	// A folder whose PDFs were all removed is not delivered and takes no number.
+	if err := os.MkdirAll(filepath.Join(patientRoot, "BORRADO_SIN_PDF_JUAN"), 0700); err != nil {
 		t.Fatal(err)
 	}
 	normalNames, normalOrder, err := workspaceArchivePatientFolders(stagedJob{}, packageRoot)
@@ -235,6 +239,9 @@ func TestWorkspaceArchivePatientFoldersSortsAndKeepsTransactionsSeparate(t *test
 	}
 	if normalNames["ÁVILA_GARCIA_MARIA"] != "2. AVILA GARCIA MARIA" {
 		t.Fatalf("normal workspace map did not normalize the accented name: %#v", normalNames)
+	}
+	if _, ok := normalNames["BORRADO_SIN_PDF_JUAN"]; ok {
+		t.Fatalf("folder without PDFs must not be numbered: %#v", normalNames)
 	}
 }
 

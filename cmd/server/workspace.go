@@ -644,6 +644,11 @@ func workspaceArchivePatientFolders(job stagedJob, packageRoot string) (map[stri
 			if !entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
 				continue
 			}
+			// A patient folder whose PDFs were all removed is not delivered, so it
+			// must not take a number in the ZIP either.
+			if !directoryHasPDF(filepath.Join(patientRoot, entry.Name())) {
+				continue
+			}
 			displayName := normalizeArchivePatientName(entry.Name())
 			if displayName == "" {
 				displayName = "PACIENTE"
@@ -668,6 +673,21 @@ func workspaceArchivePatientFolders(job stagedJob, packageRoot string) (map[stri
 		orderedNames = append(orderedNames, name)
 	}
 	return bySource, orderedNames, nil
+}
+
+func directoryHasPDF(dir string) bool {
+	found := false
+	_ = filepath.WalkDir(dir, func(path string, entry os.DirEntry, err error) error {
+		if err != nil || found {
+			return filepath.SkipAll
+		}
+		if !entry.IsDir() && strings.EqualFold(filepath.Ext(entry.Name()), ".pdf") {
+			found = true
+			return filepath.SkipAll
+		}
+		return nil
+	})
+	return found
 }
 
 func archiveRelativePatientPath(job stagedJob, relative string, folderNames map[string]string) string {
@@ -786,6 +806,13 @@ func (s *server) downloadWorkspaceZIP(w http.ResponseWriter, r *http.Request) {
 		}
 		if !file.IsDir() && !objectionZIPIncludesFile(job, relative) {
 			return nil
+		}
+		if file.IsDir() && !job.IsObjections {
+			if parts := strings.Split(relativeSlash, "/"); len(parts) == 2 && parts[0] == "4. EXPEDIENTES" {
+				if _, delivered := folderNames[parts[1]]; !delivered {
+					return filepath.SkipDir
+				}
+			}
 		}
 		archiveRelative := archiveRelativePatientPath(job, relative, folderNames)
 		archivePath := filepath.ToSlash(filepath.Join(packageFolderName(&job), archiveRelative))
