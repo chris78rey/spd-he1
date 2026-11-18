@@ -58,3 +58,9 @@ test("lee la fecha del portal en español y la reconoce como portal", () => {
   assert.strictEqual(detectOrigin(spanish), "portal");
   assert.strictEqual(parseSheet(spanish).fecha, "2026-10-01");
 });
+
+test("marca los seguros con 'servicio no disponible'", () => {
+  const down = PORTAL.replace("ISSPOL      no registra cobertura. ciudadano no encon-    no                            no registra cobertura", "ISSPOL      Servicio no disponible    servicio no disponible    Servicio no disponible");
+  assert.deepStrictEqual(parseSheet(down).noDisponibles, ["ISSPOL"]);
+  assert.deepStrictEqual(parseSheet(PORTAL).noDisponibles, []);
+});

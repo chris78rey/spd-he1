@@ -96,16 +96,18 @@ function parseSheet(text) {
   const titleIndex = lines.findIndex((line) => /CONSULTA DE COBERTURA DE SALUD/i.test(line));
   const titular = titleIndex >= 0 ? (lines.slice(titleIndex + 1).find((line) => line.trim()) || "").trim() : "";
   const seguros = {};
+  const noDisponibles = [];
   for (const line of lines) {
     const match = line.match(/^\s*(IESS|ISSFA|ISSPOL)\s{2,}/);
     if (!match) continue;
+    if (/servicio\s+no\s+disponible/i.test(line)) noDisponibles.push(match[1]);
     const results = [...line.matchAll(/\b(s[ií]|no)\s+registra\s+cobertura/gi)];
     if (results.length) {
       seguros[match[1]] = results[results.length - 1][1].toLowerCase().startsWith("s") ? "si" : "no";
     }
   }
   const redPrivada = /NO EXISTEN RESULTADOS/i.test(text) ? "sin resultados" : "con resultados";
-  return { cedula, fecha, titular, seguros, redPrivada };
+  return { cedula, fecha, titular, seguros, redPrivada, noDisponibles };
 }
 
 function normalizeName(value) {
@@ -353,6 +355,12 @@ function main() {
       }
       if (item.error) continue;
       item.portal = parseSheet(pageText(portalFile, 1));
+      if (item.portal.noDisponibles.length) {
+        // El portal no respondió por algún seguro: la hoja saldría incompleta. Se reintenta luego.
+        item.error = `El portal respondió "servicio no disponible" para ${item.portal.noDisponibles.join(", ")}; reintentar.`;
+        fs.renameSync(portalFile, `${portalFile}.servicio-no-disponible`);
+        continue;
+      }
       if (item.portal.fecha !== local.fecha) {
         // Protección: el portal respondió con otra fecha de cobertura (p. ej. la de hoy).
         item.error = `El portal devolvió la fecha ${item.portal.fecha || "?"} en vez de ${local.fecha}.`;
