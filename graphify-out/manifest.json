@@ -42,10 +42,10 @@
     "semantic_hash": "4d0bdd2461e78a8d5e38dfd734ea1210"
   },
   "cmd/server/main.go": {
-    "mtime": 1792870808.8972142,
-    "seen": 1794605170.4173577,
-    "ast_hash": "df360c9713c2827e407e1ee0c6a8f9b3",
-    "semantic_hash": "df360c9713c2827e407e1ee0c6a8f9b3"
+    "mtime": 1795012215.7520049,
+    "seen": 1795012453.9833639,
+    "ast_hash": "780ecdbdc3f0f9152fadc2be6a4105ed",
+    "semantic_hash": ""
   },
   "go.mod": {
     "mtime": 1790887867.5712256,
@@ -417,6 +417,24 @@
     "mtime": 1795010770.1243966,
     "seen": 1795010799.631009,
     "ast_hash": "73b670e8bb13690fe7d61188a06af664",
+    "semantic_hash": ""
+  },
+  "cmd/server/reemplazo_coberturas.go": {
+    "mtime": 1795012376.0791807,
+    "seen": 1795012453.9839911,
+    "ast_hash": "636f2e03b353ac4abc113db1279c66ae",
+    "semantic_hash": ""
+  },
+  "cmd/server/reemplazo_coberturas_test.go": {
+    "mtime": 1795012376.093181,
+    "seen": 1795012453.9839954,
+    "ast_hash": "72d412808f0229f3d010ab5b3b438aee",
+    "semantic_hash": ""
+  },
+  "scripts/cobertura/reemplazo_coberturas.cjs": {
+    "mtime": 1795012394.3973153,
+    "seen": 1795012453.9847882,
+    "ast_hash": "2776235f2eb06cf8a687791d1104552d",
     "semantic_hash": ""
   },
   "package-lock.json": {

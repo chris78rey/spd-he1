@@ -1,24 +1,24 @@
 # Graph Report - spd_msp  (2026-11-18)
 
 ## Corpus Check
-- 69 files · ~117,293 words
+- 72 files · ~121,461 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 7 file(s) not represented in the graph (top: (none) 3, .example 1, .zip 1)
 
 ## Summary
-- 1322 nodes · 3304 edges · 55 communities (44 shown, 11 thin omitted)
-- Extraction: 77% EXTRACTED · 23% INFERRED · 0% AMBIGUOUS · INFERRED: 775 edges (avg confidence: 0.85)
+- 1366 nodes · 3438 edges · 55 communities (44 shown, 11 thin omitted)
+- Extraction: 77% EXTRACTED · 23% INFERRED · 0% AMBIGUOUS · INFERRED: 803 edges (avg confidence: 0.85)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `1095ea59`
+- Built from commit: `269c9eab`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
 ## Community Hubs (Navigation)
 - App.vue Main Component State
 - PDF Ingest Handlers
-- go_pkg_path_filepath
+- ingesta.go
 - Objection Workspace UI
 - Saved Workspace Picker
 - workspace.go
@@ -32,19 +32,19 @@
 - Product Principles
 - testing.T
 - PDF Classifier
-- objeciones_sync.go
+- stagedJob
 - folio.service systemd unit
 - README SPD MSP
-- ingesta.go
+- go_pkg_path_filepath
 - workspace_oracle_sync.go
 - Deploy Skill
 - Coverage & Archive Filters UI
-- objeciones.go
+- coberturas_test.go
 - Oracle Requirements
 - Objection & Closeout Requirements
 - Hybrid Classification Requirements
-- historical_archive.go
-- loadIngestPreview
+- reemplazo_coberturas.go
+- standardCodeForFilename
 - Dual Ingest & Objections Reqs
 - Hybrid OCR Classifier
 - Security decision: deleting full periods requires SPD_BORRA_EXPEDIENTE
@@ -71,28 +71,28 @@
 - Go Module
 
 ## God Nodes (most connected - your core abstractions)
-1. `server` - 105 edges
-2. `stagedJob` - 87 edges
-3. `packageFolderName()` - 53 edges
-4. `writeError()` - 49 edges
-5. `main()` - 48 edges
+1. `server` - 111 edges
+2. `stagedJob` - 88 edges
+3. `packageFolderName()` - 55 edges
+4. `main()` - 49 edges
+5. `writeError()` - 49 edges
 6. `writeJSON()` - 42 edges
 7. `signOut()` - 31 edges
 8. `validJobID()` - 28 edges
 9. `Principios de producto de Folio` - 27 edges
-10. `loadSavedWorkspaces()` - 25 edges
+10. `safeWorkspacePath()` - 25 edges
 
 ## Surprising Connections (you probably didn't know these)
-- `OCR/classification pipeline (pdftoppm, Tesseract spa, PENDIENTE_tmp_)` --semantically_similar_to--> `OCR fallback: Tesseract Spanish on first page only when no text`  [INFERRED] [semantically similar]
-  README.md → .agents/skills/folio-pdf-review/SKILL.md
 - `Decision: classify by document header` --semantically_similar_to--> `Classification precedence: filename alias, header phrases, priority phrases, regular rules`  [INFERRED] [semantically similar]
   PRINCIPIOS_DE_PRODUCTO.md → .agents/skills/folio-pdf-review/SKILL.md
+- `OCR/classification pipeline (pdftoppm, Tesseract spa, PENDIENTE_tmp_)` --semantically_similar_to--> `OCR fallback: Tesseract Spanish on first page only when no text`  [INFERRED] [semantically similar]
+  README.md → .agents/skills/folio-pdf-review/SKILL.md
 - `Query: de qué trata esta app` --references--> `Principios de producto de Folio`  [INFERRED]
   graphify-out/memory/query_20261023_185439_02b394f2_revisa_en_graphify_de_que_se_trata_este_app.md → PRINCIPIOS_DE_PRODUCTO.md
-- `Tie broken by longest specific phrase (conflicts with current rule: equal counts mean pending)` --references--> `Classification precedence: filename alias, header phrases, priority phrases, regular rules`  [AMBIGUOUS]
-  graphify-out/memory/query_20261023_202221_a0eeb6ab_que_nombre_le_deberias_dar_a__home_spd_he1_recurso.md → .agents/skills/folio-pdf-review/SKILL.md
 - `folio.service systemd unit` --references--> `Compare active service process executable, bin/folio-server, dist/ and HTTP frontend with fresh build`  [INFERRED]
   MANUAL_OPERACION_FOLIO.md → .agents/skills/runtime-freshness/SKILL.md
+- `Replacing executable or restarting service is a deployment requiring explicit authorization` --semantically_similar_to--> `Deploy only with explicit user authorization`  [INFERRED] [semantically similar]
+  AGENTS.md → .agents/skills/desplegar-spd/SKILL.md
 
 ## Import Cycles
 - None detected.
@@ -112,36 +112,36 @@ Cohesion: 0.01
 Nodes (295): activeDoc, activeFolder, activePage, auditorImportAllFilesMapped, auditorImportBusy, auditorImportError, auditorImportFile, auditorImportFolderDefaults (+287 more)
 
 ### Community 1 - "PDF Ingest Handlers"
-Cohesion: 0.08
-Nodes (60): atomicWritePrivateFile(), copyPrivateFile(), headerOutputFilename(), jobResponse(), matrixFilename(), missingHeaders(), normalizePatientFolder(), packageFolderName() (+52 more)
+Cohesion: 0.10
+Nodes (45): atomicWritePrivateFile(), copyPrivateFile(), headerOutputFilename(), jobResponse(), matrixFilename(), missingHeaders(), packageFolderName(), periodWorkspaceID() (+37 more)
 
-### Community 2 - "go_pkg_path_filepath"
+### Community 2 - "ingesta.go"
 Cohesion: 0.14
-Nodes (12): TestGenerateIndividualCoverageLivePortal(), TestGenerateIndividualCoverageRejectsInvalidInputsBeforePortal(), TestGenerateIndividualCoverageRequiresSession(), TestCurrentSessionExposesDeleteWorkspacePermission(), TestDeleteObjectionWorkspaceLeavesSourceUntouched(), TestDeleteWorkspaceForbiddenWithoutPermissionLeavesFilesUntouched(), TestListWorkspacesSkipsHiddenDeletionRecoveryDirectories(), directoryHasPDF() (+4 more)
+Nodes (11): backupAndReplace(), newUploadJobID(), replaceWorkspaceOutputs(), TestCurrentSessionExposesDeleteWorkspacePermission(), TestListWorkspacesSkipsHiddenDeletionRecoveryDirectories(), TestDownloadObjectionProgressZIPAllowsMissingCloseoutDocuments(), TestDownloadObjectionZIPKeepsRepeatedPatientTransactionsInSeparateNumberedFolders(), withRepositoryWorkingDirectory() (+3 more)
 
 ### Community 3 - "Objection Workspace UI"
 Cohesion: 0.08
-Nodes (40): addObjectionPatients(), applyAuditorFolderImport(), chooseObjectionWorkspace(), clearAuditorImportPreview(), closeHistoricalArchiveDelete(), createObjectionWorkspace(), createOrOpenAuditorPeriod(), deleteHistoricalArchive() (+32 more)
+Nodes (34): addObjectionPatients(), applyAuditorFolderImport(), chooseObjectionWorkspace(), clearAuditorImportPreview(), closeHistoricalArchiveDelete(), createObjectionWorkspace(), createOrOpenAuditorPeriod(), deleteHistoricalArchive() (+26 more)
 
 ### Community 4 - "Saved Workspace Picker"
-Cohesion: 0.11
-Nodes (30): orderedSavedWorkspaces, savedWorkspaceYearFilters, displayedModelValue, emit, filteredWorkspaces, hasFilters, orderedWorkspaces, pickerItems (+22 more)
+Cohesion: 0.10
+Nodes (32): filteredObjectionPatients, orderedSavedWorkspaces, savedWorkspaceYearFilters, displayedModelValue, emit, filteredWorkspaces, hasFilters, orderedWorkspaces (+24 more)
 
 ### Community 5 - "workspace.go"
-Cohesion: 0.13
-Nodes (21): applyWorkspacePDFFileRenames(), assignWorkspaceNameTargets(), canonicalMSPPDFCode(), compareArchivePatientTieBreak(), TestWorkspaceFusionGroupsIncludeCoverageAndSeparatePlanillas(), isArchiveNumericIdentifier(), isCoveragePDFName(), isCoverageWorkspaceDocument() (+13 more)
+Cohesion: 0.09
+Nodes (30): applyWorkspacePDFFileRenames(), applyWorkspacePDFRenameMetadata(), archiveRelativePatientPath(), assignWorkspaceNameTargets(), canonicalMSPPDFCode(), compareArchivePatientTieBreak(), TestWorkspaceCoverageFusionPreservesDateAndCedulaMetadata(), TestWorkspaceFusionGroupsIncludeCoverageAndSeparatePlanillas() (+22 more)
 
 ### Community 6 - "NPM Dependencies"
 Cohesion: 0.10
 Nodes (24): dependencies, idb@^8.0.0, @mdi/font@^7.4.47, vue@^3.5.0, vuetify@^4.2.2, devDependencies, vite@^7.0.0, @vitejs/plugin-vue@^6.0.0 (+16 more)
 
 ### Community 7 - "Workspace PDF Actions UI"
-Cohesion: 0.08
-Nodes (34): addMissingDocuments(), addWorkspacePDFs(), applyWorkspaceOracleSync(), applyWorkspacePDFNameSuggestions(), associatePendingWorkspacePDF(), confirmMergeAllPending(), confirmWorkspaceFusion(), coverageDocumentSequence() (+26 more)
+Cohesion: 0.07
+Nodes (46): addMissingDocuments(), applyWorkspaceOracleSync(), applyWorkspacePDFNameSuggestions(), associatePendingWorkspacePDF(), checkSession(), classifyIngest(), clearIngestTramiteMapping(), confirmMergeAllPending() (+38 more)
 
 ### Community 8 - "download_site_pdf.cjs"
-Cohesion: 0.08
-Nodes (30): Cdp, closeChrome(), consult(), findChrome(), fs, isTrue(), launchChrome(), main() (+22 more)
+Cohesion: 0.05
+Nodes (53): Cdp, closeChrome(), consult(), findChrome(), fs, isTrue(), launchChrome(), main() (+45 more)
 
 ### Community 9 - "reglas_clasificacion.yaml"
 Cohesion: 0.05
@@ -156,24 +156,24 @@ Cohesion: 0.11
 Nodes (14): buildJPEGImagePDF(), buildPDF(), demoPDF(), escapePDF(), generate(), main(), rasterOCRDemoPDF(), writeDemoPackage() (+6 more)
 
 ### Community 12 - "Coverage Logic"
-Cohesion: 0.12
-Nodes (29): containsInt64(), coverageDocumentDate(), coverageDocumentMetadataItems(), coverageHasDate(), coverageMemberCedulas(), coverageMembers(), coverageMembersAt(), coverageScriptFailureTag() (+21 more)
+Cohesion: 0.19
+Nodes (21): containsInt64(), coverageDocumentDate(), coverageDocumentMetadataItems(), coverageHasDate(), coverageMemberCedulas(), coverageMembers(), coverageMembersAt(), filterCoverageMembers() (+13 more)
 
 ### Community 13 - "Product Principles"
 Cohesion: 0.11
 Nodes (28): Product decision: Archivo histórico en el menú, Principios de producto de Folio, Evidence: search and filters for saved periods, Decision: import team shared folders (Carpetas del equipo), Remove all PDFs of selected team folders with three confirmations, Ranked user jobs (find, save, recognize, batch, recover), Decision: classify by document header, Manual 10-digit cédula for team-folder PDFs (+20 more)
 
 ### Community 14 - "testing.T"
-Cohesion: 0.11
-Nodes (40): historicalArchiveTestServer(), historicalUploadRequest(), makeHistoricalTestZIP(), TestConcurrentHistoricalArchiveUploadsKeepOnePerServicePeriod(), TestDeleteHistoricalArchiveRequiresRoleAndExactIDConfirmation(), TestHistoricalArchiveRejectsDuplicateServicePeriod(), TestHistoricalArchiveRequiresSessionAndRejectsInvalidZIP(), TestHistoricalArchiveUploadPreservesOriginalZIPAndCanSearchAndDownload() (+32 more)
+Cohesion: 0.07
+Nodes (62): historicalArchiveTestServer(), historicalUploadRequest(), makeHistoricalTestZIP(), TestConcurrentHistoricalArchiveUploadsKeepOnePerServicePeriod(), TestDeleteHistoricalArchiveRequiresRoleAndExactIDConfirmation(), TestHistoricalArchiveRejectsDuplicateServicePeriod(), TestHistoricalArchiveRequiresSessionAndRejectsInvalidZIP(), TestHistoricalArchiveUploadPreservesOriginalZIPAndCanSearchAndDownload() (+54 more)
 
 ### Community 15 - "PDF Classifier"
-Cohesion: 0.13
-Nodes (27): addDateCandidateForPeriod(), classifyPDF(), copyWithLimit(), datesOutsideBilledPeriod(), extractPDFText(), formatBilledPeriod(), isRelevantDocumentDateContext(), loadClassificationRules() (+19 more)
+Cohesion: 0.15
+Nodes (22): addDateCandidateForPeriod(), classifyPDF(), copyWithLimit(), datesOutsideBilledPeriod(), extractPDFText(), formatBilledPeriod(), isRelevantDocumentDateContext(), matchClassification() (+14 more)
 
-### Community 16 - "objeciones_sync.go"
-Cohesion: 0.25
-Nodes (18): copyObjectionPDFTree(), installObjectionRows(), normalizedWorkspaceRelativePath(), cloneDeletedPDFs(), cloneObjectionSourcePDFs(), clonePlanillaMappings(), collectObjectionSourcePDFs(), ensureObjectionSourcePDFMap() (+10 more)
+### Community 16 - "stagedJob"
+Cohesion: 0.08
+Nodes (44): normalizePatientFolder(), parseOracleDate(), oracleTableName(), copyObjectionPDFTree(), installObjectionRows(), normalizedWorkspaceRelativePath(), objectionPDFRecord(), cloneDeletedPDFs() (+36 more)
 
 ### Community 17 - "folio.service systemd unit"
 Cohesion: 0.29
@@ -183,25 +183,25 @@ Nodes (7): Manual de operación de Folio, Data directory and offline backup proc
 Cohesion: 0.29
 Nodes (10): Query: Oracle-only planilla absence vs ZIP, ingestPreviewReadyToPrepare: ZIP is source of truth, Oracle-only rows skipped, README SPD MSP, Descargar hojas de cobertura (C_COBERTURA.pdf, up to 10 planillas, PDI_COBERTURA='S'), cmd/demo-lote synthetic OCR demo package generator, Mis documentos library in browser IndexedDB, Oracle login validation with SPD_EXTERNOS role, 8h session, ORACLE_USER technical account for planilla_digital (SELECT, UPDATE PDI_COBERTURA) (+2 more)
 
-### Community 19 - "ingesta.go"
-Cohesion: 0.16
-Nodes (10): backupAndReplace(), newUploadJobID(), replaceWorkspaceOutputs(), sha256Upload(), readMultipartBytes(), ingestFolderPreview, ingestOracleCandidate, ingestPreview (+2 more)
+### Community 19 - "go_pkg_path_filepath"
+Cohesion: 0.14
+Nodes (10): loadClassificationRules(), TestMatchClassificationPrioritizesHCU007InterconsultaPhrase(), TestMatchClassificationRecognizesHCUForm008Keyword(), TestMatchFilenameClassificationUsesConfirmedNumericBases(), TestResolvePDFClassificationPrefersConfirmedFilenameOverGenericContent(), TestCollectZIPPlanillaNumbers(), TestCollectZIPPlanillaNumbersRejectsInvalidPDFPaths(), TestMissingPlanillaInsertSQLIsScopedToSelectedMSPPeriodAndService() (+2 more)
 
 ### Community 20 - "workspace_oracle_sync.go"
 Cohesion: 0.14
-Nodes (13): fileSHA256(), oracleQualified(), receiptsHas(), syncOracleAuditorReceipts(), finalizeNewPlanilla(), workspacePlanillaOptions(), auditorReceipt, oracleDocument (+5 more)
+Nodes (12): historicalArchiveDuplicateMessage(), historicalArchiveMonthLabel(), historicalArchiveServiceLabel(), newHistoricalArchiveID(), normalizeHistoricalArchiveSearch(), fileSHA256(), workspacePlanillaOptions(), historicalArchiveRecord (+4 more)
 
 ### Community 21 - "Deploy Skill"
 Cohesion: 0.18
 Nodes (12): Skill desplegar-spd, Recovery copies and rollback on failed deploy, deploy-runtime.sh --confirm-deploy helper, install-runtime-deploy-access.sh one-time setup, Wrapper /usr/local/sbin/spd-deploy-runtime (sudo NOPASSWD), Skill runtime-freshness, FRESHNESS_OK / FRESHNESS_STALE / FRESHNESS_UNVERIFIED, Compare active service process executable, bin/folio-server, dist/ and HTTP frontend with fresh build (+4 more)
 
 ### Community 22 - "Coverage & Archive Filters UI"
-Cohesion: 0.11
-Nodes (22): auditorImportWorkspaceItems, coverageMonthLabel(), coverageServiceLabel(), filteredHistoricalArchives, filteredObjectionPatients, filteredSavedWorkspaces, generateCoverageSheets(), generateCoverageSheetsAtChosenDate() (+14 more)
+Cohesion: 0.13
+Nodes (20): auditorImportWorkspaceItems, coverageMonthLabel(), coverageServiceLabel(), filteredHistoricalArchives, filteredSavedWorkspaces, generateCoverageSheets(), generateCoverageSheetsAtChosenDate(), generateCoverageSheetsForDate() (+12 more)
 
-### Community 23 - "objeciones.go"
-Cohesion: 0.15
-Nodes (16): normalizeCedulaValue(), normalizeTramiteValue(), objectionCloseoutMissing(), objectionPDFIncluded(), parseSelectedObjectionTramites(), removeObjectionFile(), requiredObjectionPDF(), sha256Hex() (+8 more)
+### Community 23 - "coberturas_test.go"
+Cohesion: 0.21
+Nodes (10): coverageScriptFailureTag(), TestCoverageHasDateUsesDateAssociatedWithSavedPDFs(), TestCoverageMembersAtUsesChosenDateForMinorAndReferences(), TestCoverageScriptFailureTag(), TestGenerateIndividualCoverageLivePortal(), TestGenerateIndividualCoverageRejectsInvalidInputsBeforePortal(), TestGenerateIndividualCoverageRequiresSession(), TestMissingCoverageMembersForDateOnlyReturnsMembersWithoutThatDate() (+2 more)
 
 ### Community 24 - "Oracle Requirements"
 Cohesion: 0.15
@@ -215,13 +215,13 @@ Nodes (12): RF-05 Modulo de gestion de objeciones, RF-06 Guardian de cierre y em
 Cohesion: 0.23
 Nodes (13): RF-03 Clasificacion hibrida y fusion PDF, RF-04 Subsanacion manual y control de faltantes, APIs REST /api/v1/subsanacion, Catalogo oficial MSP para desplegable, Clasificacion manual desde visor dividido, Inyeccion puntual de documento faltante, Fusion de duplicados con pdfcpu.Merge, Extension .pdf explicita en minusculas (+5 more)
 
-### Community 27 - "historical_archive.go"
-Cohesion: 0.16
-Nodes (9): historicalArchiveDuplicateMessage(), historicalArchiveMonthLabel(), historicalArchiveServiceLabel(), newHistoricalArchiveID(), normalizeHistoricalArchiveSearch(), parseOracleDate(), parseOraclePlanillaID(), historicalArchiveRecord (+1 more)
+### Community 27 - "reemplazo_coberturas.go"
+Cohesion: 0.36
+Nodes (5): coverageReplacementPage, coverageReplacementRequest, coverageReplacementResult, coverageReplacementSheet, coverageReplacementSheetResult
 
-### Community 28 - "loadIngestPreview"
-Cohesion: 0.21
-Nodes (12): checkSession(), classifyIngest(), clearIngestTramiteMapping(), forgetUnavailableIngest(), loadDocuments(), loadIngestPreview(), processIngest(), replaceIngestZIP() (+4 more)
+### Community 28 - "standardCodeForFilename"
+Cohesion: 0.33
+Nodes (6): addWorkspacePDFs(), openWorkspaceFusion(), queuedWorkspaceDuplicates, reviewPendingFusion(), selectWorkspacePDFs(), standardCodeForFilename()
 
 ### Community 29 - "Dual Ingest & Objections Reqs"
 Cohesion: 0.20
@@ -240,8 +240,8 @@ Cohesion: 0.22
 Nodes (9): Catalogo de servicios del selector, Control de completitud por servicio, Compilador ISO/ZIP del paquete final, Documentos del expediente por servicio, Estructura de primer ingreso, Red Privada (RPC) A_ENTREGA y C_VALIDACION, Tipos de servicio y tokens canonicos, Matriz de documentos requeridos por servicio (+1 more)
 
 ### Community 36 - "workspace_auditor_import.go"
-Cohesion: 0.15
-Nodes (13): missingPlanillaInsertSQL(), oracleServiceCodesForIngest(), TestMissingPlanillaInsertSQLIsScopedToSelectedMSPPeriodAndService(), TestOracleServiceCodesForIngest(), TestPlanillaForPatientUsesPersistedZIPAssociation(), cleanupAuditorImportStages(), inspectAuditorZIP(), auditorImportApplyRequest (+5 more)
+Cohesion: 0.29
+Nodes (8): cleanupAuditorImportStages(), inspectAuditorZIP(), auditorImportApplyRequest, auditorImportFile, auditorImportFolder, auditorImportPlanilla, auditorImportPreviewResponse, auditorImportStage
 
 ### Community 37 - "Merge Limit Decisions"
 Cohesion: 0.28
@@ -288,8 +288,8 @@ Nodes (3): onDrop(), prettySize(), upload()
   graphify-out/memory/query_20261023_202221_a0eeb6ab_que_nombre_le_deberias_dar_a__home_spd_he1_recurso.md · relation: references
 
 ## Knowledge Gaps
-- **50 isolated node(s):** `folio`, `Remove all PDFs of selected team folders with three confirmations`, `Resultado principal: save, find and trust document actions`, `ZIP patient folder numbering 4. EXPEDIENTES / 5. ANEXOS`, `pdftotext vs Go PDF parser difference` (+45 more)
-  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 525 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
+- **50 isolated node(s):** `folio`, `Remove all PDFs of selected team folders with three confirmations`, `Resultado principal: save, find and trust document actions`, `ZIP patient folder numbering 4. EXPEDIENTES / 5. ANEXOS`, `Private .env configuration` (+45 more)
+  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 531 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
 - **11 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Work-memory lessons
@@ -302,18 +302,18 @@ Nodes (3): onDrop(), prettySize(), upload()
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `stagedJob` connect `PDF Ingest Handlers` to `go_pkg_path_filepath`, `workspace.go`, `Coverage Logic`, `testing.T`, `objeciones_sync.go`, `ingesta.go`, `workspace_oracle_sync.go`, `objeciones.go`, `historical_archive.go`?**
-  _High betweenness centrality (0.015) - this node is a cross-community bridge._
-- **Are the 42 inferred relationships involving `packageFolderName()` (e.g. with `objectionHeaderStatuses()` and `objectionSyncFixture()`) actually correct?**
-  _`packageFolderName()` has 42 INFERRED edges - model-reasoned connections that need verification._
+- **Why does `server` connect `PDF Ingest Handlers` to `Demo Batch Generator`, `Coverage Logic`, `testing.T`, `stagedJob`, `coberturas_test.go`?**
+  _High betweenness centrality (0.022) - this node is a cross-community bridge._
+- **Are the 44 inferred relationships involving `packageFolderName()` (e.g. with `objectionHeaderStatuses()` and `objectionSyncFixture()`) actually correct?**
+  _`packageFolderName()` has 44 INFERRED edges - model-reasoned connections that need verification._
 - **What connects `folio`, `Remove all PDFs of selected team folders with three confirmations`, `Resultado principal: save, find and trust document actions` to the rest of the system?**
   _50 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `App.vue Main Component State` be split into smaller, more focused modules?**
   _Cohesion score 0.0057306590257879654 - nodes in this community are weakly interconnected._
-- **Why does `server` connect `PDF Ingest Handlers` to `objeciones_sync.go`, `Demo Batch Generator`, `Coverage Logic`, `testing.T`?**
-  _High betweenness centrality (0.014) - this node is a cross-community bridge._
+- **Why does `stagedJob` connect `stagedJob` to `PDF Ingest Handlers`, `ingesta.go`, `workspace.go`, `Coverage Logic`, `testing.T`, `workspace_oracle_sync.go`?**
+  _High betweenness centrality (0.013) - this node is a cross-community bridge._
 - **Should `PDF Ingest Handlers` be split into smaller, more focused modules?**
-  _Cohesion score 0.08264386835815407 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.0967741935483871 - nodes in this community are weakly interconnected._
 
 ### Low-confidence Hints
 _AMBIGUOUS edges — the extractor was unsure. Verify before acting on these._
