@@ -174,9 +174,9 @@
     "semantic_hash": "34c6851ce060f07f2b6158267f717097"
   },
   "cmd/server/coberturas.go": {
-    "mtime": 1795010770.1243966,
-    "seen": 1795010799.6294239,
-    "ast_hash": "1ee4993ce6279a9903f56c9e2f9ce6eb",
+    "mtime": 1795014258.227084,
+    "seen": 1795014473.1833665,
+    "ast_hash": "5ab1bad16d0470fe21ff279e104c2ecc",
     "semantic_hash": ""
   },
   "scripts/cobertura/runtime_config.cjs": {
@@ -270,9 +270,9 @@
     "semantic_hash": "7bfa8dccb8d738ca2ed9e2ab9539f120"
   },
   "cmd/server/coberturas_test.go": {
-    "mtime": 1795010770.1243966,
-    "seen": 1795010799.62943,
-    "ast_hash": "a0df85bc836ba24cd86ccc4532451d22",
+    "mtime": 1795014258.233084,
+    "seen": 1795014473.1833713,
+    "ast_hash": "f657f482be9839bf7d8641e4e81bb9e7",
     "semantic_hash": ""
   },
   "cmd/server/workspace_coverage_test.go": {
@@ -414,9 +414,9 @@
     "semantic_hash": ""
   },
   "scripts/cobertura/download_site_pdf.cjs": {
-    "mtime": 1795010770.1243966,
-    "seen": 1795010799.631009,
-    "ast_hash": "73b670e8bb13690fe7d61188a06af664",
+    "mtime": 1795014205.4766958,
+    "seen": 1795014473.184666,
+    "ast_hash": "85aeea230cf34aa20e896369ecbf3ac2",
     "semantic_hash": ""
   },
   "cmd/server/reemplazo_coberturas.go": {
@@ -432,15 +432,15 @@
     "semantic_hash": ""
   },
   "scripts/cobertura/reemplazo_coberturas.cjs": {
-    "mtime": 1795012886.530976,
-    "seen": 1795013014.6359255,
-    "ast_hash": "f0cbff979e9a3fccc979e0cdd9e492d8",
+    "mtime": 1795014278.7702348,
+    "seen": 1795014473.184669,
+    "ast_hash": "21bdf89feb367a44d160234016f97944",
     "semantic_hash": ""
   },
   "scripts/cobertura/reemplazo_coberturas.test.cjs": {
-    "mtime": 1795012886.5739763,
-    "seen": 1795013014.6359353,
-    "ast_hash": "e17c168938b3c619fd2fa9069a24192d",
+    "mtime": 1795014278.771235,
+    "seen": 1795014473.1846712,
+    "ast_hash": "2124103bf92c091316abab813d0455d9",
     "semantic_hash": ""
   },
   "package-lock.json": {
