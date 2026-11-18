@@ -2,8 +2,11 @@
 // Prepara el reemplazo de hojas de cobertura generadas localmente por el PDF real del portal MSP.
 //
 // Fase A (este script): NO modifica expedientes, job.json ni Oracle. Para un período:
-//   1. Encuentra cada C_COBERTURA*.pdf del expediente y detecta el origen de cada página
-//      (portal MSP = fuente Cambria incrustada; generador local = Helvetica, sin Cambria).
+//   1. Encuentra cada C_COBERTURA*.pdf del expediente y detecta el origen de cada página por su
+//      texto: el generador local escribía la fecha como "July 15, 2026" y el pie "Amaru Nan" con
+//      "3814400 |"; el portal escribe "15 July 2026" y "Amaru Ñan". En archivos sin fusionar se
+//      contrasta con el productor (PDFKit = local, react-pdf = portal). Las fuentes NO sirven:
+//      el portal también usa Helvetica/Times. Si las señales se contradicen, la página se revisa a mano.
 //   2. Lee de cada página local su cédula y su fecha de cobertura.
 //   3. Descarga del portal la hoja de cada página (download_site_pdf.cjs), en el mismo orden.
 //   4. Compara, seguro por seguro, "si/no registra cobertura" entre la hoja local y la del portal.
@@ -53,11 +56,18 @@ function pdfInfo(file) {
   return { producer: producer.trim(), pages };
 }
 
-function pageOrigin(file, page) {
-  const fonts = run("pdffonts", ["-f", String(page), "-l", String(page), file]);
-  if (/Cambria/.test(fonts)) return "portal";
-  if (/Helvetica/.test(fonts)) return "local";
-  return "desconocido";
+const MONTH_NAMES = "January|February|March|April|May|June|July|August|September|October|November|December";
+const LOCAL_DATE = new RegExp(`Salud:\\s*(${MONTH_NAMES})\\s+\\d{1,2},\\s*\\d{4}`, "i");
+const PORTAL_DATE = new RegExp(`Salud:\\s*\\d{1,2}\\s+(${MONTH_NAMES})\\s+\\d{4}`, "i");
+
+// Origen de una página según su texto y, si el archivo no está fusionado, su productor.
+function detectOrigin(text, producer = "") {
+  const local = LOCAL_DATE.test(text) || /Amaru Nan\b/.test(text) || /3814400\s*\|/.test(text);
+  const portal = PORTAL_DATE.test(text) || /Amaru Ñan/.test(text);
+  let origin = local && !portal ? "local" : portal && !local ? "portal" : "desconocido";
+  const hint = /PDFKit/i.test(producer) ? "local" : /react-pdf/i.test(producer) ? "portal" : "";
+  if (hint && origin !== hint) origin = "desconocido";
+  return origin;
 }
 
 function pageText(file, page) {
@@ -241,14 +251,29 @@ function main() {
 
   for (const file of findCoverageFiles(periodRoot)) {
     const ruta = path.relative(periodRoot, file);
-    const { pages } = pdfInfo(file);
+    const { pages, producer } = pdfInfo(file);
+    const producerHint = /pdfcpu/i.test(producer) ? "" : producer; // en fusiones el productor es pdfcpu
     const marker = `${path.sep}4. EXPEDIENTES${path.sep}`;
     const rutaExpediente = file.slice(file.indexOf(marker) + 1).split(path.sep).join("/");
     const hoja = { ruta, ruta_expediente: rutaExpediente, sha256_original: sha256(file), paginas_originales: pages, paginas: [], estado: "", candidato: null, motivo: "" };
     const pagePdfs = [];
+    const texts = Array.from({ length: pages }, (_, i) => pageText(file, i + 1));
+    const origins = texts.map((text) => detectOrigin(text, producerHint));
+    if (origins.includes("portal") && origins.includes("local")) {
+      // Hoja mixta: sus páginas del portal deben conservarse tal cual y no se pueden separar de forma
+      // que el servidor las valide; se resuelve a mano (p. ej. desde fuentes/fusiones del período).
+      hoja.paginas = origins.map((origen, i) => ({ pagina: i + 1, origen, local: parseSheet(texts[i]) }));
+      hoja.estado = "PENDIENTE";
+      hoja.motivo = "Hoja mixta (páginas del portal y del generador local): resolver a mano sin volver a consultar las páginas del portal.";
+      report.resumen.PENDIENTE += 1;
+      report.hojas.push(hoja);
+      writeReports(outDir, report);
+      continue;
+    }
     for (let page = 1; page <= pages; page += 1) {
-      const origen = pageOrigin(file, page);
-      const local = parseSheet(pageText(file, page));
+      const text = texts[page - 1];
+      const origen = origins[page - 1];
+      const local = parseSheet(text);
       const item = { pagina: page, origen, local };
       hoja.paginas.push(item);
       if (origen === "portal") {
@@ -258,6 +283,10 @@ function main() {
         item.portal_pdf = path.relative(outDir, kept);
         item.sha256 = sha256(kept);
         pagePdfs.push(kept);
+        continue;
+      }
+      if (origen === "desconocido") {
+        item.error = "No se pudo determinar si la página viene del portal o del generador local; revisar a mano.";
         continue;
       }
       if (!local.cedula || !local.fecha) {
@@ -334,4 +363,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { parseSheet, compareSheets };
+module.exports = { parseSheet, compareSheets, detectOrigin };
