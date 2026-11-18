@@ -94,6 +94,7 @@ func main() {
 	}
 	defer s.serviceDB.Close()
 	go s.cleanExpiredSessions()
+	go s.watchCoverageReplacements()
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/login", s.login)
