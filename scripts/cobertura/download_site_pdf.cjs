@@ -61,6 +61,13 @@ function isTrue(value) {
   return ["1", "true", "yes"].includes(String(value || "").trim().toLowerCase());
 }
 
+const T0 = Date.now();
+function mark(label) {
+  if (isTrue(process.env.COBERTURA_DEBUG_TIMING)) {
+    process.stderr.write(`[tiempo] ${label}: ${((Date.now() - T0) / 1000).toFixed(1)}s\n`);
+  }
+}
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -283,9 +290,11 @@ async function consult(cdp, cedula, fechaPortal) {
   await cdp.type(INPUT_CEDULA, cedula);
   await cdp.type(INPUT_FECHA, fechaPortal);
   await cdp.waitFor(`(() => { const b = ${BTN_CONSULTAR}; return !!b && !b.disabled; })()`, 15000, 120);
+  mark("formulario lleno");
   await cdp.evaluate(`${BTN_CONSULTAR}.click()`);
   await cdp.waitFor("!!document.querySelector('embed[src^=\"blob:\"]') || !!document.querySelector('[role=dialog]')", 60000);
 
+  mark("respuesta del sitio");
   if ((await cdp.evaluate("!!document.querySelector('[role=dialog]')")) === true) {
     const raw = (await cdp.evaluate("document.querySelector('[role=dialog]').innerText")) || "";
     await cdp.evaluate("document.querySelector('[role=dialog] button')?.click()");
@@ -331,9 +340,11 @@ async function main() {
 
   try {
     chrome = await launchChrome();
+    mark("chrome listo");
     const cdp = await Cdp.connect(chrome.wsUrl);
     await cdp.openPage();
     await cdp.navigate();
+    mark("página cargada");
 
     let lastError = null;
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
