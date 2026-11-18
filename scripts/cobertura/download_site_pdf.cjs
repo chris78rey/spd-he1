@@ -284,12 +284,50 @@ class Cdp {
   }
 }
 
+const MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+
+// El campo "Fecha de Consulta" es un selector de MUI de solo lectura: no acepta texto y por
+// defecto queda con la fecha de hoy. Se abre el calendario, se navega al mes pedido, se pulsa
+// el día y "OK", y se comprueba que el campo quedó con la fecha pedida.
+async function selectDate(cdp, fechaPortal) {
+  const [day, month, year] = fechaPortal.split("-").map(Number);
+  const target = year * 12 + (month - 1);
+  await cdp.evaluate(`${INPUT_FECHA}.click()`);
+  await cdp.waitFor("!!document.querySelector('[role=dialog] [class*=CalendarHeader-label]')", 15000, 120);
+  for (let step = 0; step < 240; step += 1) {
+    const label = String((await cdp.evaluate("document.querySelector('[role=dialog] [class*=CalendarHeader-label]').textContent")) || "")
+      .trim()
+      .toLowerCase();
+    const match = label.match(/([a-záéíóú]+)\s+(\d{4})/);
+    const shownMonth = match ? MESES.indexOf(match[1].replace("setiembre", "septiembre")) : -1;
+    if (shownMonth < 0) throw new Error("No se reconoce el mes del calendario del portal.");
+    const shown = Number(match[2]) * 12 + shownMonth;
+    if (shown === target) break;
+    const button = shown > target ? "Previous month" : "Next month";
+    const clicked = await cdp.evaluate(`(() => { const b = document.querySelector('[role=dialog] button[aria-label="${button}"]'); if (!b || b.disabled) return false; b.click(); return true; })()`);
+    if (!clicked) throw new Error("El calendario del portal no permite llegar a la fecha pedida.");
+    await cdp.waitFor(`(document.querySelector('[role=dialog] [class*=CalendarHeader-label]')?.textContent || '').trim().toLowerCase() !== ${JSON.stringify(label)}`, 5000, 80);
+    if (step === 239) throw new Error("No se pudo navegar al mes pedido en el calendario.");
+  }
+  const picked = await cdp.evaluate(`(() => {
+    const b = [...document.querySelectorAll('[role=dialog] button')].find((x) => /PickersDay/.test(x.className) && !/dayOutsideMonth/.test(x.className) && x.innerText.trim() === "${day}");
+    if (!b || b.disabled) return false;
+    b.click();
+    return true;
+  })()`);
+  if (!picked) throw new Error("El día pedido no está disponible en el calendario del portal.");
+  await cdp.evaluate("[...document.querySelectorAll('[role=dialog] button')].find((b) => b.innerText.trim().toUpperCase() === 'OK')?.click()");
+  await cdp.waitFor("!document.querySelector('[role=dialog] [class*=CalendarHeader-label]')", 5000, 80);
+  const value = await cdp.evaluate(`${INPUT_FECHA}.value`);
+  if (value !== fechaPortal) throw new Error(`El portal no aceptó la fecha (quedó ${value}).`);
+}
+
 // Una consulta completa. Devuelve los bytes del PDF o lanza SiteMessage con el aviso del sitio.
 async function consult(cdp, cedula, fechaPortal) {
   await cdp.evaluate(`${BTN_NUEVA}?.click()`);
   await cdp.waitFor("!document.querySelector('embed[src^=\"blob:\"]') && !document.querySelector('[role=dialog]')", 15000, 120);
   await cdp.type(INPUT_CEDULA, cedula);
-  await cdp.type(INPUT_FECHA, fechaPortal);
+  await selectDate(cdp, fechaPortal);
   await cdp.waitFor(`(() => { const b = ${BTN_CONSULTAR}; return !!b && !b.disabled; })()`, 15000, 120);
   mark("formulario lleno");
   await cdp.evaluate(`${BTN_CONSULTAR}.click()`);

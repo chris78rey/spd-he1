@@ -33,6 +33,8 @@ loadEnvFile();
 
 const INSURERS = ["IESS", "ISSFA", "ISSPOL"];
 const MONTHS = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"];
+// El portal escribe el mes en español cuando la fecha se elige en su calendario ("01 octubre 2026").
+const MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
 const DOWNLOADER = path.join(__dirname, "download_site_pdf.cjs");
 
 function parseArgs(argv) {
@@ -57,8 +59,9 @@ function pdfInfo(file) {
 }
 
 const MONTH_NAMES = "January|February|March|April|May|June|July|August|September|October|November|December";
+const MES_NAMES = "enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre";
 const LOCAL_DATE = new RegExp(`Salud:\\s*(${MONTH_NAMES})\\s+\\d{1,2},\\s*\\d{4}`, "i");
-const PORTAL_DATE = new RegExp(`Salud:\\s*\\d{1,2}\\s+(${MONTH_NAMES})\\s+\\d{4}`, "i");
+const PORTAL_DATE = new RegExp(`Salud:\\s*\\d{1,2}\\s+(${MONTH_NAMES}|${MES_NAMES})\\s+\\d{4}`, "i");
 
 // Origen de una página según su texto y, si el archivo no está fusionado, su productor.
 function detectOrigin(text, producer = "") {
@@ -75,7 +78,8 @@ function pageText(file, page) {
 }
 
 function isoFromParts(year, monthName, day) {
-  const month = MONTHS.indexOf(monthName.toLowerCase()) + 1;
+  const name = monthName.toLowerCase();
+  const month = (MONTHS.includes(name) ? MONTHS.indexOf(name) : MESES.indexOf(name.replace("setiembre", "septiembre"))) + 1;
   if (month < 1) return null;
   return `${year}-${String(month).padStart(2, "0")}-${String(Number(day)).padStart(2, "0")}`;
 }
@@ -84,7 +88,7 @@ function isoFromParts(year, monthName, day) {
 function parseSheet(text) {
   const cedula = (text.match(/Identificaci[oó]n:\s*(\d{10})/) || [])[1] || null;
   let fecha = null;
-  const portalDate = text.match(/Salud:\s*(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})/); // 18 November 2026
+  const portalDate = text.match(/Salud:\s*(\d{1,2})\s+([A-Za-záéíóú]+)\s+(\d{4})/); // 18 November 2026 · 01 octubre 2026
   const localDate = text.match(/Salud:\s*([A-Za-z]+)\s+(\d{1,2}),\s*(\d{4})/); // July 15, 2026
   if (portalDate) fecha = isoFromParts(portalDate[3], portalDate[2], portalDate[1]);
   else if (localDate) fecha = isoFromParts(localDate[3], localDate[1], localDate[2]);
@@ -146,6 +150,40 @@ function findCoverageFiles(periodRoot) {
   };
   walk(periodRoot);
   return found.sort();
+}
+
+function normalizeText(text) {
+  return text.replace(/\s+/g, " ").trim();
+}
+
+// PDFs de una página del portal guardados en fuentes/ del período (fuentes previas a fusiones,
+// cargas manuales, etc.), indexados por su texto normalizado. Sirven para conservar tal cual las
+// páginas del portal de una hoja mixta: nunca se vuelven a consultar, porque el portal cambia.
+function portalSourceIndex(periodRoot) {
+  const index = new Map();
+  const walk = (dir) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(full);
+        continue;
+      }
+      if (!entry.name.toLowerCase().endsWith(".pdf")) continue;
+      try {
+        const { pages, producer } = pdfInfo(full);
+        if (pages !== 1) continue;
+        const text = pageText(full, 1);
+        if (!/CONSULTA DE COBERTURA/i.test(text) || detectOrigin(text, /pdfcpu/i.test(producer) ? "" : producer) !== "portal") continue;
+        const key = normalizeText(text);
+        if (!index.has(key)) index.set(key, full);
+      } catch {
+        // PDF ilegible: no es una fuente útil
+      }
+    }
+  };
+  const sources = path.join(periodRoot, "fuentes");
+  if (fs.existsSync(sources)) walk(sources);
+  return index;
 }
 
 function sha256(file) {
@@ -248,6 +286,7 @@ function main() {
 
   const report = { periodo, preparado: new Date().toISOString(), salida: outDir, hojas: [], resumen: { LISTA: 0, REVISAR: 0, PENDIENTE: 0, YA_PORTAL: 0 } };
   let limitReached = false;
+  let sourceIndex = null;
 
   for (const file of findCoverageFiles(periodRoot)) {
     const ruta = path.relative(periodRoot, file);
@@ -259,17 +298,8 @@ function main() {
     const pagePdfs = [];
     const texts = Array.from({ length: pages }, (_, i) => pageText(file, i + 1));
     const origins = texts.map((text) => detectOrigin(text, producerHint));
-    if (origins.includes("portal") && origins.includes("local")) {
-      // Hoja mixta: sus páginas del portal deben conservarse tal cual y no se pueden separar de forma
-      // que el servidor las valide; se resuelve a mano (p. ej. desde fuentes/fusiones del período).
-      hoja.paginas = origins.map((origen, i) => ({ pagina: i + 1, origen, local: parseSheet(texts[i]) }));
-      hoja.estado = "PENDIENTE";
-      hoja.motivo = "Hoja mixta (páginas del portal y del generador local): resolver a mano sin volver a consultar las páginas del portal.";
-      report.resumen.PENDIENTE += 1;
-      report.hojas.push(hoja);
-      writeReports(outDir, report);
-      continue;
-    }
+    hoja.mixta = origins.includes("portal") && origins.includes("local");
+    if (hoja.mixta && !sourceIndex) sourceIndex = portalSourceIndex(periodRoot);
     for (let page = 1; page <= pages; page += 1) {
       const text = texts[page - 1];
       const origen = origins[page - 1];
@@ -277,9 +307,17 @@ function main() {
       const item = { pagina: page, origen, local };
       hoja.paginas.push(item);
       if (origen === "portal") {
-        // Página ya obtenida del portal: se conserva tal cual.
+        // Página ya obtenida del portal: se conserva tal cual, tomando su PDF original de fuentes/.
+        // Separarla de la hoja no sirve: el lector de PDF del servidor no lee esa salida.
+        const source = sourceIndex && sourceIndex.get(normalizeText(text));
+        if (!source) {
+          item.error = "Página del portal sin su PDF original exacto en fuentes/; resolver a mano.";
+          continue;
+        }
         const kept = path.join(pagesDir, `${path.basename(path.dirname(file))}__${path.basename(file, ".pdf")}__p${page}_original.pdf`);
-        run("pdfseparate", ["-f", String(page), "-l", String(page), file, kept]);
+        fs.copyFileSync(source, kept);
+        fs.chmodSync(kept, 0o600);
+        item.fuente_original = path.relative(periodRoot, source);
         item.portal_pdf = path.relative(outDir, kept);
         item.sha256 = sha256(kept);
         pagePdfs.push(kept);
@@ -315,6 +353,12 @@ function main() {
       }
       if (item.error) continue;
       item.portal = parseSheet(pageText(portalFile, 1));
+      if (item.portal.fecha !== local.fecha) {
+        // Protección: el portal respondió con otra fecha de cobertura (p. ej. la de hoy).
+        item.error = `El portal devolvió la fecha ${item.portal.fecha || "?"} en vez de ${local.fecha}.`;
+        fs.renameSync(portalFile, `${portalFile}.fecha-incorrecta`);
+        continue;
+      }
       item.portal_pdf = path.relative(outDir, portalFile);
       item.sha256 = sha256(portalFile);
       const { diffs, warnings } = compareSheets(local, item.portal);

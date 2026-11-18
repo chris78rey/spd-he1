@@ -171,9 +171,9 @@ func (s *server) generateIndividualCoverage(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	pdfPath := filepath.Join(outputDir, outputName+".pdf")
-	if err := validateCoveragePDF(pdfPath, input.Cedula); err != nil {
+	if err := validateCoveragePDF(pdfPath, input.Cedula, queryDate); err != nil {
 		log.Printf("cobertura individual: el PDF devuelto no pasó la validación (%T)", err)
-		writeError(w, http.StatusBadGateway, "El portal MSP no devolvió un PDF válido para la cédula ingresada.")
+		writeError(w, http.StatusBadGateway, "El portal MSP no devolvió un PDF válido para la cédula y fecha ingresadas.")
 		return
 	}
 	w.Header().Set("Content-Type", "application/pdf")
@@ -451,9 +451,9 @@ func (s *server) generateCoveragePlanilla(ctx context.Context, job stagedJob, pa
 			return nil, nil, nil, &coverageFailure{Reason: "El portal MSP no respondió correctamente. Descarga manualmente las hojas de esta planilla.", Manual: true}
 		}
 		pdfPath := filepath.Join(outputDir, outputName+".pdf")
-		if err := validateCoveragePDF(pdfPath, member.Cedula); err != nil {
+		if err := validateCoveragePDF(pdfPath, member.Cedula, member.Fecha); err != nil {
 			log.Printf("coberturas %s PDI_ID=%d: PDF automático rechazado (%T)", job.ID, row.ID, err)
-			return nil, nil, nil, &coverageFailure{Reason: "La descarga no produjo un PDF legible o no corresponde a la cédula consultada. Descarga manualmente las hojas de esta planilla.", Manual: true}
+			return nil, nil, nil, &coverageFailure{Reason: "La descarga no produjo un PDF legible o no corresponde a la cédula y fecha consultadas. Descarga manualmente las hojas de esta planilla.", Manual: true}
 		}
 		generated = append(generated, pdfPath)
 	}
@@ -503,7 +503,7 @@ func (s *server) generateCoveragePlanilla(ctx context.Context, job stagedJob, pa
 	return documents, targets, sources, nil
 }
 
-func validateCoveragePDF(path, expectedCedula string) error {
+func validateCoveragePDF(path, expectedCedula, expectedDate string) error {
 	if err := validateStagedFile(path, ".pdf"); err != nil {
 		return err
 	}
@@ -515,7 +515,39 @@ func validateCoveragePDF(path, expectedCedula string) error {
 	if !strings.Contains(compact, expectedCedula) {
 		return errors.New("la identificación no coincide")
 	}
+	if !coverageSheetHasDate(text, expectedDate) {
+		return errors.New("la fecha de cobertura no coincide")
+	}
 	return nil
+}
+
+var (
+	coverageMonthsES = []string{"enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"}
+	coverageMonthsEN = []string{"january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"}
+)
+
+// coverageSheetHasDate comprueba que la hoja del portal diga la fecha de cobertura pedida
+// (YYYY-MM-DD). El portal la escribe como "01 octubre 2026" o "1 October 2026". Sin esta
+// comprobación, una consulta que el portal respondió con otra fecha pasaba como válida.
+func coverageSheetHasDate(text, expectedDate string) bool {
+	date, err := time.Parse("2006-01-02", expectedDate)
+	if err != nil {
+		return false
+	}
+	normalized := strings.ToLower(strings.Join(strings.Fields(text), " "))
+	month := int(date.Month()) - 1
+	for _, name := range []string{coverageMonthsES[month], coverageMonthsEN[month]} {
+		for _, day := range []string{fmt.Sprintf("%02d", date.Day()), strconv.Itoa(date.Day())} {
+			pattern := regexp.MustCompile(`(^|[^0-9])` + day + ` ` + name + ` ` + strconv.Itoa(date.Year()) + `\b`)
+			if pattern.MatchString(normalized) {
+				return true
+			}
+		}
+	}
+	if name := coverageMonthsEN[month]; strings.Contains(normalized, name+" "+strconv.Itoa(date.Day())+", "+strconv.Itoa(date.Year())) {
+		return true
+	}
+	return false
 }
 
 func containsInt64(values []int64, value int64) bool {

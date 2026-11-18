@@ -173,3 +173,24 @@ func TestGenerateIndividualCoverageLivePortal(t *testing.T) {
 	}
 	t.Logf("PDF del portal recibido: %d bytes", response.Body.Len())
 }
+
+func TestCoverageSheetHasDateRequiresRequestedDate(t *testing.T) {
+	cases := []struct {
+		text, date string
+		want       bool
+	}{
+		{"Fecha de Cobertura de Seguro de Salud: 01 octubre 2026", "2026-10-01", true},
+		{"Fecha de Cobertura de Seguro de Salud: 1 October 2026", "2026-10-01", true},
+		{"Fecha de Cobertura de Seguro de Salud:   October 01, 2026", "2026-10-01", false}, // formato del generador local retirado
+		{"Fecha de Cobertura de Seguro de Salud: October 1, 2026", "2026-10-01", true},
+		{"Fecha de Cobertura de Seguro de Salud: 18 November 2026", "2026-10-01", false},
+		{"Fecha de Cobertura de Seguro de Salud: 11 octubre 2026", "2026-10-01", false},
+		{"Fecha de Cobertura de Seguro de Salud: 01 octubre 2025", "2026-10-01", false},
+		{"cualquier texto", "fecha-invalida", false},
+	}
+	for _, c := range cases {
+		if got := coverageSheetHasDate(c.text, c.date); got != c.want {
+			t.Errorf("coverageSheetHasDate(%q, %q) = %v, want %v", c.text, c.date, got, c.want)
+		}
+	}
+}

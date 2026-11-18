@@ -52,3 +52,9 @@ test("lee cédula, fecha y resultado por seguro en ambos formatos", () => {
   assert.deepStrictEqual(portal.seguros, { IESS: "si", ISSFA: "no", ISSPOL: "no" });
   assert.deepStrictEqual(compareSheets(local, portal).diffs, ["IESS: local=no portal=si"]);
 });
+
+test("lee la fecha del portal en español y la reconoce como portal", () => {
+  const spanish = PORTAL.replace("15 July 2026", "01 octubre 2026");
+  assert.strictEqual(detectOrigin(spanish), "portal");
+  assert.strictEqual(parseSheet(spanish).fecha, "2026-10-01");
+});
