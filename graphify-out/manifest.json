@@ -1,9 +1,9 @@
 {
   "package.json": {
-    "mtime": 1790970859.1939895,
-    "seen": 1794605170.4174488,
-    "ast_hash": "77cc71a9ce0f38bd6564b363dda12ee0",
-    "semantic_hash": "77cc71a9ce0f38bd6564b363dda12ee0"
+    "mtime": 1795010770.7014008,
+    "seen": 1795010799.6309326,
+    "ast_hash": "e31cf0f546285c39238ee34499717cbd",
+    "semantic_hash": ""
   },
   "src/App.vue": {
     "mtime": 1793132053.7253764,
@@ -30,10 +30,10 @@
     "semantic_hash": "8d16fe2490aa9a9bd7f0ca0d46158518"
   },
   "PRINCIPIOS_DE_PRODUCTO.md": {
-    "mtime": 1793132061.3364236,
-    "seen": 1794605170.4175544,
-    "ast_hash": "45d3cdc8ce85f701b5b5ddbcb29253c3",
-    "semantic_hash": "45d3cdc8ce85f701b5b5ddbcb29253c3"
+    "mtime": 1795010770.1253965,
+    "seen": 1795010799.6321185,
+    "ast_hash": "a3083793a0cde0b3f7648759641f9637",
+    "semantic_hash": ""
   },
   "index.html": {
     "mtime": 1790951027.8673532,
@@ -54,10 +54,10 @@
     "semantic_hash": "0d7f823a8f7db7437c72c5b3e0bcd7d6"
   },
   "README.md": {
-    "mtime": 1790972494.720822,
-    "seen": 1794605170.4175599,
-    "ast_hash": "531e6862a53ee337b1a6f5e6f25d6704",
-    "semantic_hash": "531e6862a53ee337b1a6f5e6f25d6704"
+    "mtime": 1795010770.1253965,
+    "seen": 1795010799.6321223,
+    "ast_hash": "3722c83b99c82b5311e9a2b4ee7db7b3",
+    "semantic_hash": ""
   },
   "scripts/install-service.sh": {
     "mtime": 1790715898.2573507,
@@ -174,82 +174,16 @@
     "semantic_hash": "34c6851ce060f07f2b6158267f717097"
   },
   "cmd/server/coberturas.go": {
-    "mtime": 1795009426.9045415,
-    "seen": 1795009537.361549,
-    "ast_hash": "0b95abdf8ebad1c34f2e89d3040fc351",
+    "mtime": 1795010770.1243966,
+    "seen": 1795010799.6294239,
+    "ast_hash": "1ee4993ce6279a9903f56c9e2f9ce6eb",
     "semantic_hash": ""
-  },
-  "scripts/cobertura/generate_pdf.cjs": {
-    "mtime": 1790970855.609968,
-    "seen": 1794605170.4174595,
-    "ast_hash": "1bf7052b6d8342ee941a8a465b3c7523",
-    "semantic_hash": "1bf7052b6d8342ee941a8a465b3c7523"
-  },
-  "scripts/cobertura/query_live.cjs": {
-    "mtime": 1790971086.0743556,
-    "seen": 1794605170.4174647,
-    "ast_hash": "f36d1040a1bb937c808b516411a08a75",
-    "semantic_hash": "f36d1040a1bb937c808b516411a08a75"
   },
   "scripts/cobertura/runtime_config.cjs": {
     "mtime": 1790970855.600968,
     "seen": 1794605170.4174702,
     "ast_hash": "0cd2ea3857350c262b05550173a4524a",
     "semantic_hash": "0cd2ea3857350c262b05550173a4524a"
-  },
-  "scripts/cobertura/svg_layout.cjs": {
-    "mtime": 1790970855.6029677,
-    "seen": 1794605170.4174752,
-    "ast_hash": "211b84c9c418c08e083dd3eefe0f84c7",
-    "semantic_hash": "211b84c9c418c08e083dd3eefe0f84c7"
-  },
-  "assets/cobertura/escudo_ec.png": {
-    "mtime": 1790970855.606968,
-    "seen": 1794605170.4177148,
-    "ast_hash": "5159068441ed7fdd9a6af0173f8bf10b",
-    "semantic_hash": "5159068441ed7fdd9a6af0173f8bf10b"
-  },
-  "assets/cobertura/iess.jpg": {
-    "mtime": 1790970855.606968,
-    "seen": 1794605170.4177203,
-    "ast_hash": "a1bccb1ffafc5995112aaec8a606dce6",
-    "semantic_hash": "a1bccb1ffafc5995112aaec8a606dce6"
-  },
-  "assets/cobertura/issfa.jpg": {
-    "mtime": 1790970855.606968,
-    "seen": 1794605170.4177263,
-    "ast_hash": "a1bccb1ffafc5995112aaec8a606dce6",
-    "semantic_hash": "a1bccb1ffafc5995112aaec8a606dce6"
-  },
-  "assets/cobertura/isspol.jpg": {
-    "mtime": 1790970855.606968,
-    "seen": 1794605170.4177315,
-    "ast_hash": "a1bccb1ffafc5995112aaec8a606dce6",
-    "semantic_hash": "a1bccb1ffafc5995112aaec8a606dce6"
-  },
-  "assets/cobertura/logomsp.jpg": {
-    "mtime": 1790970855.6059678,
-    "seen": 1794605170.417737,
-    "ast_hash": "c5451ae6c6ec175fd1256d39eef2d3f4",
-    "semantic_hash": "c5451ae6c6ec175fd1256d39eef2d3f4"
-  },
-  "assets/cobertura/logorpis.jpg": {
-    "mtime": 1790970855.606968,
-    "seen": 1794605170.4177423,
-    "ast_hash": "8b054401d0364adc6a6c6b35846033cf",
-    "semantic_hash": "8b054401d0364adc6a6c6b35846033cf"
-  },
-  "assets/cobertura/mindefensa.jpg": {
-    "mtime": 1790970855.606968,
-    "seen": 1794605170.4177477,
-    "ast_hash": "b4756727e36e9281587712e49bdf7790",
-    "semantic_hash": "b4756727e36e9281587712e49bdf7790"
-  },
-  "assets/cobertura/mininterior.jpg": {
-    "mtime": 1790970855.606968,
-    "seen": 1794605170.417753,
-    "ast_hash": "6f76b6f6bdea10af4f368dc984841cf2",
-    "semantic_hash": "6f76b6f6bdea10af4f368dc984841cf2"
   },
   "graphify-out/memory/query_20261005_193147_d7af32aa_cu\u00e1l_es_el_estado_real_de_implementaci\u00f3n_y_verifi.md": {
     "mtime": 1791228707.4435441,
@@ -336,9 +270,9 @@
     "semantic_hash": "7bfa8dccb8d738ca2ed9e2ab9539f120"
   },
   "cmd/server/coberturas_test.go": {
-    "mtime": 1795009431.342574,
-    "seen": 1795009537.361556,
-    "ast_hash": "ba5f85e52fb7bd771b666850bca52acf",
+    "mtime": 1795010770.1243966,
+    "seen": 1795010799.62943,
+    "ast_hash": "a0df85bc836ba24cd86ccc4532451d22",
     "semantic_hash": ""
   },
   "cmd/server/workspace_coverage_test.go": {
@@ -480,15 +414,15 @@
     "semantic_hash": ""
   },
   "scripts/cobertura/download_site_pdf.cjs": {
-    "mtime": 1795009529.2572916,
-    "seen": 1795009537.363676,
-    "ast_hash": "99ca348f7ae0eab68c02b6a36ecd3749",
+    "mtime": 1795010770.1243966,
+    "seen": 1795010799.631009,
+    "ast_hash": "73b670e8bb13690fe7d61188a06af664",
     "semantic_hash": ""
   },
   "package-lock.json": {
-    "mtime": 1790971590.098397,
-    "seen": 1795009537.3669612,
-    "ast_hash": "ff409a945751a65e9c61d68b43be2dd0",
+    "mtime": 1795010770.728401,
+    "seen": 1795010799.6336615,
+    "ast_hash": "9127bd8763dff2e524ea7d723ec5cfc7",
     "semantic_hash": ""
   }
 }

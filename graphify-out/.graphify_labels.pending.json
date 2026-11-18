@@ -1,15 +1,18 @@
 {
-  "5": "stagedJob",
+  "2": "go_pkg_path_filepath",
+  "5": "workspace.go",
   "8": "download_site_pdf.cjs",
   "9": "reglas_clasificacion.yaml",
   "14": "testing.T",
-  "16": "review_pdfs.py helper (read-only PDF review)",
+  "16": "objeciones_sync.go",
   "17": "folio.service systemd unit",
   "18": "README SPD MSP",
   "19": "ingesta.go",
-  "20": "oracle_documents.go",
-  "27": "Decision: Archivo histórico first in sidebar",
-  "31": "standardCodeForFilename",
+  "20": "workspace_oracle_sync.go",
+  "23": "objeciones.go",
+  "27": "historical_archive.go",
+  "28": "loadIngestPreview",
   "32": "Security decision: deleting full periods requires SPD_BORRA_EXPEDIENTE",
-  "33": "applyAuditorFolders / syncOracleAuditorReceipts / inspectAuditorZIP"
+  "33": "applyAuditorFolders / syncOracleAuditorReceipts / inspectAuditorZIP",
+  "36": "workspace_auditor_import.go"
 }
