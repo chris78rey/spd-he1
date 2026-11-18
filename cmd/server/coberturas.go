@@ -159,9 +159,14 @@ func (s *server) generateIndividualCoverage(w http.ResponseWriter, r *http.Reque
 	}
 	defer os.RemoveAll(outputDir)
 	outputName := fmt.Sprintf("COBERTURA_%s_%s", input.Cedula, strings.ReplaceAll(queryDate, "-", ""))
-	cmd := exec.CommandContext(ctx, envOr("NODE_BIN", "node"), "scripts/cobertura/generate_pdf.cjs", "--cedula", input.Cedula, "--fecha", queryDate, "--output_name", outputName, "--output_dir", outputDir)
-	if _, err := cmd.CombinedOutput(); err != nil {
-		log.Printf("cobertura individual: consulta MSP fallida (%T)", err)
+	cmd := exec.CommandContext(ctx, envOr("NODE_BIN", "node"), coverageScriptPath(), "--cedula", input.Cedula, "--fecha", queryDate, "--output_name", outputName, "--output_dir", outputDir)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		tag := coverageScriptFailureTag(output)
+		log.Printf("cobertura individual: consulta MSP fallida (%T, %s)", err, tag)
+		if tag == coverageTagSiteLimit {
+			writeError(w, http.StatusTooManyRequests, "El portal MSP alcanzó su límite de consultas. Espera unos minutos y vuelve a intentar.")
+			return
+		}
 		writeError(w, http.StatusBadGateway, "No se pudo obtener la cobertura del portal MSP. Revisa la cédula y vuelve a intentar.")
 		return
 	}
@@ -387,6 +392,35 @@ func (s *server) generateCoverageSheetsWithDate(w http.ResponseWriter, r *http.R
 	writeJSON(w, http.StatusOK, response)
 }
 
+const (
+	coverageScriptSite   = "scripts/cobertura/download_site_pdf.cjs"
+	coverageScriptLegacy = "scripts/cobertura/generate_pdf.cjs"
+	coverageTagSiteLimit = "LIMITE_SITIO"
+	coverageTagSiteMsg   = "MENSAJE_SITIO"
+)
+
+// coverageScriptPath elige cómo se obtiene el PDF de cobertura. Por defecto se descarga el PDF
+// que genera la propia página del MSP; COBERTURA_PDF_MODE=legacy usa el generador local anterior.
+func coverageScriptPath() string {
+	if strings.EqualFold(strings.TrimSpace(os.Getenv("COBERTURA_PDF_MODE")), "legacy") {
+		return coverageScriptLegacy
+	}
+	return coverageScriptSite
+}
+
+// coverageScriptFailureTag resume por qué falló el script sin copiar su salida (puede traer avisos del sitio).
+func coverageScriptFailureTag(output []byte) string {
+	text := string(output)
+	switch {
+	case strings.Contains(text, coverageTagSiteLimit):
+		return coverageTagSiteLimit
+	case strings.Contains(text, coverageTagSiteMsg):
+		return coverageTagSiteMsg
+	default:
+		return "TECNICO"
+	}
+}
+
 func (s *server) generateCoveragePlanilla(ctx context.Context, job stagedJob, packageRoot, sourceRoot string, row coveragePlanilla, queryDate string, members []coverageMember) ([]workspaceDocument, []string, []string, *coverageFailure) {
 	if len(members) == 0 {
 		return nil, nil, nil, &coverageFailure{Reason: "La planilla no tiene una cédula válida de 10 dígitos o una fecha de atención.", Manual: false}
@@ -414,10 +448,14 @@ func (s *server) generateCoveragePlanilla(ctx context.Context, job stagedJob, pa
 			return nil, nil, nil, &coverageFailure{Reason: "No se pudo preparar una salida temporal.", Manual: false}
 		}
 		outputName := fmt.Sprintf("cobertura_%d_%d", row.ID, index+1)
-		cmd := exec.CommandContext(ctx, envOr("NODE_BIN", "node"), "scripts/cobertura/generate_pdf.cjs", "--cedula", member.Cedula, "--fecha", member.Fecha, "--output_name", outputName, "--output_dir", outputDir)
+		cmd := exec.CommandContext(ctx, envOr("NODE_BIN", "node"), coverageScriptPath(), "--cedula", member.Cedula, "--fecha", member.Fecha, "--output_name", outputName, "--output_dir", outputDir)
 		cmd.Dir = "."
-		if _, err := cmd.CombinedOutput(); err != nil {
-			log.Printf("coberturas %s PDI_ID=%d: consulta al portal fallida (%T)", job.ID, row.ID, err)
+		if output, err := cmd.CombinedOutput(); err != nil {
+			tag := coverageScriptFailureTag(output)
+			log.Printf("coberturas %s PDI_ID=%d: consulta al portal fallida (%T, %s)", job.ID, row.ID, err, tag)
+			if tag == coverageTagSiteLimit {
+				return nil, nil, nil, &coverageFailure{Reason: "El portal MSP alcanzó su límite de consultas. Espera unos minutos y reintenta, o descarga manualmente las hojas de esta planilla.", Manual: true}
+			}
 			return nil, nil, nil, &coverageFailure{Reason: "El portal MSP no respondió correctamente. Descarga manualmente las hojas de esta planilla.", Manual: true}
 		}
 		pdfPath := filepath.Join(outputDir, outputName+".pdf")

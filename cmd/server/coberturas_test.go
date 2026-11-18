@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -113,4 +115,72 @@ func TestCoverageHasDateUsesDateAssociatedWithSavedPDFs(t *testing.T) {
 	if coverageHasDate(row, "2026-07-15") {
 		t.Fatalf("coverageHasDate() matched an unsaved date: %#v", row.CoverageDates)
 	}
+}
+
+func TestCoverageScriptPathDefaultsToSitePDF(t *testing.T) {
+	t.Setenv("COBERTURA_PDF_MODE", "")
+	if got := coverageScriptPath(); got != coverageScriptSite {
+		t.Fatalf("coverageScriptPath() = %q, want %q", got, coverageScriptSite)
+	}
+	t.Setenv("COBERTURA_PDF_MODE", " Legacy ")
+	if got := coverageScriptPath(); got != coverageScriptLegacy {
+		t.Fatalf("coverageScriptPath() legacy = %q, want %q", got, coverageScriptLegacy)
+	}
+}
+
+func TestCoverageScriptFailureTag(t *testing.T) {
+	cases := map[string]string{
+		"LIMITE_SITIO: Ha superado el límite de consultas\n": coverageTagSiteLimit,
+		"MENSAJE_SITIO: otro aviso\n":                        coverageTagSiteMsg,
+		"Fallo técnico: Chrome no abrió el puerto\n":         "TECNICO",
+		"": "TECNICO",
+	}
+	for output, want := range cases {
+		if got := coverageScriptFailureTag([]byte(output)); got != want {
+			t.Fatalf("coverageScriptFailureTag(%q) = %q, want %q", output, got, want)
+		}
+	}
+}
+
+// Prueba de integración contra el portal real del MSP. Se omite salvo que se defina
+// COBERTURA_LIVE_CEDULA (10 dígitos); COBERTURA_LIVE_FECHA (YYYY-MM-DD) es opcional y usa hoy.
+// Ejemplo:
+//
+//	COBERTURA_LIVE_CEDULA=1712345678 COBERTURA_CHROME_NO_SANDBOX=true go test ./cmd/server -run LivePortal -v
+func TestGenerateIndividualCoverageLivePortal(t *testing.T) {
+	cedula := strings.TrimSpace(os.Getenv("COBERTURA_LIVE_CEDULA"))
+	if cedula == "" {
+		t.Skip("define COBERTURA_LIVE_CEDULA para consultar el portal real del MSP")
+	}
+	fecha := strings.TrimSpace(os.Getenv("COBERTURA_LIVE_FECHA"))
+	if fecha == "" {
+		fecha = time.Now().Format("2006-01-02")
+	}
+	previous, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir("../.."); err != nil { // el script se resuelve desde la raíz del proyecto
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(previous) })
+
+	s := &server{sessions: map[string]session{"live": {username: "TEST", expiresAt: time.Now().Add(time.Hour)}}}
+	body := `{"cedula":"` + cedula + `","fecha_consulta":"` + fecha + `"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/coberturas/individual", strings.NewReader(body))
+	req.AddCookie(&http.Cookie{Name: "folio_session", Value: "live"})
+	response := httptest.NewRecorder()
+
+	s.generateIndividualCoverage(response, req)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", response.Code, response.Body.String())
+	}
+	if got := response.Header().Get("Content-Type"); got != "application/pdf" {
+		t.Fatalf("Content-Type = %q, want application/pdf", got)
+	}
+	if !bytes.HasPrefix(response.Body.Bytes(), []byte("%PDF-")) {
+		t.Fatalf("la respuesta no empieza con %%PDF-")
+	}
+	t.Logf("PDF del portal recibido: %d bytes", response.Body.Len())
 }
