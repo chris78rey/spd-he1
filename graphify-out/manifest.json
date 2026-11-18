@@ -174,10 +174,10 @@
     "semantic_hash": "34c6851ce060f07f2b6158267f717097"
   },
   "cmd/server/coberturas.go": {
-    "mtime": 1793131989.0139737,
-    "seen": 1794605170.4173295,
-    "ast_hash": "09fda7c0b543abaa4e58d94dfec80ef5",
-    "semantic_hash": "09fda7c0b543abaa4e58d94dfec80ef5"
+    "mtime": 1795009426.9045415,
+    "seen": 1795009537.361549,
+    "ast_hash": "0b95abdf8ebad1c34f2e89d3040fc351",
+    "semantic_hash": ""
   },
   "scripts/cobertura/generate_pdf.cjs": {
     "mtime": 1790970855.609968,
@@ -336,10 +336,10 @@
     "semantic_hash": "7bfa8dccb8d738ca2ed9e2ab9539f120"
   },
   "cmd/server/coberturas_test.go": {
-    "mtime": 1791821693.6405814,
-    "seen": 1794605170.4173348,
-    "ast_hash": "e351fd1570d4215cfb1b5f1b8b31da4c",
-    "semantic_hash": "e351fd1570d4215cfb1b5f1b8b31da4c"
+    "mtime": 1795009431.342574,
+    "seen": 1795009537.361556,
+    "ast_hash": "ba5f85e52fb7bd771b666850bca52acf",
+    "semantic_hash": ""
   },
   "cmd/server/workspace_coverage_test.go": {
     "mtime": 1791489694.7753453,
@@ -476,7 +476,19 @@
   "database/oracle/20261024_auditor_receipts.sql": {
     "mtime": 1792803230.9424925,
     "seen": 1795009093.8173144,
-    "ast_hash": "82585c836454d9db7fee83c095d1eaf1",
-    "semantic_hash": "82585c836454d9db7fee83c095d1eaf1"
+    "ast_hash": "",
+    "semantic_hash": ""
+  },
+  "scripts/cobertura/download_site_pdf.cjs": {
+    "mtime": 1795009529.2572916,
+    "seen": 1795009537.363676,
+    "ast_hash": "99ca348f7ae0eab68c02b6a36ecd3749",
+    "semantic_hash": ""
+  },
+  "package-lock.json": {
+    "mtime": 1790971590.098397,
+    "seen": 1795009537.3669612,
+    "ast_hash": "ff409a945751a65e9c61d68b43be2dd0",
+    "semantic_hash": ""
   }
 }

@@ -1,13 +1,15 @@
 {
-  "2": "testing.T",
-  "15": "README SPD MSP",
-  "27": "ingesta.go",
-  "28": "go_pkg_os",
-  "29": "loadIngestPreview",
-  "35": "historical_archive_test.go",
-  "41": "folio.service systemd unit",
-  "45": ".appendObjectionRows",
-  "46": ".workspaceDeliveryMissing",
-  "59": "Security decision: deleting full periods requires SPD_BORRA_EXPEDIENTE",
-  "60": "applyAuditorFolders / syncOracleAuditorReceipts / inspectAuditorZIP"
+  "5": "stagedJob",
+  "8": "download_site_pdf.cjs",
+  "9": "reglas_clasificacion.yaml",
+  "14": "testing.T",
+  "16": "review_pdfs.py helper (read-only PDF review)",
+  "17": "folio.service systemd unit",
+  "18": "README SPD MSP",
+  "19": "ingesta.go",
+  "20": "oracle_documents.go",
+  "27": "Decision: Archivo histórico first in sidebar",
+  "31": "standardCodeForFilename",
+  "32": "Security decision: deleting full periods requires SPD_BORRA_EXPEDIENTE",
+  "33": "applyAuditorFolders / syncOracleAuditorReceipts / inspectAuditorZIP"
 }
