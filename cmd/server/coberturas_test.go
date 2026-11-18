@@ -117,17 +117,6 @@ func TestCoverageHasDateUsesDateAssociatedWithSavedPDFs(t *testing.T) {
 	}
 }
 
-func TestCoverageScriptPathDefaultsToSitePDF(t *testing.T) {
-	t.Setenv("COBERTURA_PDF_MODE", "")
-	if got := coverageScriptPath(); got != coverageScriptSite {
-		t.Fatalf("coverageScriptPath() = %q, want %q", got, coverageScriptSite)
-	}
-	t.Setenv("COBERTURA_PDF_MODE", " Legacy ")
-	if got := coverageScriptPath(); got != coverageScriptLegacy {
-		t.Fatalf("coverageScriptPath() legacy = %q, want %q", got, coverageScriptLegacy)
-	}
-}
-
 func TestCoverageScriptFailureTag(t *testing.T) {
 	cases := map[string]string{
 		"LIMITE_SITIO: Ha superado el límite de consultas\n": coverageTagSiteLimit,

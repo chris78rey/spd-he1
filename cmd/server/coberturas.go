@@ -159,7 +159,7 @@ func (s *server) generateIndividualCoverage(w http.ResponseWriter, r *http.Reque
 	}
 	defer os.RemoveAll(outputDir)
 	outputName := fmt.Sprintf("COBERTURA_%s_%s", input.Cedula, strings.ReplaceAll(queryDate, "-", ""))
-	cmd := exec.CommandContext(ctx, envOr("NODE_BIN", "node"), coverageScriptPath(), "--cedula", input.Cedula, "--fecha", queryDate, "--output_name", outputName, "--output_dir", outputDir)
+	cmd := exec.CommandContext(ctx, envOr("NODE_BIN", "node"), coverageScript, "--cedula", input.Cedula, "--fecha", queryDate, "--output_name", outputName, "--output_dir", outputDir)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		tag := coverageScriptFailureTag(output)
 		log.Printf("cobertura individual: consulta MSP fallida (%T, %s)", err, tag)
@@ -392,21 +392,13 @@ func (s *server) generateCoverageSheetsWithDate(w http.ResponseWriter, r *http.R
 	writeJSON(w, http.StatusOK, response)
 }
 
+// coverageScript descarga el PDF que genera la propia página del portal MSP. Por normativa la hoja de
+// cobertura debe ser la del sitio del MSP: no se genera localmente ni se consulta su API directamente.
 const (
-	coverageScriptSite   = "scripts/cobertura/download_site_pdf.cjs"
-	coverageScriptLegacy = "scripts/cobertura/generate_pdf.cjs"
+	coverageScript       = "scripts/cobertura/download_site_pdf.cjs"
 	coverageTagSiteLimit = "LIMITE_SITIO"
 	coverageTagSiteMsg   = "MENSAJE_SITIO"
 )
-
-// coverageScriptPath elige cómo se obtiene el PDF de cobertura. Por defecto se descarga el PDF
-// que genera la propia página del MSP; COBERTURA_PDF_MODE=legacy usa el generador local anterior.
-func coverageScriptPath() string {
-	if strings.EqualFold(strings.TrimSpace(os.Getenv("COBERTURA_PDF_MODE")), "legacy") {
-		return coverageScriptLegacy
-	}
-	return coverageScriptSite
-}
 
 // coverageScriptFailureTag resume por qué falló el script sin copiar su salida (puede traer avisos del sitio).
 func coverageScriptFailureTag(output []byte) string {
@@ -448,7 +440,7 @@ func (s *server) generateCoveragePlanilla(ctx context.Context, job stagedJob, pa
 			return nil, nil, nil, &coverageFailure{Reason: "No se pudo preparar una salida temporal.", Manual: false}
 		}
 		outputName := fmt.Sprintf("cobertura_%d_%d", row.ID, index+1)
-		cmd := exec.CommandContext(ctx, envOr("NODE_BIN", "node"), coverageScriptPath(), "--cedula", member.Cedula, "--fecha", member.Fecha, "--output_name", outputName, "--output_dir", outputDir)
+		cmd := exec.CommandContext(ctx, envOr("NODE_BIN", "node"), coverageScript, "--cedula", member.Cedula, "--fecha", member.Fecha, "--output_name", outputName, "--output_dir", outputDir)
 		cmd.Dir = "."
 		if output, err := cmd.CombinedOutput(); err != nil {
 			tag := coverageScriptFailureTag(output)

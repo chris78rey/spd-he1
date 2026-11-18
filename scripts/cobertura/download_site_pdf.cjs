@@ -5,7 +5,8 @@
 // Este script maneja Chrome por CDP (WebSocket nativo de Node 22, sin dependencias),
 // llena el formulario, pulsa "Consultar" y guarda los bytes del blob tal cual.
 //
-// Mismo contrato que generate_pdf.cjs:
+// Por normativa la hoja de cobertura debe ser la del sitio del MSP: no se genera localmente
+// ni se consulta su API directamente. Uso:
 //   node download_site_pdf.cjs --cedula 1712345678 --fecha 2026-10-05 \
 //        --output_name COBERTURA_x --output_dir /ruta
 // Escribe <output_dir>/<output_name>.pdf

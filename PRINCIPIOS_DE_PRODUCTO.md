@@ -108,6 +108,10 @@ Cuando el trámite está asociado a PDFs importados desde «Carpetas del equipo�
 
 «Cobertura individual» permite consultar el portal MSP con solo una cédula y una fecha, aunque la persona no tenga fila en `PLANILLA_DIGITAL` ni pertenezca a un período preparado. El resultado es un PDF descargado directamente por el usuario; no se asocia a un expediente ni modifica Oracle. La consulta cubre únicamente la cédula ingresada. Si se necesitan hojas de referentes legales de un menor que no se puede resolver desde un expediente Oracle, se consulta cada referente por separado con su cédula y la misma fecha.
 
+## Decisión normativa: la cobertura es siempre el PDF del portal MSP
+
+Por normativa, la hoja de cobertura debe obtenerse del sitio del MSP (coberturasalud.msp.gob.ec). No se permite generarla localmente con los datos del portal ni consultar el portal como servicio web. Folio abre la página con un navegador automatizado, llena cédula y fecha y guarda sin cambios el PDF que muestra el sitio; tanto la cobertura individual como las hojas por planilla usan esta vía. Se acepta que cada consulta tarde unos 25-40 s porque la demora está en las consultas internas del portal. Si el sitio falla o aplica su límite de consultas, la planilla queda para descarga manual desde el mismo portal; nunca se sustituye por una hoja generada.
+
 ## Decisión de producto: eliminar ZIP del Archivo histórico por rol
 
 Los ZIP originales del Archivo histórico solo se pueden eliminar con el rol personal de Oracle `SPD_BORRA_EXPEDIENTE`. La interfaz muestra la acción únicamente a quienes tienen el permiso de sesión; la API vuelve a comprobarlo antes de tocar archivos. La confirmación requiere escribir el ID completo del ZIP. La eliminación retira el ZIP y sus metadatos del repositorio y no modifica Oracle.
