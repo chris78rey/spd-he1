@@ -33,7 +33,12 @@ import (
 var (
 	coverageReplacementRequestName = regexp.MustCompile(`^[A-Za-z0-9_.-]+\.json$`)
 	coverageReplacementSheetName   = regexp.MustCompile(`^C_COBERTURA(_\d+)?\.pdf$`)
+	// AED_UUID en Oracle admite 24 caracteres; los IDs de documento existentes (fusion-<16 hex>) cumplen.
+	coverageReplacementDocumentID = regexp.MustCompile(`^[A-Za-z0-9_-]{1,24}$`)
 )
+
+// Prefijos de los PDFs que guardó esta herramienta (el primero corresponde a la versión inicial).
+var coverageReplacementStoredPrefixes = []string{"portal-", "cobertura-portal-"}
 
 type coverageReplacementPage struct {
 	File   string `json:"pdf"`
@@ -52,6 +57,11 @@ type coverageReplacementRequest struct {
 	JobID    string                     `json:"job_id"`
 	Prepared string                     `json:"preparado"`
 	Sheets   []coverageReplacementSheet `json:"hojas"`
+	// RetryOracle solo vuelve a sincronizar Oracle. RestoreIDs (ruta -> ID) devuelve su ID de
+	// documento a hojas que esta herramienta ya reemplazó, para que Oracle registre la nueva
+	// versión del mismo documento.
+	RetryOracle bool              `json:"reintentar_oracle,omitempty"`
+	RestoreIDs  map[string]string `json:"restaurar_ids,omitempty"`
 }
 
 type coverageReplacementSheetResult struct {
@@ -108,7 +118,11 @@ func (s *server) processCoverageReplacementRequest(requestPath string) {
 		result.Error = "Solicitud ilegible."
 	} else {
 		result.JobID = request.JobID
-		result = s.applyCoverageReplacement(request, result)
+		if request.RetryOracle {
+			result = s.retryCoverageReplacementOracle(request, result)
+		} else {
+			result = s.applyCoverageReplacement(request, result)
+		}
 	}
 	resultsDir := filepath.Join(s.coverageReplacementRoot(), "resultados")
 	if mkErr := os.MkdirAll(resultsDir, 0700); mkErr != nil || writePrivateJSON(filepath.Join(resultsDir, name), result) != nil {
@@ -183,8 +197,9 @@ func (s *server) applyCoverageReplacement(request coverageReplacementRequest, re
 		job.Replacements[relative] = storedName
 		for i := range job.ExternalPDFs {
 			if filepath.ToSlash(filepath.Clean(filepath.FromSlash(job.ExternalPDFs[i].RelativePath))) == relative {
+				// Se conserva el ID: Oracle identifica el documento por él y registra el PDF del
+				// portal como nueva versión, marcando la anterior como REEMPLAZADO.
 				info, _ := os.Stat(active)
-				job.ExternalPDFs[i].ID = strings.TrimSuffix(storedName, ".pdf")
 				job.ExternalPDFs[i].StoredName = storedName
 				if info != nil {
 					job.ExternalPDFs[i].Size = info.Size()
@@ -222,6 +237,64 @@ func (s *server) applyCoverageReplacement(request coverageReplacementRequest, re
 	}
 	result.OracleSync = "ok"
 	return result
+}
+
+func (s *server) retryCoverageReplacementOracle(request coverageReplacementRequest, result coverageReplacementResult) coverageReplacementResult {
+	s.ingestMu.Lock()
+	defer s.ingestMu.Unlock()
+
+	job, err := s.loadStagedJob(request.JobID)
+	if err != nil || job.ID != request.JobID {
+		result.Error = "No se encontró el período indicado."
+		return result
+	}
+	if len(request.RestoreIDs) > 0 {
+		previous := append([]workspaceDocument(nil), job.ExternalPDFs...)
+		for relative, id := range request.RestoreIDs {
+			entry := coverageReplacementSheetResult{Path: relative}
+			clean := filepath.ToSlash(filepath.Clean(filepath.FromSlash(relative)))
+			parts := strings.Split(clean, "/")
+			if len(parts) != 3 || parts[0] != "4. EXPEDIENTES" || !coverageReplacementSheetName.MatchString(parts[2]) || !coverageReplacementDocumentID.MatchString(id) {
+				entry.Status, entry.Detail = "OMITIDA", "Ruta o ID de documento inválido."
+				result.Sheets = append(result.Sheets, entry)
+				continue
+			}
+			entry.Status, entry.Detail = "OMITIDA", "La hoja no fue reemplazada por esta herramienta."
+			for i := range job.ExternalPDFs {
+				doc := &job.ExternalPDFs[i]
+				if filepath.ToSlash(filepath.Clean(filepath.FromSlash(doc.RelativePath))) != clean || !hasAnyPrefix(doc.StoredName, coverageReplacementStoredPrefixes) {
+					continue
+				}
+				doc.ID = id
+				entry.Status, entry.Detail = "ID_RESTAURADO", id
+			}
+			result.Sheets = append(result.Sheets, entry)
+		}
+		if err := s.saveStagedJob(job); err != nil {
+			job.ExternalPDFs = previous
+			result.Error = "No se pudo guardar el período."
+			return result
+		}
+	}
+	packageRoot := filepath.Join(s.jobRoot(job.ID), "trabajo", packageFolderName(&job))
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	if err := s.syncOracleWorkspace(ctx, &job, packageRoot); err != nil {
+		log.Printf("reemplazo coberturas %s: falló el reintento Oracle: %v", job.ID, err)
+		result.OracleSync = "falló: " + err.Error()
+		return result
+	}
+	result.OracleSync = "ok"
+	return result
+}
+
+func hasAnyPrefix(value string, prefixes []string) bool {
+	for _, prefix := range prefixes {
+		if strings.HasPrefix(value, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // replaceCoverageSheet valida y coloca una hoja. Devuelve detail != "" si la hoja se omite sin cambios.
@@ -276,7 +349,7 @@ func (s *server) replaceCoverageSheet(packageRoot, preparedRoot, historyDir, ext
 	if _, err := rand.Read(idBytes); err != nil {
 		return "", "", "", "", "No se pudo identificar el PDF del portal."
 	}
-	stored = filepath.Join(externalRoot, fmt.Sprintf("cobertura-portal-%x.pdf", idBytes))
+	stored = filepath.Join(externalRoot, fmt.Sprintf("portal-%x.pdf", idBytes))
 	if len(pages) == 1 {
 		if err := copyPrivateFile(pages[0], stored); err != nil {
 			return "", "", "", "", "No se pudo guardar el PDF del portal."

@@ -207,7 +207,7 @@ function apply(preparedArg) {
       fs.writeFileSync(path.join(prepared, "resultado_aplicacion.json"), JSON.stringify(result, null, 2), { mode: 0o600 });
       for (const h of result.hojas || []) process.stdout.write(`${h.estado.padEnd(11)} ${h.ruta}${h.detalle ? ` — ${h.detalle}` : ""}\n`);
       process.stdout.write(`Oracle: ${result.oracle}${result.error ? ` · Error: ${result.error}` : ""}\n`);
-      return result.error || !(result.hojas || []).every((h) => h.estado === "REEMPLAZADA") ? 1 : 0;
+      return result.error || result.oracle !== "ok" || !(result.hojas || []).every((h) => h.estado === "REEMPLAZADA") ? 1 : 0;
     }
     sleepSync(2000);
   }

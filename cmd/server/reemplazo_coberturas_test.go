@@ -126,7 +126,7 @@ func TestCoverageReplacementPlacesPortalPDFAndKeepsBackup(t *testing.T) {
 		t.Fatal(err)
 	}
 	stored := result.Sheets[0].Stored
-	if job.Replacements[f.relative] != stored || job.ExternalPDFs[0].StoredName != stored || job.ExternalPDFs[0].ID != strings.TrimSuffix(stored, ".pdf") {
+	if job.Replacements[f.relative] != stored || job.ExternalPDFs[0].StoredName != stored || job.ExternalPDFs[0].ID != "fusion-old" || len(job.ExternalPDFs[0].ID) > 24 {
 		t.Fatalf("job no actualizado: replacements=%v external=%+v", job.Replacements, job.ExternalPDFs[0])
 	}
 	if len(job.ExternalPDFs[0].CoverageItems) != 1 || job.ExternalPDFs[0].PlanillaID != 77 {
@@ -207,5 +207,40 @@ func TestCoverageReplacementQueueWritesResultAndRemovesRequest(t *testing.T) {
 	}
 	if result.JobID != f.job.ID || len(result.Sheets) != 1 || result.Sheets[0].Status != "REEMPLAZADA" {
 		t.Fatalf("resultado = %+v", result)
+	}
+}
+
+func TestCoverageReplacementRetryRestoresIDsOnlyForToolReplacedSheets(t *testing.T) {
+	f := newCoverageReplacementFixture(t)
+	if result := f.s.applyCoverageReplacement(f.request, coverageReplacementResult{}); result.Sheets[0].Status != "REEMPLAZADA" {
+		t.Fatalf("apply = %+v", result)
+	}
+	job, _ := f.s.loadStagedJob(f.job.ID)
+	job.ExternalPDFs[0].ID = "cobertura-portal-0123456789abcdef" // estado de la primera versión con ID largo
+	job.ExternalPDFs = append(job.ExternalPDFs, workspaceDocument{ID: "otro", StoredName: "fusion-x.pdf", RelativePath: "4. EXPEDIENTES/OTRO/C_COBERTURA.pdf"})
+	if err := f.s.saveStagedJob(job); err != nil {
+		t.Fatal(err)
+	}
+	request := coverageReplacementRequest{JobID: f.job.ID, RetryOracle: true, RestoreIDs: map[string]string{
+		f.relative:                            "fusion-old",
+		"4. EXPEDIENTES/OTRO/C_COBERTURA.pdf": "fusion-nuevo",
+		"4. EXPEDIENTES/X/HCU_007.pdf":        "fusion-y",
+	}}
+
+	result := f.s.retryCoverageReplacementOracle(request, coverageReplacementResult{})
+
+	statuses := map[string]string{}
+	for _, sheet := range result.Sheets {
+		statuses[sheet.Path] = sheet.Status
+	}
+	if statuses[f.relative] != "ID_RESTAURADO" || statuses["4. EXPEDIENTES/OTRO/C_COBERTURA.pdf"] != "OMITIDA" || statuses["4. EXPEDIENTES/X/HCU_007.pdf"] != "OMITIDA" {
+		t.Fatalf("statuses = %v", statuses)
+	}
+	job, _ = f.s.loadStagedJob(f.job.ID)
+	if job.ExternalPDFs[0].ID != "fusion-old" || job.ExternalPDFs[1].ID != "otro" {
+		t.Fatalf("IDs = %q, %q", job.ExternalPDFs[0].ID, job.ExternalPDFs[1].ID)
+	}
+	if !strings.HasPrefix(result.OracleSync, "falló") { // sin Oracle en pruebas
+		t.Fatalf("OracleSync = %q", result.OracleSync)
 	}
 }
