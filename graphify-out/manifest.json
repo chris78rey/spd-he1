@@ -432,15 +432,15 @@
     "semantic_hash": ""
   },
   "scripts/cobertura/reemplazo_coberturas.cjs": {
-    "mtime": 1795014278.7702348,
-    "seen": 1795014473.184669,
-    "ast_hash": "21bdf89feb367a44d160234016f97944",
+    "mtime": 1795016429.6410468,
+    "seen": 1795018922.9068973,
+    "ast_hash": "e08f867c50b2c386dea0a08f1afe1511",
     "semantic_hash": ""
   },
   "scripts/cobertura/reemplazo_coberturas.test.cjs": {
-    "mtime": 1795014278.771235,
-    "seen": 1795014473.1846712,
-    "ast_hash": "2124103bf92c091316abab813d0455d9",
+    "mtime": 1795016429.6420467,
+    "seen": 1795018922.9069023,
+    "ast_hash": "95ddeeeabae3e3a1756ffd2c7ad6610f",
     "semantic_hash": ""
   },
   "package-lock.json": {

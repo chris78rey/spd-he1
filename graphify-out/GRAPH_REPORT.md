@@ -1,7 +1,7 @@
 # Graph Report - spd_msp  (2026-11-18)
 
 ## Corpus Check
-- 73 files · ~123,455 words
+- 73 files · ~123,536 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 7 file(s) not represented in the graph (top: (none) 3, .example 1, .zip 1)
 
@@ -11,7 +11,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `a9b052c5`
+- Built from commit: `f6908ba5`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -329,7 +329,7 @@ Nodes (3): onDrop(), prettySize(), upload()
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `stagedJob` connect `testing.T` to `PDF Ingest Handlers`, `reemplazo_coberturas_test.go`, `coberturas.go`, `workspace.go`, `workspace_auditor_import.go`, `ingesta.go`?**
+- **Why does `server` connect `PDF Ingest Handlers` to `objeciones.go`, `reemplazo_coberturas_test.go`, `Demo Batch Generator`, `coberturas.go`, `testing.T`, `workspace.go`?**
   _High betweenness centrality (0.018) - this node is a cross-community bridge._
 - **Are the 45 inferred relationships involving `packageFolderName()` (e.g. with `objectionHeaderStatuses()` and `objectionSyncFixture()`) actually correct?**
   _`packageFolderName()` has 45 INFERRED edges - model-reasoned connections that need verification._
@@ -337,8 +337,8 @@ _Questions this graph is uniquely positioned to answer:_
   _50 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `App.vue Main Component State` be split into smaller, more focused modules?**
   _Cohesion score 0.0057306590257879654 - nodes in this community are weakly interconnected._
-- **Why does `server` connect `PDF Ingest Handlers` to `objeciones.go`, `reemplazo_coberturas_test.go`, `Demo Batch Generator`, `coberturas.go`, `testing.T`, `workspace.go`?**
-  _High betweenness centrality (0.015) - this node is a cross-community bridge._
+- **Why does `stagedJob` connect `testing.T` to `PDF Ingest Handlers`, `reemplazo_coberturas_test.go`, `coberturas.go`, `workspace.go`, `workspace_auditor_import.go`, `ingesta.go`?**
+  _High betweenness centrality (0.012) - this node is a cross-community bridge._
 - **Should `PDF Ingest Handlers` be split into smaller, more focused modules?**
   _Cohesion score 0.08600444303395748 - nodes in this community are weakly interconnected._
 
