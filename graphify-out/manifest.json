@@ -1,15 +1,15 @@
 {
   "package.json": {
     "mtime": 1790970859.1939895,
-    "seen": 1790971382.9567566,
+    "seen": 1794605170.4174488,
     "ast_hash": "77cc71a9ce0f38bd6564b363dda12ee0",
-    "semantic_hash": ""
+    "semantic_hash": "77cc71a9ce0f38bd6564b363dda12ee0"
   },
   "src/App.vue": {
-    "mtime": 1791830243.1365829,
-    "seen": 1791830307.2400675,
-    "ast_hash": "96a1a66c3ec136451fa833f548f47d24",
-    "semantic_hash": ""
+    "mtime": 1793132053.7253764,
+    "seen": 1794605170.4174976,
+    "ast_hash": "1bc739fa44cec106342dcfd73ae8d553",
+    "semantic_hash": "1bc739fa44cec106342dcfd73ae8d553"
   },
   "src/main.js": {
     "mtime": 1790711822.217055,
@@ -24,28 +24,28 @@
     "semantic_hash": "4098147b2a6374bc7abaee797f3955d9"
   },
   "AGENTS.md": {
-    "mtime": 1791824602.0972211,
-    "seen": 1791824659.2512908,
-    "ast_hash": "8664e72088155b4a7a3541ef8bbcb6f6",
-    "semantic_hash": ""
+    "mtime": 1792789123.704247,
+    "seen": 1794605170.417543,
+    "ast_hash": "8d16fe2490aa9a9bd7f0ca0d46158518",
+    "semantic_hash": "8d16fe2490aa9a9bd7f0ca0d46158518"
   },
   "PRINCIPIOS_DE_PRODUCTO.md": {
-    "mtime": 1791830203.1313376,
-    "seen": 1791830307.2400794,
-    "ast_hash": "08bc0b9c0d34fd6dad4506b58fcb36f0",
-    "semantic_hash": ""
+    "mtime": 1793132061.3364236,
+    "seen": 1794605170.4175544,
+    "ast_hash": "45d3cdc8ce85f701b5b5ddbcb29253c3",
+    "semantic_hash": "45d3cdc8ce85f701b5b5ddbcb29253c3"
   },
   "index.html": {
     "mtime": 1790951027.8673532,
-    "seen": 1790969481.0024467,
+    "seen": 1794605170.4176567,
     "ast_hash": "4d0bdd2461e78a8d5e38dfd734ea1210",
-    "semantic_hash": ""
+    "semantic_hash": "4d0bdd2461e78a8d5e38dfd734ea1210"
   },
   "cmd/server/main.go": {
-    "mtime": 1791830178.064184,
-    "seen": 1791830307.2400408,
-    "ast_hash": "b2575f8b29f1e4db2ea9d36c7d5b44a8",
-    "semantic_hash": ""
+    "mtime": 1792870808.8972142,
+    "seen": 1794605170.4173577,
+    "ast_hash": "df360c9713c2827e407e1ee0c6a8f9b3",
+    "semantic_hash": "df360c9713c2827e407e1ee0c6a8f9b3"
   },
   "go.mod": {
     "mtime": 1790887867.5712256,
@@ -55,9 +55,9 @@
   },
   "README.md": {
     "mtime": 1790972494.720822,
-    "seen": 1790972533.6382027,
+    "seen": 1794605170.4175599,
     "ast_hash": "531e6862a53ee337b1a6f5e6f25d6704",
-    "semantic_hash": ""
+    "semantic_hash": "531e6862a53ee337b1a6f5e6f25d6704"
   },
   "scripts/install-service.sh": {
     "mtime": 1790715898.2573507,
@@ -66,567 +66,417 @@
     "semantic_hash": "cb8c48aec536d27ddd40572c76127e48"
   },
   "cmd/server/ingesta.go": {
-    "mtime": 1791489727.6025512,
-    "seen": 1791489750.1381614,
-    "ast_hash": "2e9b44eea5c3b1a64b0c77b5ac7e6e7f",
-    "semantic_hash": ""
+    "mtime": 1792872179.2539248,
+    "seen": 1794605170.417352,
+    "ast_hash": "a58bf5f5b55eb029ed2793e4010f724f",
+    "semantic_hash": "a58bf5f5b55eb029ed2793e4010f724f"
   },
   "requerimientos/00req_general.md": {
     "mtime": 1790879684.9112332,
-    "seen": 1790881112.294348,
+    "seen": 1794605170.417662,
     "ast_hash": "1f7605606dc4c7cb18dc20432c9f580d",
-    "semantic_hash": ""
+    "semantic_hash": "1f7605606dc4c7cb18dc20432c9f580d"
   },
   "requerimientos/01req_frontend.md": {
     "mtime": 1790784534.2969115,
-    "seen": 1790784587.4552033,
+    "seen": 1794605170.4176674,
     "ast_hash": "8cc9891b71b796911ef0ee4a4fdece5f",
-    "semantic_hash": ""
+    "semantic_hash": "8cc9891b71b796911ef0ee4a4fdece5f"
   },
   "requerimientos/02req_oracle.md": {
     "mtime": 1790945425.664709,
-    "seen": 1790969481.0024576,
+    "seen": 1794605170.4176724,
     "ast_hash": "d73f22ebc9731076d6f2f05460614761",
-    "semantic_hash": ""
+    "semantic_hash": "d73f22ebc9731076d6f2f05460614761"
   },
   "requerimientos/04bandeja.md": {
     "mtime": 1790879684.912233,
-    "seen": 1790881112.2943554,
+    "seen": 1794605170.4176779,
     "ast_hash": "bad6f81bff75a061ec6b7ce884ebb158",
-    "semantic_hash": ""
+    "semantic_hash": "bad6f81bff75a061ec6b7ce884ebb158"
   },
   "requerimientos/04ocr_go.md": {
     "mtime": 1790887934.1446466,
-    "seen": 1790969481.0024636,
+    "seen": 1794605170.4176831,
     "ast_hash": "fa346cb3fc448348999ccd5d7a2bd6bf",
-    "semantic_hash": ""
+    "semantic_hash": "fa346cb3fc448348999ccd5d7a2bd6bf"
   },
   "requerimientos/05req_gestion_objeciones.md": {
     "mtime": 1791294716.8512783,
-    "seen": 1791294902.477297,
+    "seen": 1794605170.4176886,
     "ast_hash": "6dbb400aba0a58cc3d2aa9bd069d9e98",
-    "semantic_hash": ""
+    "semantic_hash": "6dbb400aba0a58cc3d2aa9bd069d9e98"
   },
   "requerimientos/06req_motor.cierre.md": {
     "mtime": 1790784534.2999115,
-    "seen": 1790784587.455214,
+    "seen": 1794605170.4176939,
     "ast_hash": "8c36747cbf79ec22b5b7d70275f1ef4c",
-    "semantic_hash": ""
+    "semantic_hash": "8c36747cbf79ec22b5b7d70275f1ef4c"
   },
   "cmd/demo-lote/main.go": {
     "mtime": 1790975281.5715249,
-    "seen": 1790975301.3179057,
+    "seen": 1794605170.4173112,
     "ast_hash": "1effa46de34dd4ddbf589fa1c44aa50e",
-    "semantic_hash": ""
+    "semantic_hash": "1effa46de34dd4ddbf589fa1c44aa50e"
   },
   "requerimientos/07_reglas_estructura_acfss.md": {
     "mtime": 1791298762.6671262,
-    "seen": 1791299050.4672105,
+    "seen": 1794605170.417699,
     "ast_hash": "8eab3d529606a5530bba3a3d53bf5a17",
-    "semantic_hash": ""
+    "semantic_hash": "8eab3d529606a5530bba3a3d53bf5a17"
   },
   "reglas_clasificacion.yaml": {
-    "mtime": 1791478126.907845,
-    "seen": 1791478163.6087043,
-    "ast_hash": "1b93c4b611ed6ab3a604902842e0d30d",
-    "semantic_hash": ""
+    "mtime": 1792788054.9704394,
+    "seen": 1794605170.417454,
+    "ast_hash": "8a2a642388674ab04265091ee8125bac",
+    "semantic_hash": "8a2a642388674ab04265091ee8125bac"
   },
   "requerimientos/08_reglas_ocr_y_checklist.md": {
-    "mtime": 1791478126.9088452,
-    "seen": 1791478163.60874,
-    "ast_hash": "f7a7f9fbdb5bbd6471d7552c2bbbc505",
-    "semantic_hash": ""
+    "mtime": 1792788054.9714394,
+    "seen": 1794605170.417704,
+    "ast_hash": "ddb1992939183d100b29d6ecfe987357",
+    "semantic_hash": "ddb1992939183d100b29d6ecfe987357"
   },
   "cmd/server/clasificacion.go": {
-    "mtime": 1791478118.4357922,
-    "seen": 1791478163.6085532,
-    "ast_hash": "fcefdb9c0b83de92d3bc1214e40ce032",
-    "semantic_hash": ""
+    "mtime": 1792787780.600692,
+    "seen": 1794605170.4173179,
+    "ast_hash": "0308368873d810f250d04829e91bb3a3",
+    "semantic_hash": "0308368873d810f250d04829e91bb3a3"
   },
   "cmd/server/workspace.go": {
-    "mtime": 1791491023.1162925,
-    "seen": 1791491052.8024123,
-    "ast_hash": "7fc412a67f914eb708fb41ca04a01312",
-    "semantic_hash": ""
+    "mtime": 1794605801.0739686,
+    "seen": 1795009093.8172934,
+    "ast_hash": "37dfdbf9b60ac8bacbd3e47154986bf1",
+    "semantic_hash": "37dfdbf9b60ac8bacbd3e47154986bf1"
   },
   "catalogos/codigos_msp.json": {
-    "mtime": 1790861901.401459,
-    "seen": 1790884281.3117204,
-    "ast_hash": "8a9b180f641ab16e6acade0a6a37eba4",
-    "semantic_hash": "8a9b180f641ab16e6acade0a6a37eba4"
+    "mtime": 1792706282.5705888,
+    "seen": 1794605170.4173036,
+    "ast_hash": "d632ee9b156ea9905fa53a8f0e01b6c0",
+    "semantic_hash": "d632ee9b156ea9905fa53a8f0e01b6c0"
   },
   "cmd/server/oracle_documents.go": {
-    "mtime": 1791466568.0044754,
-    "seen": 1791466612.3847327,
-    "ast_hash": "9d62d0c0d8768a3936f71f52ae091ba4",
-    "semantic_hash": ""
+    "mtime": 1792870455.4909723,
+    "seen": 1794605170.417384,
+    "ast_hash": "a48828c3e65e31b5605af3d1fe27581c",
+    "semantic_hash": "a48828c3e65e31b5605af3d1fe27581c"
   },
   "graphify-out/memory/query_20261002_142916_923a1475_why_couldn_t_the_user_delete_saved_period_work_amb.md": {
     "mtime": 1790951356.157048,
-    "seen": 1790969481.0024407,
+    "seen": 1794605170.4175653,
     "ast_hash": "38c702e468854f9853d0cdd0a17dd5bc",
-    "semantic_hash": ""
+    "semantic_hash": "38c702e468854f9853d0cdd0a17dd5bc"
   },
   "graphify-out/memory/query_20261002_144332_edfe3e42_does_oracle_only_planilla_absence_block_processing.md": {
     "mtime": 1790952212.1934428,
-    "seen": 1790969481.0024438,
+    "seen": 1794605170.4175708,
     "ast_hash": "34c6851ce060f07f2b6158267f717097",
-    "semantic_hash": ""
+    "semantic_hash": "34c6851ce060f07f2b6158267f717097"
   },
   "cmd/server/coberturas.go": {
-    "mtime": 1791821643.1982741,
-    "seen": 1791821759.1665964,
-    "ast_hash": "6e3f277abbfa754cb8d4f8f14f1adc73",
-    "semantic_hash": ""
+    "mtime": 1793131989.0139737,
+    "seen": 1794605170.4173295,
+    "ast_hash": "09fda7c0b543abaa4e58d94dfec80ef5",
+    "semantic_hash": "09fda7c0b543abaa4e58d94dfec80ef5"
   },
   "scripts/cobertura/generate_pdf.cjs": {
     "mtime": 1790970855.609968,
-    "seen": 1790971382.9567604,
+    "seen": 1794605170.4174595,
     "ast_hash": "1bf7052b6d8342ee941a8a465b3c7523",
-    "semantic_hash": ""
+    "semantic_hash": "1bf7052b6d8342ee941a8a465b3c7523"
   },
   "scripts/cobertura/query_live.cjs": {
     "mtime": 1790971086.0743556,
-    "seen": 1790971382.9567642,
+    "seen": 1794605170.4174647,
     "ast_hash": "f36d1040a1bb937c808b516411a08a75",
-    "semantic_hash": ""
+    "semantic_hash": "f36d1040a1bb937c808b516411a08a75"
   },
   "scripts/cobertura/runtime_config.cjs": {
     "mtime": 1790970855.600968,
-    "seen": 1790971382.9567676,
+    "seen": 1794605170.4174702,
     "ast_hash": "0cd2ea3857350c262b05550173a4524a",
-    "semantic_hash": ""
+    "semantic_hash": "0cd2ea3857350c262b05550173a4524a"
   },
   "scripts/cobertura/svg_layout.cjs": {
     "mtime": 1790970855.6029677,
-    "seen": 1790971382.9567707,
+    "seen": 1794605170.4174752,
     "ast_hash": "211b84c9c418c08e083dd3eefe0f84c7",
-    "semantic_hash": ""
+    "semantic_hash": "211b84c9c418c08e083dd3eefe0f84c7"
   },
   "assets/cobertura/escudo_ec.png": {
     "mtime": 1790970855.606968,
-    "seen": 1790971382.9568644,
+    "seen": 1794605170.4177148,
     "ast_hash": "5159068441ed7fdd9a6af0173f8bf10b",
-    "semantic_hash": ""
+    "semantic_hash": "5159068441ed7fdd9a6af0173f8bf10b"
   },
   "assets/cobertura/iess.jpg": {
     "mtime": 1790970855.606968,
-    "seen": 1790971382.956867,
+    "seen": 1794605170.4177203,
     "ast_hash": "a1bccb1ffafc5995112aaec8a606dce6",
-    "semantic_hash": ""
+    "semantic_hash": "a1bccb1ffafc5995112aaec8a606dce6"
   },
   "assets/cobertura/issfa.jpg": {
     "mtime": 1790970855.606968,
-    "seen": 1790971382.9568698,
+    "seen": 1794605170.4177263,
     "ast_hash": "a1bccb1ffafc5995112aaec8a606dce6",
-    "semantic_hash": ""
+    "semantic_hash": "a1bccb1ffafc5995112aaec8a606dce6"
   },
   "assets/cobertura/isspol.jpg": {
     "mtime": 1790970855.606968,
-    "seen": 1790971382.956873,
+    "seen": 1794605170.4177315,
     "ast_hash": "a1bccb1ffafc5995112aaec8a606dce6",
-    "semantic_hash": ""
+    "semantic_hash": "a1bccb1ffafc5995112aaec8a606dce6"
   },
   "assets/cobertura/logomsp.jpg": {
     "mtime": 1790970855.6059678,
-    "seen": 1790971382.956876,
+    "seen": 1794605170.417737,
     "ast_hash": "c5451ae6c6ec175fd1256d39eef2d3f4",
-    "semantic_hash": ""
+    "semantic_hash": "c5451ae6c6ec175fd1256d39eef2d3f4"
   },
   "assets/cobertura/logorpis.jpg": {
     "mtime": 1790970855.606968,
-    "seen": 1790971382.9568791,
+    "seen": 1794605170.4177423,
     "ast_hash": "8b054401d0364adc6a6c6b35846033cf",
-    "semantic_hash": ""
+    "semantic_hash": "8b054401d0364adc6a6c6b35846033cf"
   },
   "assets/cobertura/mindefensa.jpg": {
     "mtime": 1790970855.606968,
-    "seen": 1790971382.9568818,
+    "seen": 1794605170.4177477,
     "ast_hash": "b4756727e36e9281587712e49bdf7790",
-    "semantic_hash": ""
+    "semantic_hash": "b4756727e36e9281587712e49bdf7790"
   },
   "assets/cobertura/mininterior.jpg": {
     "mtime": 1790970855.606968,
-    "seen": 1790971382.956885,
+    "seen": 1794605170.417753,
     "ast_hash": "6f76b6f6bdea10af4f368dc984841cf2",
-    "semantic_hash": ""
+    "semantic_hash": "6f76b6f6bdea10af4f368dc984841cf2"
   },
   "graphify-out/memory/query_20261005_193147_d7af32aa_cu\u00e1l_es_el_estado_real_de_implementaci\u00f3n_y_verifi.md": {
     "mtime": 1791228707.4435441,
-    "seen": 1791228709.6039653,
+    "seen": 1794605170.4175785,
     "ast_hash": "efd5a46d95bdc25176dbef481b104456",
-    "semantic_hash": ""
+    "semantic_hash": "efd5a46d95bdc25176dbef481b104456"
   },
   "requerimientos/09_estado_real_implementacion.md": {
     "mtime": 1791490448.0538101,
-    "seen": 1791490456.7775352,
+    "seen": 1794605170.4177096,
     "ast_hash": "4792ca6028a0fa01efe4965d22a89b6a",
-    "semantic_hash": ""
+    "semantic_hash": "4792ca6028a0fa01efe4965d22a89b6a"
   },
   "cmd/server/objeciones.go": {
     "mtime": 1791388951.4137566,
-    "seen": 1791389328.8269436,
+    "seen": 1794605170.4173677,
     "ast_hash": "a784b00c5fe064c5a0b29672805390e1",
-    "semantic_hash": ""
+    "semantic_hash": "a784b00c5fe064c5a0b29672805390e1"
   },
   "cmd/server/objeciones_test.go": {
     "mtime": 1791389698.5453248,
-    "seen": 1791389708.8238227,
+    "seen": 1794605170.417379,
     "ast_hash": "2ad81d556ccaf7011cda5eedac11254e",
-    "semantic_hash": ""
+    "semantic_hash": "2ad81d556ccaf7011cda5eedac11254e"
   },
   "cmd/server/workspace_delete_test.go": {
     "mtime": 1791392042.8793747,
-    "seen": 1791392082.961277,
+    "seen": 1794605170.4174159,
     "ast_hash": "2005109712d7fe8314cfe1d5649d8aa5",
-    "semantic_hash": ""
+    "semantic_hash": "2005109712d7fe8314cfe1d5649d8aa5"
   },
   "src/components/WorkspacePicker.vue": {
     "mtime": 1791472800.0605416,
-    "seen": 1791472819.7724137,
+    "seen": 1794605170.4175029,
     "ast_hash": "88e9a4fc973beeac63f2684a7f80b541",
-    "semantic_hash": ""
+    "semantic_hash": "88e9a4fc973beeac63f2684a7f80b541"
   },
   "src/workspace-search.js": {
-    "mtime": 1791306173.3416917,
-    "seen": 1791306212.355878,
-    "ast_hash": "ee780ce57bc8cff38c990e8fa1cd72c7",
-    "semantic_hash": ""
+    "mtime": 1792869904.0784883,
+    "seen": 1794605170.4175148,
+    "ast_hash": "7e8c44f5909c17f16c9113991b060473",
+    "semantic_hash": "7e8c44f5909c17f16c9113991b060473"
   },
   "cmd/server/workspace_download_test.go": {
-    "mtime": 1791491023.1172924,
-    "seen": 1791491052.8024287,
-    "ast_hash": "95f73fa3261643c741a43ef47e0aed6e",
-    "semantic_hash": ""
+    "mtime": 1794605801.0739686,
+    "seen": 1795009093.8173077,
+    "ast_hash": "942e67319776f509cf3567081a22d09b",
+    "semantic_hash": "942e67319776f509cf3567081a22d09b"
   },
   "cmd/server/objeciones_sync.go": {
     "mtime": 1791389690.2212777,
-    "seen": 1791389708.8238175,
+    "seen": 1794605170.417373,
     "ast_hash": "584d69f20bf816de9b75594f50fe1dee",
-    "semantic_hash": ""
-  },
-  "dist.pre-sync-deploy-20261007/assets/index--Uh1Xf-Z.js": {
-    "mtime": 1791389570.9736109,
-    "seen": 1791391306.0513172,
-    "ast_hash": "8ed7d101839450177bb61aa3d311e9a9",
-    "semantic_hash": ""
-  },
-  "dist.pre-sync-deploy-20261007/index.html": {
-    "mtime": 1791389570.9706109,
-    "seen": 1791391306.0513828,
-    "ast_hash": "bf8d19a6f68a20005d26c924c06f9b3c",
-    "semantic_hash": ""
+    "semantic_hash": "584d69f20bf816de9b75594f50fe1dee"
   },
   "cmd/server/main_auth_test.go": {
     "mtime": 1791392066.998519,
-    "seen": 1791392082.9612448,
+    "seen": 1794605170.4173627,
     "ast_hash": "00065f8ba6458db70e283767717164e9",
-    "semantic_hash": ""
+    "semantic_hash": "00065f8ba6458db70e283767717164e9"
   },
   "cmd/server/planilla_provision.go": {
     "mtime": 1791466878.3594139,
-    "seen": 1791466938.1330063,
+    "seen": 1794605170.4173892,
     "ast_hash": "4b6131f2b5855eb3b6a96305bf3553bc",
-    "semantic_hash": ""
+    "semantic_hash": "4b6131f2b5855eb3b6a96305bf3553bc"
   },
   "cmd/server/planilla_provision_test.go": {
     "mtime": 1791466878.3604138,
-    "seen": 1791466938.1330118,
+    "seen": 1794605170.4173942,
     "ast_hash": "7572e9329906c343980138d53d157329",
-    "semantic_hash": ""
+    "semantic_hash": "7572e9329906c343980138d53d157329"
   },
   "MANUAL_OPERACION_FOLIO.md": {
     "mtime": 1791823291.178249,
-    "seen": 1791823341.6435537,
+    "seen": 1794605170.4175482,
     "ast_hash": "9b14e6adf4cee650bfde73627e9badaf",
-    "semantic_hash": ""
+    "semantic_hash": "9b14e6adf4cee650bfde73627e9badaf"
   },
   "cmd/server/clasificacion_test.go": {
     "mtime": 1791478146.2179656,
-    "seen": 1791478163.608559,
+    "seen": 1794605170.4173234,
     "ast_hash": "7bfa8dccb8d738ca2ed9e2ab9539f120",
-    "semantic_hash": ""
+    "semantic_hash": "7bfa8dccb8d738ca2ed9e2ab9539f120"
   },
   "cmd/server/coberturas_test.go": {
     "mtime": 1791821693.6405814,
-    "seen": 1791821759.1665986,
+    "seen": 1794605170.4173348,
     "ast_hash": "e351fd1570d4215cfb1b5f1b8b31da4c",
-    "semantic_hash": ""
+    "semantic_hash": "e351fd1570d4215cfb1b5f1b8b31da4c"
   },
   "cmd/server/workspace_coverage_test.go": {
     "mtime": 1791489694.7753453,
-    "seen": 1791489750.1382067,
+    "seen": 1794605170.4174106,
     "ast_hash": "eed7bd6a194621622a9b43742f6f9436",
-    "semantic_hash": ""
+    "semantic_hash": "eed7bd6a194621622a9b43742f6f9436"
   },
   "cmd/server/historical_archive.go": {
-    "mtime": 1791830245.6375983,
-    "seen": 1791830307.2400367,
-    "ast_hash": "2b60254ac51ed8c7b1eaeef541b45ba1",
-    "semantic_hash": ""
+    "mtime": 1791833384.2817478,
+    "seen": 1794605170.4173405,
+    "ast_hash": "4672047da17089af579a3be1b61cc646",
+    "semantic_hash": "4672047da17089af579a3be1b61cc646"
   },
   "cmd/server/historical_archive_test.go": {
     "mtime": 1791830223.5184627,
-    "seen": 1791830307.2400377,
+    "seen": 1794605170.4173465,
     "ast_hash": "504ac1f8613403ad08282cd77a41521e",
-    "semantic_hash": ""
+    "semantic_hash": "504ac1f8613403ad08282cd77a41521e"
   },
   "graphify-out/memory/query_20261008_204302_4c7018d9_where_should_archivo_hist\u00f3rico_appear_in_the_folio.md": {
     "mtime": 1791492182.5803418,
-    "seen": 1791492615.821065,
+    "seen": 1794605170.417585,
     "ast_hash": "a5ae1a930788a7f54a35441e8cf0d8e7",
-    "semantic_hash": ""
+    "semantic_hash": "a5ae1a930788a7f54a35441e8cf0d8e7"
   },
-  "PRUEBAS/EMGagosto2021/1. CAIZA GARCIA STEVEN ALEXANDER/P_INDIVIDUAL.pdf": {
-    "mtime": 1791491127.2419293,
-    "seen": 1791492615.8210883,
-    "ast_hash": "4b2780446e785a12df5020e0c91ff6e6",
-    "semantic_hash": ""
+  "graphify-out/memory/query_20261022_221940_0912ffa7_si_ya_salio_anexos_pdf_y_si_le_cambio_graba_esto_e.md": {
+    "mtime": 1792707719.4799945,
+    "seen": 1794605170.4175904,
+    "ast_hash": "b822227e9b1b8147736cda7f4fa371ca",
+    "semantic_hash": "b822227e9b1b8147736cda7f4fa371ca"
   },
-  "PRUEBAS/EMGagosto2021/10. PERALTA ARMAS DAVID ANDRES/ANEXOS.pdf": {
-    "mtime": 1791491127.32793,
-    "seen": 1791492615.8210897,
-    "ast_hash": "7f139333ca8cce6d9e4d35562f04782f",
-    "semantic_hash": ""
+  "graphify-out/memory/query_20261023_185439_02b394f2_revisa_en_graphify_de_que_se_trata_este_app.md": {
+    "mtime": 1792781679.125793,
+    "seen": 1794605170.4175956,
+    "ast_hash": "864f10070dbdcdf2345703b522472573",
+    "semantic_hash": "864f10070dbdcdf2345703b522472573"
   },
-  "PRUEBAS/EMGagosto2021/10. PERALTA ARMAS DAVID ANDRES/P_INDIVIDUAL.pdf": {
-    "mtime": 1791491127.34293,
-    "seen": 1791492615.8210907,
-    "ast_hash": "dbcc42286f7dcc3e49b749d6975f92e2",
-    "semantic_hash": ""
+  "graphify-out/memory/query_20261023_190126_a94b640d_no_sera_porque_son_muchos.md": {
+    "mtime": 1792782086.5574148,
+    "seen": 1794605170.4176009,
+    "ast_hash": "96ce1962af83966fa68310cde5d174a5",
+    "semantic_hash": "96ce1962af83966fa68310cde5d174a5"
   },
-  "PRUEBAS/EMGagosto2021/11. PISARA ECHEVERRIA WASHINGTON ALEXANDER/ANEXOS.pdf": {
-    "mtime": 1791491127.37593,
-    "seen": 1791492615.8210924,
-    "ast_hash": "b01b8a6e1e1480bcb663c0462b60f24e",
-    "semantic_hash": ""
+  "graphify-out/memory/query_20261023_190553_5d173669_pongamos_el_limite_a_100_por_grupo.md": {
+    "mtime": 1792782353.9351296,
+    "seen": 1794605170.4176064,
+    "ast_hash": "c963de072fd2f3fa54afa90e451b2934",
+    "semantic_hash": "c963de072fd2f3fa54afa90e451b2934"
   },
-  "PRUEBAS/EMGagosto2021/11. PISARA ECHEVERRIA WASHINGTON ALEXANDER/P_INDIVIDUAL.pdf": {
-    "mtime": 1791491127.3889303,
-    "seen": 1791492615.8210936,
-    "ast_hash": "ebad13f2ebf8d652233f8eab28f1af5c",
-    "semantic_hash": ""
+  "graphify-out/memory/query_20261023_194431_69b11d43_yerovi_tampoco_fusiona__tiene_277_pdfs_en_hcu_010.md": {
+    "mtime": 1792784671.4269564,
+    "seen": 1794605170.4176116,
+    "ast_hash": "df08ccf56a6d07c81475a0f51a4ae399",
+    "semantic_hash": "df08ccf56a6d07c81475a0f51a4ae399"
   },
-  "PRUEBAS/EMGagosto2021/12. QUINATOA MOROCHO GLORIA ESTELA/ANEXOS.pdf": {
-    "mtime": 1791491127.4899309,
-    "seen": 1791492615.8210952,
-    "ast_hash": "3688e617ad7d883b0efccd0e7e836a50",
-    "semantic_hash": ""
+  "graphify-out/memory/query_20261023_194716_9eedc058_yerovi_tampoco_fusiona__tiene_277_pdfs_en_hcu_010.md": {
+    "mtime": 1792784836.3060105,
+    "seen": 1794605170.417617,
+    "ast_hash": "d2f1d7d0536acd89dc5a6231da5ea4e2",
+    "semantic_hash": "d2f1d7d0536acd89dc5a6231da5ea4e2"
   },
-  "PRUEBAS/EMGagosto2021/12. QUINATOA MOROCHO GLORIA ESTELA/P_INDIVIDUAL.pdf": {
-    "mtime": 1791491127.506931,
-    "seen": 1791492615.8210967,
-    "ast_hash": "3e33231328a3c3c3643c8f621e25690d",
-    "semantic_hash": ""
+  ".agents/skills/folio-pdf-review/scripts/review_pdfs.py": {
+    "mtime": 1792787801.9978282,
+    "seen": 1794605170.4172919,
+    "ast_hash": "c8b69b21133f6fc7889a4349f7513304",
+    "semantic_hash": "c8b69b21133f6fc7889a4349f7513304"
   },
-  "PRUEBAS/EMGagosto2021/13. SABAY GRIJALVA IVANA GABRIELA/ANEXOS.pdf": {
-    "mtime": 1791491127.5689313,
-    "seen": 1791492615.821098,
-    "ast_hash": "5f07a242b6b6caa520d8eb9706680689",
-    "semantic_hash": ""
+  ".agents/skills/folio-pdf-review/SKILL.md": {
+    "mtime": 1792787816.7839224,
+    "seen": 1794605170.417532,
+    "ast_hash": "29250318ab77376e32947c67935331b5",
+    "semantic_hash": "29250318ab77376e32947c67935331b5"
   },
-  "PRUEBAS/EMGagosto2021/13. SABAY GRIJALVA IVANA GABRIELA/P_INDIVIDUAL.pdf": {
-    "mtime": 1791491127.5839314,
-    "seen": 1791492615.8210993,
-    "ast_hash": "a49162a1000d8e75693fb1f24ce74978",
-    "semantic_hash": ""
+  "graphify-out/memory/query_20261023_202054_6c99c33e_como_sabe_como_renombrar_una_epicrisis_que_palabra.md": {
+    "mtime": 1792786854.8227997,
+    "seen": 1794605170.4176228,
+    "ast_hash": "eab8a59ce65502e400ff223d30a5f6bf",
+    "semantic_hash": "eab8a59ce65502e400ff223d30a5f6bf"
   },
-  "PRUEBAS/EMGagosto2021/14. SAMANIEGO ALVAREZ JOSIMAR SANTIAGO/ANEXOS.pdf": {
-    "mtime": 1791491127.6979322,
-    "seen": 1791492615.8211007,
-    "ast_hash": "944af1c4bfaa423b38f05180f84dc684",
-    "semantic_hash": ""
+  "graphify-out/memory/query_20261023_202221_a0eeb6ab_que_nombre_le_deberias_dar_a__home_spd_he1_recurso.md": {
+    "mtime": 1792786941.6183515,
+    "seen": 1794605170.4176433,
+    "ast_hash": "db5ee2d33ced0b6265f68e1f6048823b",
+    "semantic_hash": "db5ee2d33ced0b6265f68e1f6048823b"
   },
-  "PRUEBAS/EMGagosto2021/14. SAMANIEGO ALVAREZ JOSIMAR SANTIAGO/P_INDIVIDUAL.pdf": {
-    "mtime": 1791491127.7349324,
-    "seen": 1791492615.8211021,
-    "ast_hash": "879f5573fa8aae8c154b188f917dd82f",
-    "semantic_hash": ""
+  ".agents/skills/runtime-freshness/SKILL.md": {
+    "mtime": 1792796914.0390832,
+    "seen": 1794605170.4175375,
+    "ast_hash": "6759029e03012cad7fe2d0cc615942c3",
+    "semantic_hash": "6759029e03012cad7fe2d0cc615942c3"
   },
-  "PRUEBAS/EMGagosto2021/15. SARANGO VERA SUSANA MARIA/ANEXOS.pdf": {
-    "mtime": 1791491127.7909327,
-    "seen": 1791492615.8211033,
-    "ast_hash": "ca700e42062e09bdd3c3407948d8ab70",
-    "semantic_hash": ""
+  "cmd/server/workspace_oracle_sync.go": {
+    "mtime": 1792800873.1474502,
+    "seen": 1794605170.4174263,
+    "ast_hash": "13a0f5cab45342a8e9eca6afc75a25b6",
+    "semantic_hash": "13a0f5cab45342a8e9eca6afc75a25b6"
   },
-  "PRUEBAS/EMGagosto2021/15. SARANGO VERA SUSANA MARIA/P_INDIVIDUAL.pdf": {
-    "mtime": 1791491127.8029327,
-    "seen": 1791492615.821105,
-    "ast_hash": "855427cb69584133286112ce643b93ee",
-    "semantic_hash": ""
+  "scripts/deploy-runtime-root-wrapper": {
+    "mtime": 1792796903.9490175,
+    "seen": 1794605170.4174807,
+    "ast_hash": "290e3b94d1fb755eaa7ec1435d0e4a1c",
+    "semantic_hash": "290e3b94d1fb755eaa7ec1435d0e4a1c"
   },
-  "PRUEBAS/EMGagosto2021/16. SORIA PINCHA ROSA/ANEXOS.pdf": {
-    "mtime": 1791491127.8929334,
-    "seen": 1791492615.8211062,
-    "ast_hash": "de3e01777d0648f938144b2061d35d24",
-    "semantic_hash": ""
+  "scripts/install-runtime-deploy-access.sh": {
+    "mtime": 1792796903.9650178,
+    "seen": 1794605170.4174855,
+    "ast_hash": "a556a19edeeb0c89d5525f3ec9b97781",
+    "semantic_hash": "a556a19edeeb0c89d5525f3ec9b97781"
   },
-  "PRUEBAS/EMGagosto2021/16. SORIA PINCHA ROSA/P_INDIVIDUAL.pdf": {
-    "mtime": 1791491127.9059334,
-    "seen": 1791492615.8211074,
-    "ast_hash": "1d5b326883e031b7190dd944e12706c1",
-    "semantic_hash": ""
+  ".agents/skills/desplegar-spd/SKILL.md": {
+    "mtime": 1792799757.2774305,
+    "seen": 1794605170.417526,
+    "ast_hash": "518ee5fdf60951dfff5b7a658e5a6ec1",
+    "semantic_hash": "518ee5fdf60951dfff5b7a658e5a6ec1"
   },
-  "PRUEBAS/EMGagosto2021/17. TORRES ENRIQUEZ DAVID PAUL/ANEXOS.pdf": {
-    "mtime": 1791491127.977934,
-    "seen": 1791492615.821109,
-    "ast_hash": "329e1479ac505f608990d935dccbc1be",
-    "semantic_hash": ""
+  ".agents/skills/desplegar-spd/agents/openai.yaml": {
+    "mtime": 1792796552.32373,
+    "seen": 1794605170.417268,
+    "ast_hash": "35e678745d1a783c81431ee7aabdaadc",
+    "semantic_hash": "35e678745d1a783c81431ee7aabdaadc"
   },
-  "PRUEBAS/EMGagosto2021/17. TORRES ENRIQUEZ DAVID PAUL/P_INDIVIDUAL.pdf": {
-    "mtime": 1791491127.9879339,
-    "seen": 1791492615.8211102,
-    "ast_hash": "7a36c698c1536d1424a66a52e95b2294",
-    "semantic_hash": ""
+  "cmd/server/workspace_auditor_import.go": {
+    "mtime": 1792872348.348,
+    "seen": 1794605170.4174054,
+    "ast_hash": "ba89adb673709d5efd3312df97816b55",
+    "semantic_hash": "ba89adb673709d5efd3312df97816b55"
   },
-  "PRUEBAS/EMGagosto2021/18. VIRACOCHA LEON THIAGO ZAID/ANEXO.pdf": {
-    "mtime": 1791491128.1019347,
-    "seen": 1791492615.8211114,
-    "ast_hash": "5b00e10d3c5714197f7356cc3b52c7d2",
-    "semantic_hash": ""
+  "graphify-out/memory/query_20261024_012420_e82aa90f_qu\u00e9_lecciones_registrar_del_fallo_al_probar_la_ca.md": {
+    "mtime": 1792805060.939292,
+    "seen": 1794605170.417651,
+    "ast_hash": "7c238d853ff0c7f5c397d5b522c00c04",
+    "semantic_hash": "7c238d853ff0c7f5c397d5b522c00c04"
   },
-  "PRUEBAS/EMGagosto2021/18. VIRACOCHA LEON THIAGO ZAID/P_INDIVIDUAL.pdf": {
-    "mtime": 1791491128.1359348,
-    "seen": 1791492615.8211129,
-    "ast_hash": "6beaa241e4e0ee7b2ca0524a07371c7d",
-    "semantic_hash": ""
-  },
-  "PRUEBAS/EMGagosto2021/2. CHANGOLUISA O\u00a5A GLADYS MARIBEL/ANEXOS.pdf": {
-    "mtime": 1791491128.2239354,
-    "seen": 1791492615.8211145,
-    "ast_hash": "a866e518cf3321b9db525b5bd66e82d7",
-    "semantic_hash": ""
-  },
-  "PRUEBAS/EMGagosto2021/2. CHANGOLUISA O\u00a5A GLADYS MARIBEL/P_INDIVIDUAL.pdf": {
-    "mtime": 1791491128.2369354,
-    "seen": 1791492615.8211162,
-    "ast_hash": "91f907cbf9ff19cb6439e939689e836d",
-    "semantic_hash": ""
-  },
-  "PRUEBAS/EMGagosto2021/3. CHILUISA TONATO MARIA CECILIA/ANEXOS.pdf": {
-    "mtime": 1791491128.3379362,
-    "seen": 1791492615.8211176,
-    "ast_hash": "d4f5f2d6d760a02736cc7816f578c09c",
-    "semantic_hash": ""
-  },
-  "PRUEBAS/EMGagosto2021/3. CHILUISA TONATO MARIA CECILIA/P_INDIVIDUAL.pdf": {
-    "mtime": 1791491128.3589363,
-    "seen": 1791492615.821119,
-    "ast_hash": "275a941359123572a7fd2063cb6b0b67",
-    "semantic_hash": ""
-  },
-  "PRUEBAS/EMGagosto2021/4. FERRIN PAREDES SILVANA MARISTHANY/ANEXOS.pdf": {
-    "mtime": 1791491128.464937,
-    "seen": 1791492615.8211234,
-    "ast_hash": "48318ea17631369712f216b9208d3bfc",
-    "semantic_hash": ""
-  },
-  "PRUEBAS/EMGagosto2021/4. FERRIN PAREDES SILVANA MARISTHANY/P_INDIVIDUAL.pdf": {
-    "mtime": 1791491128.4799368,
-    "seen": 1791492615.8211248,
-    "ast_hash": "8dc36f5ff43d962335de1e45eb84745c",
-    "semantic_hash": ""
-  },
-  "PRUEBAS/EMGagosto2021/5. JACOME MONTESDEOCA MARIA ELENA/HCU_007.pdf": {
-    "mtime": 1791491128.4989371,
-    "seen": 1791492615.8211265,
-    "ast_hash": "b440e6499f7f47b1d239b56b2fdd91af",
-    "semantic_hash": ""
-  },
-  "PRUEBAS/EMGagosto2021/5. JACOME MONTESDEOCA MARIA ELENA/P_INDIVIDUAL.pdf": {
-    "mtime": 1791491128.506937,
-    "seen": 1791492615.821128,
-    "ast_hash": "8e73d7f02e61063cd9cb28341518362a",
-    "semantic_hash": ""
-  },
-  "PRUEBAS/EMGagosto2021/6. LARA CHAVEZ ADRIEL ALEJANDRO/ANEXOS.pdf": {
-    "mtime": 1791491128.5169373,
-    "seen": 1791492615.8211296,
-    "ast_hash": "fcfaba236daa637eb0993a7c03eece04",
-    "semantic_hash": ""
-  },
-  "PRUEBAS/EMGagosto2021/6. LARA CHAVEZ ADRIEL ALEJANDRO/P_INDIVIDUAL.pdf": {
-    "mtime": 1791491128.5219371,
-    "seen": 1791492615.821131,
-    "ast_hash": "4ea16bc4b1f20aef104b3d1e710a6ffe",
-    "semantic_hash": ""
-  },
-  "PRUEBAS/EMGagosto2021/7. LOPEZ BUENA\u00a5O ANTHONY ALEXIS/ANEXOS.pdf": {
-    "mtime": 1791491128.5859375,
-    "seen": 1791492615.8211327,
-    "ast_hash": "cf8ceba10e4e474553fa2dd3d73e6630",
-    "semantic_hash": ""
-  },
-  "PRUEBAS/EMGagosto2021/7. LOPEZ BUENA\u00a5O ANTHONY ALEXIS/P_INDIVIDUAL.pdf": {
-    "mtime": 1791491128.5959377,
-    "seen": 1791492615.8211343,
-    "ast_hash": "131f4632e29cdeafb24e1f893d58d9c7",
-    "semantic_hash": ""
-  },
-  "PRUEBAS/EMGagosto2021/8. MENDOZA CHANGO LUIS ENRIQUE/ANEXOS.pdf": {
-    "mtime": 1791491128.6689382,
-    "seen": 1791492615.8211355,
-    "ast_hash": "17566bdcd323588ed0b5896236dc5553",
-    "semantic_hash": ""
-  },
-  "PRUEBAS/EMGagosto2021/8. MENDOZA CHANGO LUIS ENRIQUE/P_INDIVIDUAL.pdf": {
-    "mtime": 1791491128.682938,
-    "seen": 1791492615.8211372,
-    "ast_hash": "7cab41d289af36add5fc4e0e85efb2f0",
-    "semantic_hash": ""
-  },
-  "PRUEBAS/EMGagosto2021/9. MENDOZA POLANCO ANTONIO XAVIER/ANEXOS.pdf": {
-    "mtime": 1791491128.7509387,
-    "seen": 1791492615.8211386,
-    "ast_hash": "8b4738df48558ca7e0a93c2d0996aaad",
-    "semantic_hash": ""
-  },
-  "PRUEBAS/EMGagosto2021/9. MENDOZA POLANCO ANTONIO XAVIER/P_INDIVIDUAL.pdf": {
-    "mtime": 1791491128.7669387,
-    "seen": 1791492615.8211403,
-    "ast_hash": "4f9e4bdda5b63b49b920cd2401443ae9",
-    "semantic_hash": ""
-  },
-  ".dist-before-live-historic-archive-20261008/assets/index-0fzV9O3-.js": {
-    "mtime": 1791489746.1486673,
-    "seen": 1791820178.1511717,
-    "ast_hash": "285f509458a572ca10d3a60b29e97d82",
-    "semantic_hash": ""
-  },
-  ".dist-before-live-historic-archive-20261008/assets/index-CpjDxZn6.js": {
-    "mtime": 1791492587.740763,
-    "seen": 1791820178.1511772,
-    "ast_hash": "9e0b7eb7eab5acc2943e6f3e81826619",
-    "semantic_hash": ""
-  },
-  ".dist-before-live-historic-archive-20261008/index.html": {
-    "mtime": 1791489746.1446674,
-    "seen": 1791820178.1512501,
-    "ast_hash": "87b86f3de33fa85235ae7e7a132ee117",
-    "semantic_hash": ""
-  },
-  ".dist-before-live-individual-coverage-20261012/assets/index-C51sf43P.js": {
-    "mtime": 1791492809.8441062,
-    "seen": 1791823247.3550043,
-    "ast_hash": "7345ea1de434eda267e7841de63c642a",
-    "semantic_hash": ""
-  },
-  ".dist-before-live-individual-coverage-20261012/index.html": {
-    "mtime": 1791492809.8341062,
-    "seen": 1791823247.355112,
-    "ast_hash": "35c78f17d9b231eefa0abe03adb79d38",
-    "semantic_hash": ""
-  },
-  ".dist-before-live-20261012T183125Z/assets/index-BAUuMchU.js": {
-    "mtime": 1791821979.2952979,
-    "seen": 1791830307.2400126,
-    "ast_hash": "d8a8e72041879e0ea2e64029496b13d6",
-    "semantic_hash": ""
-  },
-  ".dist-before-live-20261012T183125Z/index.html": {
-    "mtime": 1791821979.2932978,
-    "seen": 1791830307.2400734,
-    "ast_hash": "07df11effb9316c072a991701a73fc8d",
-    "semantic_hash": ""
+  "database/oracle/20261024_auditor_receipts.sql": {
+    "mtime": 1792803230.9424925,
+    "seen": 1795009093.8173144,
+    "ast_hash": "82585c836454d9db7fee83c095d1eaf1",
+    "semantic_hash": "82585c836454d9db7fee83c095d1eaf1"
   }
 }

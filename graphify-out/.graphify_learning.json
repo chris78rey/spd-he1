@@ -1,8 +1,82 @@
 {
-  "generated_at": "2026-10-05T19:44:31.344724+00:00",
+  "generated_at": "2026-10-24T01:24:21.928938+00:00",
   "nodes": {
+    "catalogos_codigos_msp": {
+      "code_fingerprint": "",
+      "label": "catalogos_codigos_msp",
+      "last": "2026-10-22T22:19:40.842963+00:00",
+      "provenance": [
+        {
+          "date": "2026-10-22T22:19:40.842963+00:00",
+          "outcome": "useful",
+          "q": "si ya salio Anexos.pdf y si le cambio graba esto en graphify para si toca aumentar mas de estos"
+        }
+      ],
+      "score": 0.974268655,
+      "source_file": "",
+      "status": "tentative",
+      "uses": 1
+    },
+    "cmd_server_clasificacion_classifypdf": {
+      "code_fingerprint": "5e68254851a6debef92fab4f23727cf95e840989c079ebd03153e2e8c0ad3f95",
+      "label": "classifyPDF()",
+      "last": "2026-10-23T20:22:21.618692+00:00",
+      "provenance": [
+        {
+          "date": "2026-10-23T20:22:21.618692+00:00",
+          "outcome": "useful",
+          "q": "que nombre le deberias dar a /home/spd-he1/recursos/HCU_006 (1).pdf"
+        },
+        {
+          "date": "2026-10-23T20:20:54.823197+00:00",
+          "outcome": "useful",
+          "q": "como sabe como renombrar una epicrisis que palabra clave y que determina"
+        }
+      ],
+      "score": 1.990308954,
+      "source_file": "cmd/server/clasificacion.go",
+      "status": "preferred",
+      "uses": 2
+    },
+    "cmd_server_clasificacion_matchclassification": {
+      "code_fingerprint": "5e68254851a6debef92fab4f23727cf95e840989c079ebd03153e2e8c0ad3f95",
+      "label": "matchClassification()",
+      "last": "2026-10-23T20:22:21.618692+00:00",
+      "provenance": [
+        {
+          "date": "2026-10-23T20:22:21.618692+00:00",
+          "outcome": "useful",
+          "q": "que nombre le deberias dar a /home/spd-he1/recursos/HCU_006 (1).pdf"
+        },
+        {
+          "date": "2026-10-23T20:20:54.823197+00:00",
+          "outcome": "useful",
+          "q": "como sabe como renombrar una epicrisis que palabra clave y que determina"
+        }
+      ],
+      "score": 1.990308954,
+      "source_file": "cmd/server/clasificacion.go",
+      "status": "preferred",
+      "uses": 2
+    },
+    "cmd_server_clasificacion_resolvepdfclassification": {
+      "code_fingerprint": "5e68254851a6debef92fab4f23727cf95e840989c079ebd03153e2e8c0ad3f95",
+      "label": "resolvePDFClassification()",
+      "last": "2026-10-23T20:20:54.823197+00:00",
+      "provenance": [
+        {
+          "date": "2026-10-23T20:20:54.823197+00:00",
+          "outcome": "useful",
+          "q": "como sabe como renombrar una epicrisis que palabra clave y que determina"
+        }
+      ],
+      "score": 0.995142928,
+      "source_file": "cmd/server/clasificacion.go",
+      "status": "tentative",
+      "uses": 1
+    },
     "cmd_server_ingesta_periodworkspaceid": {
-      "code_fingerprint": "e7317777ab693f1c7fb406bc80104cdcb00df1bd665720336124a807f36685ae",
+      "code_fingerprint": "a0469166cfc46c1a83b34789ce1fa97e4ec547a30a9ce2abb9751e6ac2dffca8",
       "label": "periodWorkspaceID()",
       "last": "2026-10-02T14:29:16.157928+00:00",
       "provenance": [
@@ -12,8 +86,72 @@
           "q": "Why couldn't the user delete saved period WORK-AMBULATORIO-202609?"
         }
       ],
-      "score": 0.928325385,
+      "score": 0.609135772,
       "source_file": "cmd/server/ingesta.go",
+      "status": "tentative",
+      "uses": 1
+    },
+    "cmd_server_workspace": {
+      "code_fingerprint": "986450b7f5921993ebc40df30e422c941ab7d3e69c57e3186d74dc852fd8dd9e",
+      "label": "workspace.go",
+      "last": "2026-10-22T22:19:40.842963+00:00",
+      "provenance": [
+        {
+          "date": "2026-10-22T22:19:40.842963+00:00",
+          "outcome": "useful",
+          "q": "si ya salio Anexos.pdf y si le cambio graba esto en graphify para si toca aumentar mas de estos"
+        }
+      ],
+      "score": 0.974268655,
+      "source_file": "cmd/server/workspace.go",
+      "status": "tentative",
+      "uses": 1
+    },
+    "cmd_server_workspace_workspacefusiongroups": {
+      "code_fingerprint": "986450b7f5921993ebc40df30e422c941ab7d3e69c57e3186d74dc852fd8dd9e",
+      "label": "workspaceFusionGroups()",
+      "last": "2026-10-23T19:05:53.935864+00:00",
+      "provenance": [
+        {
+          "date": "2026-10-23T19:05:53.935864+00:00",
+          "outcome": "useful",
+          "q": "pongamos el limite a 100 por grupo"
+        }
+      ],
+      "score": 0.993945877,
+      "source_file": "cmd/server/workspace.go",
+      "status": "tentative",
+      "uses": 1
+    },
+    "find_recover": {
+      "code_fingerprint": "7109d570ca30d81df988fe3f09247489a2041f689b2834332acd7db62154e3e6",
+      "label": "Find and recover documents",
+      "last": "2026-10-08T20:43:02.581156+00:00",
+      "provenance": [
+        {
+          "date": "2026-10-08T20:43:02.581156+00:00",
+          "outcome": "useful",
+          "q": "Where should Archivo histórico appear in the Folio sidebar?"
+        }
+      ],
+      "score": 0.703922207,
+      "source_file": "PRINCIPIOS_DE_PRODUCTO.md",
+      "status": "tentative",
+      "uses": 1
+    },
+    "folio_product": {
+      "code_fingerprint": "7109d570ca30d81df988fe3f09247489a2041f689b2834332acd7db62154e3e6",
+      "label": "Folio product",
+      "last": "2026-10-08T20:43:02.581156+00:00",
+      "provenance": [
+        {
+          "date": "2026-10-08T20:43:02.581156+00:00",
+          "outcome": "useful",
+          "q": "Where should Archivo histórico appear in the Folio sidebar?"
+        }
+      ],
+      "score": 0.703922207,
+      "source_file": "PRINCIPIOS_DE_PRODUCTO.md",
       "status": "tentative",
       "uses": 1
     },
@@ -28,13 +166,61 @@
           "q": "¿Cuál es el estado real de implementación y verificación de SPD MSP / Folio?"
         }
       ],
-      "score": 0.99979574,
+      "score": 0.656032206,
       "source_file": "README.md",
       "status": "tentative",
       "uses": 1
     },
+    "requerimientos_00req_general_documento_de_requerimientos_generales_del_sistema_srs": {
+      "code_fingerprint": "00fb850f33a18464fbd10dc9980bd780dfd9b2fb00d8e0667327676a1ba706f8",
+      "label": "Documento de Requerimientos Generales del Sistema (SRS)",
+      "last": "2026-10-23T18:54:39.125554+00:00",
+      "provenance": [
+        {
+          "date": "2026-10-23T18:54:39.125554+00:00",
+          "outcome": "useful",
+          "q": "revisa en graphify de que se trata este app"
+        }
+      ],
+      "score": 0.993766529,
+      "source_file": "requerimientos/00req_general.md",
+      "status": "tentative",
+      "uses": 1
+    },
+    "requerimientos_00req_general_rf_01_ingesta_dual_de_información": {
+      "code_fingerprint": "00fb850f33a18464fbd10dc9980bd780dfd9b2fb00d8e0667327676a1ba706f8",
+      "label": "**RF-01: Ingesta Dual de Información**",
+      "last": "2026-10-23T18:54:39.125554+00:00",
+      "provenance": [
+        {
+          "date": "2026-10-23T18:54:39.125554+00:00",
+          "outcome": "useful",
+          "q": "revisa en graphify de que se trata este app"
+        }
+      ],
+      "score": 0.993766529,
+      "source_file": "requerimientos/00req_general.md",
+      "status": "tentative",
+      "uses": 1
+    },
+    "requerimientos_00req_general_rf_05_módulo_de_gestión_de_objeciones": {
+      "code_fingerprint": "00fb850f33a18464fbd10dc9980bd780dfd9b2fb00d8e0667327676a1ba706f8",
+      "label": "**RF-05: Módulo de Gestión de Objeciones**",
+      "last": "2026-10-23T18:54:39.125554+00:00",
+      "provenance": [
+        {
+          "date": "2026-10-23T18:54:39.125554+00:00",
+          "outcome": "useful",
+          "q": "revisa en graphify de que se trata este app"
+        }
+      ],
+      "score": 0.993766529,
+      "source_file": "requerimientos/00req_general.md",
+      "status": "tentative",
+      "uses": 1
+    },
     "requerimientos_07_reglas_estructura_acfss_5_guardián_de_cierre": {
-      "code_fingerprint": "75cd1849b9b5a0abf276103795a9626e6918ecd5809ec1e0213182367c7dafac",
+      "code_fingerprint": "085cd3d17740306cc9fd8d44685af37a28f56f2567a7ff6787e4bed3ab521d38",
       "label": "5. Guardián de cierre",
       "last": "2026-10-05T19:31:47.443625+00:00",
       "provenance": [
@@ -44,13 +230,114 @@
           "q": "¿Cuál es el estado real de implementación y verificación de SPD MSP / Folio?"
         }
       ],
-      "score": 0.99979574,
+      "score": 0.656032206,
       "source_file": "requerimientos/07_reglas_estructura_acfss.md",
       "status": "tentative",
       "uses": 1
     },
+    "requerimientos_08_reglas_ocr_y_checklist_reglas_ocr_clasificación_y_checklist_acfss": {
+      "code_fingerprint": "9177564f7f7c234f461afeb172da512f46fd2008bca864e67da0a1dda85084cc",
+      "label": "Reglas OCR, clasificación y checklist ACFSS",
+      "last": "2026-10-23T20:20:54.823197+00:00",
+      "provenance": [
+        {
+          "date": "2026-10-23T20:20:54.823197+00:00",
+          "outcome": "useful",
+          "q": "como sabe como renombrar una epicrisis que palabra clave y que determina"
+        }
+      ],
+      "score": 0.995142928,
+      "source_file": "requerimientos/08_reglas_ocr_y_checklist.md",
+      "status": "tentative",
+      "uses": 1
+    },
+    "requerimientos_09_estado_real_implementacion_n022": {
+      "code_fingerprint": "13df4328bdffc45398e6a7f35b8a7edfbba518328596c32c403ad8617d0017af",
+      "label": "N022: Expediente del paciente [REQUERIDO; IMPLEMENTADO; NO VERIFICADO]",
+      "last": "2026-10-23T18:54:39.125554+00:00",
+      "provenance": [
+        {
+          "date": "2026-10-23T18:54:39.125554+00:00",
+          "outcome": "useful",
+          "q": "revisa en graphify de que se trata este app"
+        }
+      ],
+      "score": 0.993766529,
+      "source_file": "requerimientos/09_estado_real_implementacion.md",
+      "status": "tentative",
+      "uses": 1
+    },
+    "requerimientos_09_estado_real_implementacion_n027": {
+      "code_fingerprint": "13df4328bdffc45398e6a7f35b8a7edfbba518328596c32c403ad8617d0017af",
+      "label": "N027: Fusión de PDFs [REQUERIDO cronológica automática; PARCIAL manual; NO VERIFICADO]",
+      "last": "2026-10-23T19:01:26.557595+00:00",
+      "provenance": [
+        {
+          "date": "2026-10-23T19:01:26.557595+00:00",
+          "outcome": "useful",
+          "q": "no sera porque son muchos?"
+        },
+        {
+          "date": "2026-10-23T18:54:39.125554+00:00",
+          "outcome": "useful",
+          "q": "revisa en graphify de que se trata este app"
+        }
+      ],
+      "score": 1.98764134,
+      "source_file": "requerimientos/09_estado_real_implementacion.md",
+      "status": "preferred",
+      "uses": 2
+    },
+    "requerimientos_09_estado_real_implementacion_n038": {
+      "code_fingerprint": "13df4328bdffc45398e6a7f35b8a7edfbba518328596c32c403ad8617d0017af",
+      "label": "N038: Guardián de cierre [REQUERIDO; NO IMPLEMENTADO; no integrado]",
+      "last": "2026-10-23T18:54:39.125554+00:00",
+      "provenance": [
+        {
+          "date": "2026-10-23T18:54:39.125554+00:00",
+          "outcome": "useful",
+          "q": "revisa en graphify de que se trata este app"
+        }
+      ],
+      "score": 0.993766529,
+      "source_file": "requerimientos/09_estado_real_implementacion.md",
+      "status": "tentative",
+      "uses": 1
+    },
+    "requerimientos_09_estado_real_implementacion_r025": {
+      "code_fingerprint": "13df4328bdffc45398e6a7f35b8a7edfbba518328596c32c403ad8617d0017af",
+      "label": "R025: Fusión resuelve duplicados [PARCIAL; manual, no cronológica automática]",
+      "last": "2026-10-23T19:01:26.557595+00:00",
+      "provenance": [
+        {
+          "date": "2026-10-23T19:01:26.557595+00:00",
+          "outcome": "useful",
+          "q": "no sera porque son muchos?"
+        }
+      ],
+      "score": 0.993874811,
+      "source_file": "requerimientos/09_estado_real_implementacion.md",
+      "status": "tentative",
+      "uses": 1
+    },
+    "server_msppdfcode": {
+      "code_fingerprint": "986450b7f5921993ebc40df30e422c941ab7d3e69c57e3186d74dc852fd8dd9e",
+      "label": "mspPDFCode",
+      "last": "2026-10-22T22:19:40.842963+00:00",
+      "provenance": [
+        {
+          "date": "2026-10-22T22:19:40.842963+00:00",
+          "outcome": "useful",
+          "q": "si ya salio Anexos.pdf y si le cambio graba esto en graphify para si toca aumentar mas de estos"
+        }
+      ],
+      "score": 0.974268655,
+      "source_file": "cmd/server/workspace.go",
+      "status": "tentative",
+      "uses": 1
+    },
     "server_server_buildpatientfolders": {
-      "code_fingerprint": "e7317777ab693f1c7fb406bc80104cdcb00df1bd665720336124a807f36685ae",
+      "code_fingerprint": "a0469166cfc46c1a83b34789ce1fa97e4ec547a30a9ce2abb9751e6ac2dffca8",
       "label": ".buildPatientFolders()",
       "last": "2026-10-02T14:43:32.193731+00:00",
       "provenance": [
@@ -60,13 +347,13 @@
           "q": "Does Oracle-only planilla absence block processing when ZIP is the source of truth?"
         }
       ],
-      "score": 0.928537921,
+      "score": 0.609275231,
       "source_file": "cmd/server/ingesta.go",
       "status": "tentative",
       "uses": 1
     },
     "server_server_inspectingestzip": {
-      "code_fingerprint": "e7317777ab693f1c7fb406bc80104cdcb00df1bd665720336124a807f36685ae",
+      "code_fingerprint": "a0469166cfc46c1a83b34789ce1fa97e4ec547a30a9ce2abb9751e6ac2dffca8",
       "label": ".inspectIngestZIP()",
       "last": "2026-10-02T14:43:32.193731+00:00",
       "provenance": [
@@ -76,13 +363,13 @@
           "q": "Does Oracle-only planilla absence block processing when ZIP is the source of truth?"
         }
       ],
-      "score": 0.928537921,
+      "score": 0.609275231,
       "source_file": "cmd/server/ingesta.go",
       "status": "tentative",
       "uses": 1
     },
     "server_server_mergeworkspacepdfs": {
-      "code_fingerprint": "c91cde4a730214c11d3bcda8918d1a2c29c7b239ad350af6dc9268b772f3050f",
+      "code_fingerprint": "986450b7f5921993ebc40df30e422c941ab7d3e69c57e3186d74dc852fd8dd9e",
       "label": ".mergeWorkspacePDFs()",
       "last": "2026-10-05T19:31:47.443625+00:00",
       "provenance": [
@@ -92,13 +379,85 @@
           "q": "¿Cuál es el estado real de implementación y verificación de SPD MSP / Folio?"
         }
       ],
-      "score": 0.99979574,
+      "score": 0.656032206,
       "source_file": "cmd/server/workspace.go",
       "status": "tentative",
       "uses": 1
     },
+    "src_app": {
+      "code_fingerprint": "2ceeeaba68d8cdfd6c8c30f080a869c4432a43fb38b3477af2f4199eaad938a0",
+      "label": "App.vue",
+      "last": "2026-10-22T22:19:40.842963+00:00",
+      "provenance": [
+        {
+          "date": "2026-10-22T22:19:40.842963+00:00",
+          "outcome": "useful",
+          "q": "si ya salio Anexos.pdf y si le cambio graba esto en graphify para si toca aumentar mas de estos"
+        }
+      ],
+      "score": 0.974268655,
+      "source_file": "src/App.vue",
+      "status": "tentative",
+      "uses": 1
+    },
+    "src_app_confirmmergeallpending": {
+      "code_fingerprint": "2ceeeaba68d8cdfd6c8c30f080a869c4432a43fb38b3477af2f4199eaad938a0",
+      "label": "confirmMergeAllPending()",
+      "last": "2026-10-23T19:47:16.307119+00:00",
+      "neg": 1,
+      "provenance": [
+        {
+          "date": "2026-10-23T19:47:16.307119+00:00",
+          "outcome": "corrected",
+          "q": "YEROVI tampoco fusiona; tiene 277 PDFs en HCU_010"
+        },
+        {
+          "date": "2026-10-23T19:44:31.427867+00:00",
+          "outcome": "useful",
+          "q": "YEROVI tampoco fusiona; tiene 277 PDFs en HCU_010"
+        },
+        {
+          "date": "2026-10-23T19:01:26.557595+00:00",
+          "outcome": "useful",
+          "q": "no sera porque son muchos?"
+        }
+      ],
+      "score": 0.993830958,
+      "source_file": "src/App.vue",
+      "status": "contested",
+      "uses": 2,
+      "verdict": "useful"
+    },
+    "src_app_confirmworkspacefusion": {
+      "code_fingerprint": "2ceeeaba68d8cdfd6c8c30f080a869c4432a43fb38b3477af2f4199eaad938a0",
+      "label": "confirmWorkspaceFusion()",
+      "last": "2026-10-23T19:47:16.307119+00:00",
+      "neg": 1,
+      "provenance": [
+        {
+          "date": "2026-10-23T19:47:16.307119+00:00",
+          "outcome": "corrected",
+          "q": "YEROVI tampoco fusiona; tiene 277 PDFs en HCU_010"
+        },
+        {
+          "date": "2026-10-23T19:44:31.427867+00:00",
+          "outcome": "useful",
+          "q": "YEROVI tampoco fusiona; tiene 277 PDFs en HCU_010"
+        },
+        {
+          "date": "2026-10-23T19:01:26.557595+00:00",
+          "outcome": "useful",
+          "q": "no sera porque son muchos?"
+        }
+      ],
+      "score": 0.993830958,
+      "source_file": "src/App.vue",
+      "status": "contested",
+      "uses": 2,
+      "verdict": "useful"
+    },
     "src_app_deleteworkspacedialog": {
-      "code_fingerprint": "bc139c370eeeb7624842ebd9bbdc7f61697e19df944d3d29bc05ec4380b5cca9",
+      "code_fingerprint": "2ceeeaba68d8cdfd6c8c30f080a869c4432a43fb38b3477af2f4199eaad938a0",
       "label": "deleteWorkspaceDialog",
       "last": "2026-10-02T14:29:16.157928+00:00",
       "provenance": [
@@ -108,13 +467,13 @@
           "q": "Why couldn't the user delete saved period WORK-AMBULATORIO-202609?"
         }
       ],
-      "score": 0.928325385,
+      "score": 0.609135772,
       "source_file": "src/App.vue",
       "status": "tentative",
       "uses": 1
     },
     "src_app_ingestpreviewreadytoprepare": {
-      "code_fingerprint": "bc139c370eeeb7624842ebd9bbdc7f61697e19df944d3d29bc05ec4380b5cca9",
+      "code_fingerprint": "2ceeeaba68d8cdfd6c8c30f080a869c4432a43fb38b3477af2f4199eaad938a0",
       "label": "ingestPreviewReadyToPrepare",
       "last": "2026-10-02T14:43:32.193731+00:00",
       "provenance": [
@@ -124,7 +483,7 @@
           "q": "Does Oracle-only planilla absence block processing when ZIP is the source of truth?"
         }
       ],
-      "score": 0.928537921,
+      "score": 0.609275231,
       "source_file": "src/App.vue",
       "status": "tentative",
       "uses": 1
