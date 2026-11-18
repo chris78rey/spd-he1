@@ -430,7 +430,11 @@ func (s *server) syncOracleWorkspace(ctx context.Context, job *stagedJob, packag
 			}
 		}
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	s.markCoverageFromFolders(ctx, *job, packageRoot)
+	return nil
 }
 
 // coverageExtraPlanillas devuelve, por ruta, los trámites adicionales (distintos del principal)

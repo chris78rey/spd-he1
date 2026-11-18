@@ -6,9 +6,9 @@
     "semantic_hash": ""
   },
   "src/App.vue": {
-    "mtime": 1795020769.2959356,
-    "seen": 1795020807.2987967,
-    "ast_hash": "2f6e8b42c1031fff12ad2c80384ad22c",
+    "mtime": 1795029658.5543437,
+    "seen": 1795029680.4451945,
+    "ast_hash": "09e5db373653e0a475cfb527fd38e927",
     "semantic_hash": ""
   },
   "src/main.js": {
@@ -30,9 +30,9 @@
     "semantic_hash": "8d16fe2490aa9a9bd7f0ca0d46158518"
   },
   "PRINCIPIOS_DE_PRODUCTO.md": {
-    "mtime": 1795020800.4771712,
-    "seen": 1795020807.2997525,
-    "ast_hash": "0887cba2af4912df855112cb9d969ee0",
+    "mtime": 1795029671.8844419,
+    "seen": 1795029680.445702,
+    "ast_hash": "62945fee642e66a81913126fabc5c5e8",
     "semantic_hash": ""
   },
   "index.html": {
@@ -156,9 +156,9 @@
     "semantic_hash": "d632ee9b156ea9905fa53a8f0e01b6c0"
   },
   "cmd/server/oracle_documents.go": {
-    "mtime": 1795020616.4787757,
-    "seen": 1795020807.2965791,
-    "ast_hash": "197289e76c3f8ad861e57e9ddf48371d",
+    "mtime": 1795029658.5513437,
+    "seen": 1795029680.4438174,
+    "ast_hash": "b0e57fe7376e26b8bc46fda0c510998f",
     "semantic_hash": ""
   },
   "graphify-out/memory/query_20261002_142916_923a1475_why_couldn_t_the_user_delete_saved_period_work_amb.md": {
@@ -192,10 +192,10 @@
     "semantic_hash": "efd5a46d95bdc25176dbef481b104456"
   },
   "requerimientos/09_estado_real_implementacion.md": {
-    "mtime": 1791490448.0538101,
-    "seen": 1794605170.4177096,
-    "ast_hash": "4792ca6028a0fa01efe4965d22a89b6a",
-    "semantic_hash": "4792ca6028a0fa01efe4965d22a89b6a"
+    "mtime": 1795029671.8854418,
+    "seen": 1795029680.4470487,
+    "ast_hash": "e62460601ee195dd76bc1548806646ee",
+    "semantic_hash": ""
   },
   "cmd/server/objeciones.go": {
     "mtime": 1795020616.4797757,
@@ -441,6 +441,18 @@
     "mtime": 1795016429.6420467,
     "seen": 1795018922.9069023,
     "ast_hash": "95ddeeeabae3e3a1756ffd2c7ad6610f",
+    "semantic_hash": ""
+  },
+  "cmd/server/cobertura_marca.go": {
+    "mtime": 1795029636.4391806,
+    "seen": 1795029680.4429407,
+    "ast_hash": "5c60f0acd197aeae492e4312ca91fa56",
+    "semantic_hash": ""
+  },
+  "cmd/server/cobertura_marca_test.go": {
+    "mtime": 1795029658.5613437,
+    "seen": 1795029680.442947,
+    "ast_hash": "0f777c21a1581501ad88f760ec710a28",
     "semantic_hash": ""
   },
   "package-lock.json": {

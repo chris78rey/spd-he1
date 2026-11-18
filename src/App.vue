@@ -3598,7 +3598,6 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
               <section v-if="!ingestResult?.es_objeciones" class="patient-coverage-panel" aria-labelledby="patient-coverage-title">
                 <div class="patient-coverage-heading">
                   <div><h3 id="patient-coverage-title">Consultar cobertura con otra fecha</h3><p>Los PDFs se guardarán en esta carpeta y aparecerán en la lista de documentos.</p></div>
-                  <v-chip size="small" color="info" variant="tonal">No cambia PDI_COBERTURA</v-chip>
                 </div>
                 <p class="patient-coverage-help">Adultos: se consulta su cédula. Menores: se consulta la cédula del menor y la de cada referente legal registrado, todos con la fecha elegida. Se guarda un PDF por cédula; las hojas del mismo trámite se pueden revisar y fusionar en el grupo C_COBERTURA.</p>
                 <div v-if="patientCoverageLoading" class="patient-coverage-loading"><v-progress-circular indeterminate color="primary" size="20"/><span>Identificando trámites y referentes en Oracle…</span></div>
