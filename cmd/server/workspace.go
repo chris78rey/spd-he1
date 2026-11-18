@@ -968,6 +968,137 @@ type workspaceFusionGroup struct {
 	CanonicalPath string   `json:"ruta_canonica"`
 	Paths         []string `json:"rutas"`
 	PlanillaID    int64    `json:"pdi_id,omitempty"`
+	// CrossTramite marca la reunión opcional de hojas de cobertura de trámites distintos del
+	// mismo paciente. No es una fusión pendiente: nunca bloquea la entrega.
+	CrossTramite bool `json:"entre_tramites,omitempty"`
+}
+
+// workspaceCrossTramiteCoverageGroups ofrece, por carpeta de paciente, reunir en una sola hoja
+// las coberturas de trámites distintos. Por defecto quedan separadas (una por trámite); la
+// persona decide si las fusiona. Se calcula aparte de workspaceFusionGroups porque esos grupos
+// son fusiones pendientes que impiden la entrega y esta reunión es opcional.
+func workspaceCrossTramiteCoverageGroups(job stagedJob, packageRoot string) ([]workspaceFusionGroup, error) {
+	documents, _, err := listWorkspacePDFs(packageRoot)
+	if err != nil {
+		return nil, err
+	}
+	type folderCoverage struct {
+		paths []string
+		keys  map[int64]bool
+	}
+	folders := make(map[string]*folderCoverage)
+	for _, document := range documents {
+		parts := strings.Split(document.Path, "/")
+		if len(parts) != 3 || parts[0] != "4. EXPEDIENTES" || !isCoveragePDFName(document.Name) {
+			continue
+		}
+		directory := parts[0] + "/" + parts[1]
+		folder := folders[directory]
+		if folder == nil {
+			folder = &folderCoverage{keys: make(map[int64]bool)}
+			folders[directory] = folder
+		}
+		folder.paths = append(folder.paths, document.Path)
+		folder.keys[workspaceCoveragePlanillaID(job, document.Path)] = true
+	}
+	earliest := func(path string) string {
+		first := ""
+		for _, item := range workspaceCoverageMetadataForPaths(job, []string{path}) {
+			if item.Date != "" && (first == "" || item.Date < first) {
+				first = item.Date
+			}
+		}
+		if first == "" {
+			return "9999-99-99" // sin fecha: al final
+		}
+		return first
+	}
+	result := make([]workspaceFusionGroup, 0)
+	for directory, folder := range folders {
+		if len(folder.paths) < 2 || len(folder.keys) < 2 {
+			continue
+		}
+		paths := append([]string(nil), folder.paths...)
+		sort.Slice(paths, func(i, j int) bool {
+			if a, b := earliest(paths[i]), earliest(paths[j]); a != b {
+				return a < b
+			}
+			return paths[i] < paths[j]
+		})
+		canonical := directory + "/C_COBERTURA.pdf"
+		found := false
+		for _, path := range paths {
+			if path == canonical {
+				found = true
+			}
+		}
+		if !found {
+			canonical = paths[0]
+		}
+		result = append(result, workspaceFusionGroup{Code: "C_COBERTURA.pdf", CanonicalPath: canonical, Paths: paths, CrossTramite: true})
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].CanonicalPath < result[j].CanonicalPath })
+	return result, nil
+}
+
+// primaryCoveragePlanilla elige el trámite al que queda asociada una hoja que reúne varios: el
+// de la fecha de cobertura más antigua y, a igual fecha, el de menor PDI_ID.
+func primaryCoveragePlanilla(items []coverageDocumentMetadata) int64 {
+	var id int64
+	date := ""
+	for _, item := range items {
+		if item.PlanillaID <= 0 {
+			continue
+		}
+		itemDate := item.Date
+		if itemDate == "" {
+			itemDate = "9999-99-99"
+		}
+		if id == 0 || itemDate < date || (itemDate == date && item.PlanillaID < id) {
+			id, date = item.PlanillaID, itemDate
+		}
+	}
+	return id
+}
+
+// coveragePlanillaIDs devuelve todos los trámites con páginas en una hoja de cobertura.
+func coveragePlanillaIDs(job stagedJob, relative string) []int64 {
+	relative = filepath.ToSlash(filepath.Clean(filepath.FromSlash(relative)))
+	if !isCoveragePDFName(filepath.Base(relative)) {
+		return nil
+	}
+	seen := make(map[int64]bool)
+	ids := make([]int64, 0)
+	for _, document := range job.ExternalPDFs {
+		if filepath.ToSlash(filepath.Clean(filepath.FromSlash(document.RelativePath))) != relative {
+			continue
+		}
+		for _, item := range document.CoverageItems {
+			if item.PlanillaID > 0 && !seen[item.PlanillaID] {
+				seen[item.PlanillaID] = true
+				ids = append(ids, item.PlanillaID)
+			}
+		}
+	}
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	return ids
+}
+
+// pdfBelongsToPlanilla indica si un PDF respalda un trámite: por su vínculo directo o, en una
+// hoja de cobertura que reúne varios trámites, porque tiene una página de ese trámite.
+func pdfBelongsToPlanilla(job stagedJob, relative string, planillaID int64) bool {
+	if planillaID <= 0 {
+		return false
+	}
+	if planillaForPath(job, relative) == planillaID {
+		return true
+	}
+	for _, id := range coveragePlanillaIDs(job, relative) {
+		if id == planillaID {
+			return true
+		}
+	}
+	return false
 }
 
 var numberedMSPName = regexp.MustCompile(`^(.*)_([1-9][0-9]*)\.pdf$`)
@@ -1990,6 +2121,13 @@ func (s *server) mergeWorkspacePDFs(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "No se pudieron revisar los PDFs repetidos.")
 		return
 	}
+	// También se acepta reunir las coberturas de trámites distintos de un mismo paciente.
+	crossGroups, err := workspaceCrossTramiteCoverageGroups(job, packageRoot)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "No se pudieron revisar las hojas de cobertura.")
+		return
+	}
+	groups = append(groups, crossGroups...)
 	selected := make(map[string]bool, len(input.Paths))
 	for _, path := range input.Paths {
 		clean := filepath.ToSlash(filepath.Clean(filepath.FromSlash(path)))
@@ -2108,6 +2246,16 @@ func (s *server) mergeWorkspacePDFs(w http.ResponseWriter, r *http.Request) {
 	var coverageItems []coverageDocumentMetadata
 	if isCoveragePDFName(group.Code) {
 		coverageItems = workspaceCoverageMetadataForPaths(job, group.Paths)
+	}
+	if group.CrossTramite {
+		// La hoja reúne varios trámites: queda asociada al de la fecha más antigua. Cada página
+		// conserva su trámite en coverageItems y Oracle la registra en todos (syncOracleWorkspace).
+		if primary := primaryCoveragePlanilla(coverageItems); primary > 0 {
+			canonicalID = primary
+			if _, ok := job.DocumentPlanillas[canonicalRelative]; ok {
+				job.DocumentPlanillas[canonicalRelative] = primary
+			}
+		}
 	}
 	if job.Replacements == nil {
 		job.Replacements = make(map[string]string)

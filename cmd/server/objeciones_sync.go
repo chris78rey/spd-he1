@@ -164,7 +164,7 @@ func collectObjectionSourcePDFs(packageRoot string, source stagedJob, rows []obj
 				return err
 			}
 			sourceRelative := filepath.ToSlash(relative)
-			if planillaForPath(source, sourceRelative) != row.PlanillaID {
+			if planillaForPath(source, sourceRelative) != row.PlanillaID && !pdfBelongsToPlanilla(source, sourceRelative, row.PlanillaID) {
 				return nil
 			}
 			sourceIdentity := objectionSourceIdentityPath(source, sourceRelative)

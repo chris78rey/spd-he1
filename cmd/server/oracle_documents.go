@@ -296,6 +296,7 @@ func (s *server) syncOracleWorkspace(ctx context.Context, job *stagedJob, packag
 	if err != nil {
 		return err
 	}
+	extraPlanillas := coverageExtraPlanillas(job, planillaByPath, planillas)
 	active := make([]oracleDocument, 0, len(documents))
 	for _, doc := range documents {
 		if !strings.HasPrefix(doc.Path, "4. EXPEDIENTES/") {
@@ -318,6 +319,11 @@ func (s *server) syncOracleWorkspace(ctx context.Context, job *stagedJob, packag
 			code = ""
 		}
 		active = append(active, oracleDocument{path: full, name: doc.Name, code: code, status: "VIGENTE", planillaID: id, original: originalByPath[doc.Path], hash: hash})
+		// Una hoja de cobertura que reúne varios trámites se registra vigente en cada uno, para
+		// que el historial de todos muestre su cobertura. El historial se identifica por trámite y ruta.
+		for _, extra := range extraPlanillas[doc.Path] {
+			active = append(active, oracleDocument{path: full, name: doc.Name, code: code, status: "VIGENTE", planillaID: extra, original: originalByPath[doc.Path], hash: hash})
+		}
 	}
 	tx, err := s.serviceDB.BeginTx(ctx, nil)
 	if err != nil {
@@ -330,6 +336,11 @@ func (s *server) syncOracleWorkspace(ctx context.Context, job *stagedJob, packag
 	touchedPlanillas := make(map[int64]bool)
 	for _, id := range planillaByPath {
 		touchedPlanillas[id] = true
+	}
+	for _, ids := range extraPlanillas {
+		for _, id := range ids {
+			touchedPlanillas[id] = true
+		}
 	}
 	pdiTable := oracleTableName(s.schema)
 	for id := range touchedPlanillas {
@@ -420,6 +431,28 @@ func (s *server) syncOracleWorkspace(ctx context.Context, job *stagedJob, packag
 		}
 	}
 	return tx.Commit()
+}
+
+// coverageExtraPlanillas devuelve, por ruta, los trámites adicionales (distintos del principal)
+// que tienen páginas en una hoja de cobertura. Solo incluye trámites cuya carpeta se conoce.
+func coverageExtraPlanillas(job *stagedJob, planillaByPath map[string]int64, planillas map[int64]string) map[string][]int64 {
+	extras := make(map[string][]int64)
+	for _, doc := range job.ExternalPDFs {
+		if doc.OraclePending || len(doc.CoverageItems) == 0 {
+			continue
+		}
+		path := filepath.ToSlash(doc.RelativePath)
+		if renamed, ok := job.Renames[filepath.ToSlash(filepath.Clean(filepath.FromSlash(path)))]; ok && renamed != "" {
+			path = filepath.ToSlash(filepath.Clean(filepath.FromSlash(renamed)))
+		}
+		primary := planillaByPath[path]
+		for _, id := range coveragePlanillaIDs(*job, doc.RelativePath) {
+			if id != primary && planillas[id] != "" {
+				extras[path] = append(extras[path], id)
+			}
+		}
+	}
+	return extras
 }
 
 // clearOracleWorkspaceIndex marks the documents in a workspace as removed and

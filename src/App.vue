@@ -494,6 +494,37 @@ const workspacePatientFusionGroups = computed(() => {
   const prefix = workspacePatient.value ? `4. EXPEDIENTES/${workspacePatient.value}/` : ''
   return prefix ? workspaceFusionGroups.value.filter(group => group.paths.some(path => path.startsWith(prefix))) : []
 })
+// Coberturas de trámites distintos de un mismo paciente. Por defecto quedan separadas, una por
+// trámite; reunirlas en una sola hoja es opcional y no es una fusión pendiente (no impide la entrega).
+// El trámite de cada hoja se calcula igual que en el servidor (workspaceCoveragePlanillaID).
+function coveragePlanillaKey(document) {
+  const items = document.coberturas || []
+  if (!items.length) return Number(document.pdi_id) || 0
+  const ids = [...new Set(items.map(item => Number(item.pdi_id) || 0).filter(id => id > 0))]
+  return ids.length === 1 ? ids[0] : 0
+}
+function coverageEarliestDate(document) {
+  const dates = [...(document.coberturas || []).map(item => item.fecha), document.fecha_cobertura].filter(Boolean).sort()
+  return dates[0] || '9999-99-99'
+}
+const workspaceCrossCoverageGroups = computed(() => {
+  const folders = new Map()
+  for (const document of workspacePDFs.value) {
+    const parts = document.path.split('/')
+    if (parts.length !== 3 || parts[0] !== '4. EXPEDIENTES') continue
+    if (document.name.replace(/_[1-9]\d*(?=\.pdf$)/i, '').toLowerCase() !== 'c_cobertura.pdf') continue
+    const folder = folders.get(parts[1]) || { documents: [], keys: new Set() }
+    folder.documents.push(document)
+    folder.keys.add(coveragePlanillaKey(document))
+    folders.set(parts[1], folder)
+  }
+  return [...folders.entries()].filter(([, folder]) => folder.documents.length > 1 && folder.keys.size > 1).map(([patient, folder]) => {
+    const ordered = [...folder.documents].sort((a, b) => coverageEarliestDate(a).localeCompare(coverageEarliestDate(b)) || a.path.localeCompare(b.path))
+    const tramites = new Set(folder.documents.flatMap(document => (document.coberturas?.length ? document.coberturas.map(item => Number(item.pdi_id) || 0) : [Number(document.pdi_id) || 0])).filter(id => id > 0))
+    return { code: 'C_COBERTURA.pdf', patient, paths: ordered.map(document => document.path), tramites: tramites.size, crossTramite: true }
+  })
+})
+const workspacePatientCrossCoverageGroup = computed(() => workspaceCrossCoverageGroups.value.find(group => group.patient === workspacePatient.value) || null)
 const workspaceFusionQueue = computed(() => workspaceFusionGroups.value.map(group => {
   const patient = group.paths[0]?.split('/')[1] || ''
   const planilla = group.pdi_id ? ` · Trámite PDI_ID ${group.pdi_id}` : ''
@@ -3605,6 +3636,13 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
                 <div v-for="group in workspacePatientFusionGroups" :key="group.paths[0]" class="workspace-patient-fusion-item">
                   <div><strong>{{ group.code }}<template v-if="group.pdi_id"> · PDI_ID {{ group.pdi_id }}</template></strong><small>{{ group.paths.length }} PDFs · {{ group.paths.map(path => path.split('/').at(-1)).join(', ') }}</small></div>
                   <v-btn type="button" color="warning" variant="tonal" prepend-icon="mdi-file-document-multiple-outline" :disabled="workspaceBusy || mergeSending || mergeAllSending || workspaceBulkRenameBusy" @click="openWorkspaceFusion(group)">Revisar y fusionar</v-btn>
+                </div>
+              </div>
+              <div v-if="workspacePatientCrossCoverageGroup" class="workspace-patient-fusions">
+                <div class="workspace-patient-fusions-heading"><strong>Coberturas de varios trámites</strong><span>Esta carpeta tiene hojas de cobertura de {{ workspacePatientCrossCoverageGroup.tramites || 'varios' }} trámites. Quedan separadas, una por trámite. Reunirlas en una sola hoja es opcional y no impide la entrega.</span></div>
+                <div class="workspace-patient-fusion-item">
+                  <div><strong>Reunir en una sola C_COBERTURA.pdf</strong><small>{{ workspacePatientCrossCoverageGroup.paths.length }} PDFs · {{ workspacePatientCrossCoverageGroup.paths.map(path => path.split('/').at(-1)).join(', ') }}</small><small>La hoja reunida quedará asociada al trámite con la atención más antigua y se registrará en el historial Oracle de todos los trámites. Las páginas van de la atención más antigua a la más reciente; puedes cambiar el orden antes de confirmar.</small></div>
+                  <v-btn type="button" color="primary" variant="tonal" prepend-icon="mdi-file-document-multiple-outline" :disabled="workspaceBusy || mergeSending || mergeAllSending || workspaceBulkRenameBusy" @click="openWorkspaceFusion(workspacePatientCrossCoverageGroup)">Revisar y reunir</v-btn>
                 </div>
               </div>
               <div class="workspace-file-layout">

@@ -1143,7 +1143,18 @@ func copyObjectionPDFTree(source, destination, sourcePatientFolder, destinationP
 			return fmt.Errorf("el PDF %s no tiene un vínculo PDI_ID verificable", entry.Name())
 		}
 		if !allowedPlanillas[planillaID] {
-			return nil
+			// Una hoja de cobertura que reúne varios trámites respalda a cada uno de ellos.
+			alternative := int64(0)
+			for _, id := range coveragePlanillaIDs(sourceJob, sourceRelative) {
+				if allowedPlanillas[id] {
+					alternative = id
+					break
+				}
+			}
+			if alternative == 0 {
+				return nil
+			}
+			planillaID = alternative
 		}
 		if strings.HasPrefix(strings.ToUpper(entry.Name()), "C_COBERTURA") && strings.EqualFold(filepath.Ext(entry.Name()), ".pdf") {
 			target = filepath.Join(destination, "C_COBERTURA.pdf")
