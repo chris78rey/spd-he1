@@ -420,21 +420,27 @@
     "semantic_hash": ""
   },
   "cmd/server/reemplazo_coberturas.go": {
-    "mtime": 1795012376.0791807,
-    "seen": 1795012453.9839911,
-    "ast_hash": "636f2e03b353ac4abc113db1279c66ae",
+    "mtime": 1795012574.5646603,
+    "seen": 1795013014.6342323,
+    "ast_hash": "f4107f9f4523f9d6e05fe93bf5478e33",
     "semantic_hash": ""
   },
   "cmd/server/reemplazo_coberturas_test.go": {
-    "mtime": 1795012376.093181,
-    "seen": 1795012453.9839954,
-    "ast_hash": "72d412808f0229f3d010ab5b3b438aee",
+    "mtime": 1795012574.5656605,
+    "seen": 1795013014.634239,
+    "ast_hash": "3662882a6321cb76299f4c06112a6162",
     "semantic_hash": ""
   },
   "scripts/cobertura/reemplazo_coberturas.cjs": {
-    "mtime": 1795012394.3973153,
-    "seen": 1795012453.9847882,
-    "ast_hash": "2776235f2eb06cf8a687791d1104552d",
+    "mtime": 1795012886.530976,
+    "seen": 1795013014.6359255,
+    "ast_hash": "f0cbff979e9a3fccc979e0cdd9e492d8",
+    "semantic_hash": ""
+  },
+  "scripts/cobertura/reemplazo_coberturas.test.cjs": {
+    "mtime": 1795012886.5739763,
+    "seen": 1795013014.6359353,
+    "ast_hash": "e17c168938b3c619fd2fa9069a24192d",
     "semantic_hash": ""
   },
   "package-lock.json": {
