@@ -6,9 +6,9 @@
     "semantic_hash": ""
   },
   "src/App.vue": {
-    "mtime": 1795029658.5543437,
-    "seen": 1795029680.4451945,
-    "ast_hash": "09e5db373653e0a475cfb527fd38e927",
+    "mtime": 1795534508.972064,
+    "seen": 1795534665.3151088,
+    "ast_hash": "48e766b9ac1120c0ee3eb61d3334a51f",
     "semantic_hash": ""
   },
   "src/main.js": {
@@ -30,9 +30,9 @@
     "semantic_hash": "8d16fe2490aa9a9bd7f0ca0d46158518"
   },
   "PRINCIPIOS_DE_PRODUCTO.md": {
-    "mtime": 1795029671.8844419,
-    "seen": 1795029680.445702,
-    "ast_hash": "62945fee642e66a81913126fabc5c5e8",
+    "mtime": 1795534661.6791482,
+    "seen": 1795534665.3156037,
+    "ast_hash": "26ea9f91d25e0e02a586e3cc141cefe3",
     "semantic_hash": ""
   },
   "index.html": {
@@ -42,9 +42,9 @@
     "semantic_hash": "4d0bdd2461e78a8d5e38dfd734ea1210"
   },
   "cmd/server/main.go": {
-    "mtime": 1795012215.7520049,
-    "seen": 1795012453.9833639,
-    "ast_hash": "780ecdbdc3f0f9152fadc2be6a4105ed",
+    "mtime": 1795533306.4144936,
+    "seen": 1795533662.7515461,
+    "ast_hash": "1eee1e9b4203b8e6f88c04985506ae92",
     "semantic_hash": ""
   },
   "go.mod": {
@@ -174,9 +174,9 @@
     "semantic_hash": "34c6851ce060f07f2b6158267f717097"
   },
   "cmd/server/coberturas.go": {
-    "mtime": 1795014258.227084,
-    "seen": 1795014473.1833665,
-    "ast_hash": "5ab1bad16d0470fe21ff279e104c2ecc",
+    "mtime": 1795534475.865829,
+    "seen": 1795534665.3113365,
+    "ast_hash": "8047b0ed201b87fcfab1b66b3994bd3e",
     "semantic_hash": ""
   },
   "scripts/cobertura/runtime_config.cjs": {
@@ -246,16 +246,16 @@
     "semantic_hash": "00065f8ba6458db70e283767717164e9"
   },
   "cmd/server/planilla_provision.go": {
-    "mtime": 1791466878.3594139,
-    "seen": 1794605170.4173892,
-    "ast_hash": "4b6131f2b5855eb3b6a96305bf3553bc",
-    "semantic_hash": "4b6131f2b5855eb3b6a96305bf3553bc"
+    "mtime": 1795533212.272817,
+    "seen": 1795533662.7520928,
+    "ast_hash": "c8c22a6d4e6ce0c3918084b6c889c1a2",
+    "semantic_hash": ""
   },
   "cmd/server/planilla_provision_test.go": {
-    "mtime": 1791466878.3604138,
-    "seen": 1794605170.4173942,
-    "ast_hash": "7572e9329906c343980138d53d157329",
-    "semantic_hash": "7572e9329906c343980138d53d157329"
+    "mtime": 1795533419.1963024,
+    "seen": 1795533662.7520962,
+    "ast_hash": "37d84d2cc6b6c306b61fc249a998bcac",
+    "semantic_hash": ""
   },
   "MANUAL_OPERACION_FOLIO.md": {
     "mtime": 1791823291.178249,
@@ -453,6 +453,18 @@
     "mtime": 1795029658.5613437,
     "seen": 1795029680.442947,
     "ast_hash": "0f777c21a1581501ad88f760ec710a28",
+    "semantic_hash": ""
+  },
+  "cmd/server/planilla_folder_link.go": {
+    "mtime": 1795533589.295519,
+    "seen": 1795533662.752085,
+    "ast_hash": "27756960ec6201ec7a8b06010331ee94",
+    "semantic_hash": ""
+  },
+  "cmd/server/planilla_folder_link_test.go": {
+    "mtime": 1795533422.454326,
+    "seen": 1795533662.752089,
+    "ast_hash": "ce6abec7fe216e20c31fc2e38d24c55d",
     "semantic_hash": ""
   },
   "package-lock.json": {
