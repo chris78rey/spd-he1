@@ -1,7 +1,7 @@
 # Graph Report - spd_msp  (2026-11-24)
 
 ## Corpus Check
-- 78 files · ~137,624 words
+- 78 files · ~137,666 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 7 file(s) not represented in the graph (top: (none) 3, .example 1, .zip 1)
 
@@ -11,7 +11,7 @@
 - Token cost: 98,403 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `bef83b12`
+- Built from commit: `7de6c2fc`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 

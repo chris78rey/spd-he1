@@ -30,9 +30,9 @@
     "semantic_hash": "8d16fe2490aa9a9bd7f0ca0d46158518"
   },
   "PRINCIPIOS_DE_PRODUCTO.md": {
-    "mtime": 1795549285.9688895,
-    "seen": 1795549288.922209,
-    "ast_hash": "2578fdecaf9f660d0b5c57861f8630f3",
+    "mtime": 1795550069.612445,
+    "seen": 1795550075.4374173,
+    "ast_hash": "5e90aa0ee7937792de766bf07662b9e5",
     "semantic_hash": ""
   },
   "index.html": {
@@ -126,9 +126,9 @@
     "semantic_hash": "8eab3d529606a5530bba3a3d53bf5a17"
   },
   "reglas_clasificacion.yaml": {
-    "mtime": 1795549645.7954397,
-    "seen": 1795549657.3053427,
-    "ast_hash": "4d6a7cfc486d00c2fb7ed40499d0ab5d",
+    "mtime": 1795550052.0493207,
+    "seen": 1795550075.4360256,
+    "ast_hash": "254a30ddfa91e15671fd5cea15821eb0",
     "semantic_hash": ""
   },
   "requerimientos/08_reglas_ocr_y_checklist.md": {
@@ -264,9 +264,9 @@
     "semantic_hash": "9b14e6adf4cee650bfde73627e9badaf"
   },
   "cmd/server/clasificacion_test.go": {
-    "mtime": 1795549645.7964396,
-    "seen": 1795549657.3015072,
-    "ast_hash": "c12460e66993e0656999114c15bbc58a",
+    "mtime": 1795550069.6204453,
+    "seen": 1795550075.433236,
+    "ast_hash": "6cd8b13c7f130fce4de6bf75053623e6",
     "semantic_hash": ""
   },
   "cmd/server/coberturas_test.go": {
