@@ -75,4 +75,9 @@ reglas:
     palabras_clave: ["ACTA DE ENTREGA", "RECEPCION DEL SERVICIO"]
   - codigo: I_PROCEDIMIENTO.pdf
     palabras_clave: ["PROCEDIMIENTO MENOR"]
+  # Solicitudes y resultados de "Procedimientos especiales" (OCT, estudios de
+  # neurofisiología, etc.). Las usuarias ya los nombran Anexos.pdf.
+  - codigo: Anexos.pdf
+    palabras_clave: ["PROCEDIMIENTOS ESPECIALES"]
+    palabras_clave_titulo: ["PROCEDIMIENTOS ESPECIALES"]
 # Los demás códigos conocidos aún no tienen frases confirmadas para clasificación OCR.

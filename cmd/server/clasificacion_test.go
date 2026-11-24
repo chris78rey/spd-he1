@@ -76,3 +76,21 @@ func TestResolvePDFClassificationPrefersConfirmedFilenameOverGenericContent(t *t
 		t.Fatalf("resolvePDFClassification() = (%q, %d, %q), want filename HCU_007.pdf", code, matches, reason)
 	}
 }
+
+func TestMatchClassificationNamesProcedimientosEspecialesAsAnexos(t *testing.T) {
+	rules, err := loadClassificationRules(filepath.Join("..", "..", "reglas_clasificacion.yaml"))
+	if err != nil {
+		t.Fatalf("loadClassificationRules() error = %v", err)
+	}
+	cases := map[string]string{
+		"SOLICITUD DE EXAMENES\nQUITO - PICHINCHA\nSERVICIO CONSULTA EXTERNA\nPROCEDIMIENTOS ESPECIALES\nESTUDIOS ESPECIALES":              "Anexos.pdf",
+		"PROCEDIMIENTOS ESPECIALES\nRESULTADOS PROCEDIMIENTOS ESPECIALES\nDPTO. SOLICITANTE : NEUROCIRUGIA\nRESULTADOS DE DETERMINACIONES": "Anexos.pdf",
+		"FORMULARIO 10 LABORATORIO CLINICO\nRESULTADOS EXAMENES\nHEMATOLOGIA":                                                              "HCU_010.pdf",
+	}
+	for text, want := range cases {
+		code, _, tied := matchClassification(text, rules)
+		if code != want || tied {
+			t.Errorf("matchClassification(%q) = (%q, tied=%t), want %q", text[:30], code, tied, want)
+		}
+	}
+}
