@@ -381,6 +381,7 @@ const patientCoverageDate = computed({
   set: value => { patientCoverageDates.value = value ? [value] : [] },
 })
 const patientCoverageProgress = ref('')
+const patientCoverageExtraDate = ref('')
 const patientCoverageDateKey = ref('')
 const patientCoverageOffDateConfirmed = ref(false)
 const patientCoverageCedula = ref('')
@@ -463,6 +464,10 @@ const patientCoverageRowsForFolder = computed(() => workspacePatient.value
   ? patientCoverageRows.value.filter(row => row.carpeta_paciente === workspacePatient.value)
   : [])
 const patientCoverageSelectedRow = computed(() => patientCoverageRowsForFolder.value.find(row => Number(row.pdi_id) === Number(patientCoverageSelectedID.value)) || patientCoverageRowsForFolder.value[0] || null)
+const patientCoverageOtherDates = computed(() => {
+  const dates = patientCoverageSelectedRow.value?.fechas_atencion || []
+  return patientCoverageDates.value.filter(date => !dates.includes(date))
+})
 const patientCoverageOffAttentionDates = computed(() => {
   const dates = patientCoverageSelectedRow.value?.fechas_atencion || []
   return dates.length ? patientCoverageDates.value.filter(date => !dates.includes(date)) : []
@@ -501,6 +506,7 @@ watch(() => {
   if (patientCoverageDateKey.value === `${jobId}|${pdiID}`) return
   patientCoverageDateKey.value = `${jobId}|${pdiID}`
   patientCoverageDate.value = patientCoverageDefaultDate(patientCoverageSelectedRow.value)
+  patientCoverageExtraDate.value = ''
 }, { immediate: true })
 watch([patientCoverageDates, patientCoverageSelectedID], () => { patientCoverageOffDateConfirmed.value = false }, { deep: true })
 watch(workspacePatient, () => { resetPatientPlanillaLink(false) })
@@ -1031,6 +1037,15 @@ async function generateCoverageSheetsForDate(queryDate, lastAttention = false) {
   } catch (error) {
     coverageError.value = error.message || 'No se pudieron generar las hojas seleccionadas.'
   } finally { coverageProgress.value = ''; coverageGenerating.value = false }
+}
+function addPatientCoverageDate() {
+  const date = String(patientCoverageExtraDate.value || '').trim()
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return
+  if (!patientCoverageDates.value.includes(date)) patientCoverageDates.value = [...patientCoverageDates.value, date].sort()
+  patientCoverageExtraDate.value = ''
+}
+function removePatientCoverageDate(date) {
+  patientCoverageDates.value = patientCoverageDates.value.filter(item => item !== date)
 }
 function togglePatientCoverageDate(date) {
   const selected = new Set(patientCoverageDates.value)
@@ -3810,14 +3825,18 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
                   <div class="patient-coverage-controls">
                     <v-select v-if="patientCoverageRowsForFolder.length > 1" v-model="patientCoverageSelectedID" :items="patientCoverageTramiteItems" item-title="title" item-value="value" label="Trámite al que asociar las hojas" density="comfortable" variant="outlined" hide-details/>
                     <div v-else class="patient-coverage-tramite">Trámite {{ patientCoverageSelectedRow?.pdi_tramite }}</div>
-                    <v-text-field v-model="patientCoverageDate" type="date" :label="patientCoverageDates.length > 1 ? `${patientCoverageDates.length} fechas elegidas` : 'Fecha de consulta'" density="comfortable" variant="outlined" hide-details :disabled="patientCoverageGenerating || patientCoverageLoading"/>
+                    <v-text-field v-model="patientCoverageExtraDate" type="date" label="Agregar otra fecha" density="comfortable" variant="outlined" hide-details append-inner-icon="mdi-plus-circle-outline" :disabled="patientCoverageGenerating || patientCoverageLoading" @click:append-inner="addPatientCoverageDate" @keydown.enter.prevent="addPatientCoverageDate" @blur="addPatientCoverageDate"/>
                     <v-text-field v-if="patientCoverageSelectedRow?.cedula_manual_permitida" v-model="patientCoverageCedula" label="Cédula a consultar (opcional)" placeholder="10 dígitos" prepend-inner-icon="mdi-card-account-details-outline" inputmode="numeric" maxlength="10" density="comfortable" variant="outlined" :hint="patientCoverageCedula ? 'Se consultará solo esta cédula.' : 'Vacía: se usarán las cédulas de la planilla.'" persistent-hint :error-messages="patientCoverageCedulaError ? [patientCoverageCedulaError] : []" :disabled="patientCoverageGenerating || patientCoverageLoading"/>
                     <v-btn type="button" color="primary" prepend-icon="mdi-cloud-download-outline" :loading="patientCoverageGenerating" :disabled="!patientCoverageSelectedRow || !patientCoverageDates.length || Boolean(patientCoverageCedulaError) || (patientCoverageDateOffAttention && !patientCoverageOffDateConfirmed) || patientCoverageGenerating || patientCoverageLoading || workspaceMutationBusy || workspaceSending || mergeSending || mergeAllSending" @click="generatePatientCoverageAtChosenDate">{{ patientCoverageDates.length > 1 ? `Consultar y guardar (${patientCoverageDates.length} fechas)` : 'Consultar y guardar' }}</v-btn>
                   </div>
                   <div v-if="patientCoverageSelectedRow?.fechas_atencion?.length" class="patient-coverage-attention">
                     <span>Días de atención del trámite:</span>
                     <v-chip v-for="date in patientCoverageSelectedRow.fechas_atencion" :key="date" size="small" :color="patientCoverageDates.includes(date) ? 'primary' : undefined" :variant="patientCoverageDates.includes(date) ? 'flat' : 'outlined'" :aria-pressed="patientCoverageDates.includes(date)" :prepend-icon="(patientCoverageSelectedRow.fechas_cobertura || []).includes(date) ? 'mdi-check' : undefined" :disabled="patientCoverageGenerating || patientCoverageLoading" :title="(patientCoverageSelectedRow.fechas_cobertura || []).includes(date) ? 'Ya hay una hoja guardada con esta fecha' : 'Agregar o quitar esta fecha'" @click="togglePatientCoverageDate(date)">{{ coverageDateLabel(date) }}</v-chip>
-                    <small>La fecha propuesta es la última atención. Toca varios días para consultarlos juntos. ✓ = ya tiene hoja guardada.</small>
+                    <small>La fecha propuesta es la última atención. Toca varios días para consultarlos juntos o agrega otra fecha arriba. ✓ = ya tiene hoja guardada.</small>
+                  </div>
+                  <div v-if="patientCoverageOtherDates.length" class="patient-coverage-attention">
+                    <span>{{ patientCoverageSelectedRow?.fechas_atencion?.length ? 'Otras fechas elegidas:' : 'Fechas elegidas:' }}</span>
+                    <v-chip v-for="date in patientCoverageOtherDates" :key="date" size="small" color="primary" variant="flat" closable :prepend-icon="(patientCoverageSelectedRow?.fechas_cobertura || []).includes(date) ? 'mdi-check' : undefined" :disabled="patientCoverageGenerating || patientCoverageLoading" @click:close="removePatientCoverageDate(date)">{{ coverageDateLabel(date) }}</v-chip>
                   </div>
                   <div v-if="patientCoverageProgress" class="patient-coverage-loading"><v-progress-circular indeterminate color="primary" size="20"/><span>{{ patientCoverageProgress }}</span></div>
                   <div v-if="patientCoverageDateOffAttention" class="patient-coverage-off-date">
