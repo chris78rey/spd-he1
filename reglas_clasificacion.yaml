@@ -77,8 +77,9 @@ reglas:
   - codigo: I_PROCEDIMIENTO.pdf
     palabras_clave: ["PROCEDIMIENTO MENOR"]
   # Solicitudes y resultados de "Procedimientos especiales" (OCT, estudios de
-  # neurofisiología, etc.). Las usuarias ya los nombran Anexos.pdf.
+  # neurofisiología, etc.) y de "Exámenes y procedimientos de cardiología"
+  # (electrocardiograma, holter, ecocardiograma). Las usuarias ya los nombran Anexos.pdf.
   - codigo: Anexos.pdf
-    palabras_clave: ["PROCEDIMIENTOS ESPECIALES"]
-    palabras_clave_titulo: ["PROCEDIMIENTOS ESPECIALES"]
+    palabras_clave: ["PROCEDIMIENTOS ESPECIALES", "PROCEDIMIENTOS DE CARDIOLOGIA"]
+    palabras_clave_titulo: ["PROCEDIMIENTOS ESPECIALES", "PROCEDIMIENTOS DE CARDIOLOGIA"]
 # Los demás códigos conocidos aún no tienen frases confirmadas para clasificación OCR.

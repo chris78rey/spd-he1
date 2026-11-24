@@ -150,7 +150,7 @@ El usuario reportó un grupo `HCU_010.pdf` con 277 PDFs que no podía fusionarse
 
 Para recomendar el nombre MSP, Folio primero reconoce un código confirmado en el nombre original. Si no existe, prioriza las frases del tipo documental que aparecen en las primeras 12 líneas de la primera página; una mención interna aislada no debe desplazar el encabezado. Después considera frases prioritarias y, por último, la cantidad de frases exactas distintas. Si el encabezado contiene señales de tipos documentales diferentes o las reglas empatan, el archivo queda pendiente de revisión en vez de forzar una clasificación.
 
-Las solicitudes y resultados con el encabezado «PROCEDIMIENTOS ESPECIALES» (por ejemplo, OCT u otros estudios especiales) se nombran `Anexos.pdf`. Evidencia de uso: las usuarias ya renombraban a mano esos documentos como `Anexos.pdf`, y sin regla quedaban pendientes de revisión.
+Las solicitudes y resultados con el encabezado «PROCEDIMIENTOS ESPECIALES» (por ejemplo, OCT u otros estudios especiales) o «EXAMENES Y PROCEDIMIENTOS DE CARDIOLOGIA» (electrocardiograma, holter, ecocardiograma) se nombran `Anexos.pdf`. Evidencia de uso: las usuarias ya renombraban a mano esos documentos como `Anexos.pdf`, y sin regla quedaban pendientes de revisión.
 
 ## Decisión de producto: aplicar nombres sugeridos en lote
 
