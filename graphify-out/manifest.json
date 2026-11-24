@@ -30,10 +30,10 @@
     "semantic_hash": "8d16fe2490aa9a9bd7f0ca0d46158518"
   },
   "PRINCIPIOS_DE_PRODUCTO.md": {
-    "mtime": 1795542996.6632757,
-    "seen": 1795543862.9932234,
-    "ast_hash": "7641a5560d2c7051da7df1d99440a807",
-    "semantic_hash": "7641a5560d2c7051da7df1d99440a807"
+    "mtime": 1795549285.9688895,
+    "seen": 1795549288.922209,
+    "ast_hash": "2578fdecaf9f660d0b5c57861f8630f3",
+    "semantic_hash": ""
   },
   "index.html": {
     "mtime": 1790951027.8673532,
@@ -126,10 +126,10 @@
     "semantic_hash": "8eab3d529606a5530bba3a3d53bf5a17"
   },
   "reglas_clasificacion.yaml": {
-    "mtime": 1792788054.9704394,
-    "seen": 1794605170.417454,
-    "ast_hash": "8a2a642388674ab04265091ee8125bac",
-    "semantic_hash": "8a2a642388674ab04265091ee8125bac"
+    "mtime": 1795549203.8063076,
+    "seen": 1795549288.9205422,
+    "ast_hash": "a3c9781bacf596499385a6bd0903d1e6",
+    "semantic_hash": ""
   },
   "requerimientos/08_reglas_ocr_y_checklist.md": {
     "mtime": 1792788054.9714394,
@@ -264,10 +264,10 @@
     "semantic_hash": "9b14e6adf4cee650bfde73627e9badaf"
   },
   "cmd/server/clasificacion_test.go": {
-    "mtime": 1791478146.2179656,
-    "seen": 1794605170.4173234,
-    "ast_hash": "7bfa8dccb8d738ca2ed9e2ab9539f120",
-    "semantic_hash": "7bfa8dccb8d738ca2ed9e2ab9539f120"
+    "mtime": 1795549203.8213077,
+    "seen": 1795549288.9167352,
+    "ast_hash": "46cbafb8541d38e4bb50b9230a07f35a",
+    "semantic_hash": ""
   },
   "cmd/server/coberturas_test.go": {
     "mtime": 1795547760.7640576,
