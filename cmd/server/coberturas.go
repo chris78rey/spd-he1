@@ -394,9 +394,12 @@ func (s *server) generateCoverageSheetsWithDate(w http.ResponseWriter, r *http.R
 		delete(job.CoverageFailures, row.ID)
 	}
 	previousExternal := append([]workspaceDocument(nil), job.ExternalPDFs...)
+	previousDeleted := cloneBoolMap(job.DeletedPDFs)
 	job.ExternalPDFs = append(job.ExternalPDFs, newDocuments...)
+	forgetDeletedPaths(&job, newDocuments)
 	if err := s.saveStagedJob(job); err != nil {
 		job.ExternalPDFs = previousExternal
+		job.DeletedPDFs = previousDeleted
 		rollback()
 		writeError(w, http.StatusInternalServerError, "Las hojas se generaron, pero no se pudo guardar su registro en el lote.")
 		return
@@ -890,10 +893,13 @@ func (s *server) uploadManualCoverageSheets(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	previousExternal := append([]workspaceDocument(nil), job.ExternalPDFs...)
+	previousDeleted := cloneBoolMap(job.DeletedPDFs)
 	job.ExternalPDFs = append(job.ExternalPDFs, documents...)
+	forgetDeletedPaths(&job, documents)
 	delete(job.CoverageFailures, row.ID)
 	if err := s.saveStagedJob(job); err != nil {
 		job.ExternalPDFs = previousExternal
+		job.DeletedPDFs = previousDeleted
 		rollback()
 		writeError(w, http.StatusInternalServerError, "No se pudo guardar el registro de la carga manual.")
 		return
@@ -1197,7 +1203,7 @@ func (s *server) indexCoverageDocuments(job stagedJob) map[int64]*coverageDateIn
 		}
 	}
 	for _, doc := range job.ExternalPDFs {
-		if !isCoveragePDFName(filepath.Base(doc.RelativePath)) {
+		if !isCoveragePDFName(filepath.Base(doc.RelativePath)) || s.coverageDocumentRemoved(job, doc.RelativePath) {
 			continue
 		}
 		items := coverageDocumentMetadataItems(doc)
@@ -1214,6 +1220,9 @@ func (s *server) indexCoverageDocuments(job stagedJob) map[int64]*coverageDateIn
 		var report classificationReport
 		if json.Unmarshal(data, &report) == nil {
 			for _, item := range report.Files {
+				if s.coverageDocumentRemoved(job, item.Output) {
+					continue
+				}
 				add(item.PlanillaID, item.Output, "")
 			}
 		}
@@ -1224,7 +1233,7 @@ func (s *server) indexCoverageDocuments(job stagedJob) map[int64]*coverageDateIn
 func (s *server) coverageDocumentsForPlanilla(job stagedJob, pdiID int64) []workspaceDocument {
 	documents := make([]workspaceDocument, 0)
 	for _, doc := range job.ExternalPDFs {
-		if !isCoveragePDFName(filepath.Base(doc.RelativePath)) {
+		if !isCoveragePDFName(filepath.Base(doc.RelativePath)) || s.coverageDocumentRemoved(job, doc.RelativePath) {
 			continue
 		}
 		items := coverageDocumentMetadataItems(doc)
@@ -1304,4 +1313,40 @@ func (s *server) addCoverageAttentionDates(ctx context.Context, job stagedJob, r
 		rows[index[id]].AttentionDates = values
 	}
 	return nil
+}
+
+// coverageDocumentRemoved reports a coverage record whose PDF was removed from
+// the patient folder. Such a sheet no longer counts as saved for its date, so
+// the same date can be consulted again. A file re-created at that path still
+// counts even when an older removal mark remains.
+func (s *server) coverageDocumentRemoved(job stagedJob, relative string) bool {
+	clean := filepath.ToSlash(filepath.Clean(filepath.FromSlash(relative)))
+	if !job.DeletedPDFs[clean] {
+		return false
+	}
+	packageRoot := filepath.Join(s.jobRoot(job.ID), "trabajo", packageFolderName(&job))
+	path, err := safeWorkspacePath(packageRoot, clean)
+	if err != nil {
+		return true
+	}
+	_, err = os.Stat(path)
+	return errors.Is(err, os.ErrNotExist)
+}
+
+// forgetDeletedPaths clears the removal mark of paths that hold a new PDF, so
+// a later reclassification does not remove the new file.
+func forgetDeletedPaths(job *stagedJob, documents []workspaceDocument) {
+	for _, doc := range documents {
+		delete(job.DeletedPDFs, filepath.ToSlash(filepath.Clean(filepath.FromSlash(doc.RelativePath))))
+	}
+}
+
+func withoutWorkspaceDocumentsAt(documents []workspaceDocument, relative string) []workspaceDocument {
+	kept := make([]workspaceDocument, 0, len(documents))
+	for _, doc := range documents {
+		if filepath.ToSlash(filepath.Clean(filepath.FromSlash(doc.RelativePath))) != relative {
+			kept = append(kept, doc)
+		}
+	}
+	return kept
 }

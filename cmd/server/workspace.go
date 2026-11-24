@@ -522,14 +522,19 @@ func (s *server) deleteWorkspacePDF(w http.ResponseWriter, r *http.Request, job 
 		previousDeleted[path] = deleted
 	}
 	previousObjectionSelection := cloneBoolMap(job.ObjectionPDFSelection)
+	previousExternal := append([]workspaceDocument(nil), job.ExternalPDFs...)
 	if job.DeletedPDFs == nil {
 		job.DeletedPDFs = make(map[string]bool)
 	}
 	job.DeletedPDFs[cleanRelative] = true
 	delete(job.ObjectionPDFSelection, cleanRelative)
+	// The records of a removed PDF describe a file that no longer exists; a
+	// coverage sheet kept here would still count as saved for its date.
+	job.ExternalPDFs = withoutWorkspaceDocumentsAt(job.ExternalPDFs, cleanRelative)
 	if err := s.saveStagedJob(job); err != nil {
 		job.DeletedPDFs = previousDeleted
 		job.ObjectionPDFSelection = previousObjectionSelection
+		job.ExternalPDFs = previousExternal
 		_ = os.Rename(backupPath, filePath)
 		writeError(w, http.StatusInternalServerError, "No se pudo registrar el cambio; el PDF fue restaurado.")
 		return

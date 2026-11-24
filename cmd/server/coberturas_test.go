@@ -207,3 +207,79 @@ func TestLastAttentionDateUsesLastSISDayAndFallsBackToFechaHasta(t *testing.T) {
 		t.Fatalf("lastAttentionDate() = %q; want empty for an invalid fallback date", got)
 	}
 }
+
+func TestRemovedCoverageSheetNoLongerCountsAsSavedForItsDate(t *testing.T) {
+	s := &server{workspacesDir: t.TempDir()}
+	job := stagedJob{ID: "WORK-AMBULATORIO-202607", Service: "AMBULATORIO", Month: "07", Year: "2026"}
+	folder := filepath.Join(s.jobRoot(job.ID), "trabajo", packageFolderName(&job), "4. EXPEDIENTES", "PACIENTE_PRUEBA")
+	if err := os.MkdirAll(folder, 0700); err != nil {
+		t.Fatal(err)
+	}
+	removed := "4. EXPEDIENTES/PACIENTE_PRUEBA/C_COBERTURA.pdf"
+	job.DeletedPDFs = map[string]bool{removed: true}
+	job.ExternalPDFs = []workspaceDocument{
+		{RelativePath: removed, PlanillaID: 10, CoverageCedula: "1700000001", CoverageDate: "2026-07-07"},
+		{RelativePath: removed, PlanillaID: 10, CoverageCedula: "1700000001", CoverageDate: "2026-07-24"},
+	}
+	if index := s.indexCoverageDocuments(job)[10]; index != nil {
+		t.Fatalf("removed sheets must not count as saved: %+v", index.Dates)
+	}
+	row := coveragePlanilla{ID: 10, Cedula: "1700000001", Minor: "N", CareUntil: "2026-07-24"}
+	if missing := missingCoverageMembersForDate(s, job, row, "2026-07-24"); len(missing) != 1 {
+		t.Fatalf("the date of a removed sheet must be consulted again, missing=%v", missing)
+	}
+
+	// A new sheet saved at the same path counts again, even with the old mark.
+	if err := os.WriteFile(filepath.Join(folder, "C_COBERTURA.pdf"), []byte("%PDF-"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if index := s.indexCoverageDocuments(job)[10]; index == nil || !index.Dates["2026-07-24"] {
+		t.Fatal("a sheet present on disk must count as saved")
+	}
+}
+
+func TestForgetDeletedPathsAndWithoutWorkspaceDocumentsAt(t *testing.T) {
+	path := "4. EXPEDIENTES/PACIENTE_PRUEBA/C_COBERTURA.pdf"
+	job := stagedJob{DeletedPDFs: map[string]bool{path: true, "4. EXPEDIENTES/OTRO/HCU_002.pdf": true}}
+	forgetDeletedPaths(&job, []workspaceDocument{{RelativePath: path}})
+	if job.DeletedPDFs[path] || !job.DeletedPDFs["4. EXPEDIENTES/OTRO/HCU_002.pdf"] {
+		t.Fatalf("only the new PDF's path must lose its removal mark: %v", job.DeletedPDFs)
+	}
+	kept := withoutWorkspaceDocumentsAt([]workspaceDocument{{RelativePath: path}, {RelativePath: path}, {RelativePath: "4. EXPEDIENTES/PACIENTE_PRUEBA/HCU_002.pdf"}}, path)
+	if len(kept) != 1 || kept[0].RelativePath != "4. EXPEDIENTES/PACIENTE_PRUEBA/HCU_002.pdf" {
+		t.Fatalf("records of the removed path must be dropped: %+v", kept)
+	}
+}
+
+func TestRemovedSheetOfOneReferenteOnlyRequeriesThatCedula(t *testing.T) {
+	s := &server{workspacesDir: t.TempDir()}
+	job := stagedJob{ID: "WORK-AMBULATORIO-202607", Service: "AMBULATORIO", Month: "07", Year: "2026"}
+	folder := filepath.Join(s.jobRoot(job.ID), "trabajo", packageFolderName(&job), "4. EXPEDIENTES", "MENOR_PRUEBA")
+	if err := os.MkdirAll(folder, 0700); err != nil {
+		t.Fatal(err)
+	}
+	row := coveragePlanilla{ID: 20, Cedula: "1700000010", Minor: "S", Dependent1: "1700000011", Dependent2: "1700000012", CareUntil: "2026-07-24"}
+	sheets := map[string]string{"C_COBERTURA.pdf": "1700000010", "C_COBERTURA_1.pdf": "1700000011", "C_COBERTURA_2.pdf": "1700000012"}
+	for name, cedula := range sheets {
+		if err := os.WriteFile(filepath.Join(folder, name), []byte("%PDF-"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		job.ExternalPDFs = append(job.ExternalPDFs, workspaceDocument{RelativePath: "4. EXPEDIENTES/MENOR_PRUEBA/" + name, PlanillaID: 20, CoverageCedula: cedula, CoverageDate: "2026-07-24"})
+	}
+	if missing := missingCoverageMembersForDate(s, job, row, "2026-07-24"); len(missing) != 0 {
+		t.Fatalf("all three sheets exist, nothing should be consulted: %v", missing)
+	}
+	// Remove only the second referente's sheet.
+	removed := "4. EXPEDIENTES/MENOR_PRUEBA/C_COBERTURA_2.pdf"
+	if err := os.Remove(filepath.Join(folder, "C_COBERTURA_2.pdf")); err != nil {
+		t.Fatal(err)
+	}
+	job.DeletedPDFs = map[string]bool{removed: true}
+	missing := missingCoverageMembersForDate(s, job, row, "2026-07-24")
+	if len(missing) != 1 || missing[0].Cedula != "1700000012" {
+		t.Fatalf("only the removed referente must be consulted again: %v", missing)
+	}
+	if other := missingCoverageMembersForDate(s, job, row, "2026-07-07"); len(other) != 3 {
+		t.Fatalf("another date needs the minor and both referentes: %v", other)
+	}
+}
