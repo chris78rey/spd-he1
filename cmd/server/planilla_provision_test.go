@@ -92,6 +92,8 @@ func TestMissingPlanillaInsertSQLIsScopedToSelectedMSPPeriodAndService(t *testin
 		"promo.descripcion)) = 'MSP'", "first_row.servicio IN (:service_0,:service_1,:service_2)",
 		"MIN(cta.ROWID) AS first_rowid", "codes.rv_low_value = first_row.servicio",
 		"existing.PDI_TRAMITE = source.tramite", "PDI_PLANILLADO, PDI_COBERTURA, PDI_PROCESADO",
+		"MIN(TRUNC(cta.fecha)) AS care_from", "MAX(TRUNC(cta.fecha)) AS care_until",
+		"source.care_from AS fecha_desde", "source.care_until AS fecha_hasta",
 	} {
 		if !strings.Contains(query, required) {
 			t.Errorf("scoped insert query missing %q", required)

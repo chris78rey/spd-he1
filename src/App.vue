@@ -372,10 +372,19 @@ const patientCoverageRows = ref([])
 const patientCoverageLoading = ref(false)
 const patientCoverageSelectedID = ref(null)
 const patientCoverageDate = ref('')
+const patientCoverageDateKey = ref('')
+const patientCoverageOffDateConfirmed = ref(false)
 const patientCoverageCedula = ref('')
 const patientCoverageGenerating = ref(false)
 const patientCoverageError = ref('')
 const patientCoverageNotice = ref('')
+const patientLinkOpen = ref(false)
+const patientLinkTramite = ref('')
+const patientLinkPreview = ref(null)
+const patientLinkSearching = ref(false)
+const patientLinkSaving = ref(false)
+const patientLinkError = ref('')
+const patientLinkConfirmed = ref(false)
 const workspacePDFInput = ref(null)
 const replacePDFInput = ref(null)
 const replacePDFFile = ref(null)
@@ -445,6 +454,10 @@ const patientCoverageRowsForFolder = computed(() => workspacePatient.value
   ? patientCoverageRows.value.filter(row => row.carpeta_paciente === workspacePatient.value)
   : [])
 const patientCoverageSelectedRow = computed(() => patientCoverageRowsForFolder.value.find(row => Number(row.pdi_id) === Number(patientCoverageSelectedID.value)) || patientCoverageRowsForFolder.value[0] || null)
+const patientCoverageDateOffAttention = computed(() => {
+  const dates = patientCoverageSelectedRow.value?.fechas_atencion || []
+  return Boolean(patientCoverageDate.value && dates.length && !dates.includes(patientCoverageDate.value))
+})
 const patientCoverageCedulaError = computed(() => {
   const cedula = String(patientCoverageCedula.value || '').trim()
   return patientCoverageSelectedRow.value?.cedula_manual_permitida && cedula && !/^\d{10}$/.test(cedula)
@@ -464,6 +477,22 @@ watch([workspacePatient, patientCoverageRows], () => {
   patientCoverageNotice.value = ''
 })
 watch(patientCoverageSelectedID, () => { patientCoverageCedula.value = '' })
+// Proposes the last attention day of the trámite. It only runs when another
+// trámite is shown, so reloading the same one keeps the date the user chose.
+watch(() => {
+  const row = patientCoverageSelectedRow.value
+  return row ? `${ingestResult.value?.job_id || ''}|${row.pdi_id}|${patientCoverageDefaultDate(row)}` : ''
+}, key => {
+  if (!key) return
+  const [jobId, pdiID] = key.split('|')
+  if (patientCoverageDateKey.value === `${jobId}|${pdiID}`) return
+  patientCoverageDateKey.value = `${jobId}|${pdiID}`
+  patientCoverageDate.value = patientCoverageDefaultDate(patientCoverageSelectedRow.value)
+}, { immediate: true })
+watch([patientCoverageDate, patientCoverageSelectedID], () => { patientCoverageOffDateConfirmed.value = false })
+watch(workspacePatient, () => { resetPatientPlanillaLink(false) })
+watch(patientLinkTramite, () => { patientLinkPreview.value = null; patientLinkError.value = '' })
+watch(patientLinkPreview, () => { patientLinkConfirmed.value = false })
 const workspaceFusionGroups = computed(() => {
   const allowed = new Set(mspPdfCodes.map(option => option.value.toLowerCase()))
   const groups = new Map()
@@ -883,6 +912,10 @@ function coverageServiceLabel(service) {
 function coverageMonthLabel(month) {
   return ingestMonths.find(item => item.value === String(month).padStart(2, '0'))?.title || month || ''
 }
+function patientCoverageDefaultDate(row) {
+  const dates = row?.fechas_atencion || []
+  return dates.length ? dates[dates.length - 1] : (/^\d{4}-\d{2}-\d{2}$/.test(row?.fecha_hasta || '') ? row.fecha_hasta : '')
+}
 function coverageDateLabel(value) {
   const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})$/)
   return match ? `${match[3]}/${match[2]}/${match[1]}` : value || ''
@@ -981,6 +1014,10 @@ async function generatePatientCoverageAtChosenDate() {
     patientCoverageError.value = patientCoverageCedulaError.value
     return
   }
+  if (patientCoverageDateOffAttention.value && !patientCoverageOffDateConfirmed.value) {
+    patientCoverageError.value = 'Confirma que quieres consultar con una fecha que no es un día de atención del trámite.'
+    return
+  }
   patientCoverageGenerating.value = true
   patientCoverageError.value = ''
   patientCoverageNotice.value = ''
@@ -1004,6 +1041,66 @@ async function generatePatientCoverageAtChosenDate() {
   } catch (error) {
     patientCoverageError.value = error.message || 'No se pudieron consultar las coberturas del paciente.'
   } finally { patientCoverageGenerating.value = false }
+}
+function resetPatientPlanillaLink(keepOpen = false) {
+  patientLinkOpen.value = keepOpen
+  patientLinkTramite.value = ''
+  patientLinkPreview.value = null
+  patientLinkError.value = ''
+}
+function patientLinkDate(value) {
+  return value ? coverageDateLabel(value) : ''
+}
+async function searchPatientPlanilla() {
+  const jobId = ingestResult.value?.job_id
+  const folder = workspacePatient.value
+  const tramite = String(patientLinkTramite.value || '').trim()
+  if (!jobId || !folder || patientLinkSearching.value || patientLinkSaving.value) return
+  if (!/^\d{1,12}$/.test(tramite)) {
+    patientLinkError.value = 'Escribe el número de planilla (PDI_TRAMITE) solo con dígitos.'
+    return
+  }
+  patientLinkSearching.value = true
+  patientLinkError.value = ''
+  patientLinkPreview.value = null
+  try {
+    const query = new URLSearchParams({ carpeta: folder, pdi_tramite: tramite })
+    const { response, data } = await fetchWorkspaceJSON(`/api/v1/expedientes/planilla-carpeta/${encodeURIComponent(jobId)}?${query}`, { credentials: 'same-origin' }, 60000, 'buscar la planilla')
+    if (response.status === 401) { await signOut(); return }
+    if (!response.ok) throw new Error(data.error || 'No se pudo buscar la planilla.')
+    if (workspacePatient.value !== folder || String(patientLinkTramite.value || '').trim() !== tramite) return
+    patientLinkPreview.value = data
+  } catch (error) {
+    patientLinkError.value = error.message || 'No se pudo buscar la planilla.'
+  } finally { patientLinkSearching.value = false }
+}
+async function linkPatientPlanilla() {
+  const jobId = ingestResult.value?.job_id
+  const preview = patientLinkPreview.value
+  const folder = workspacePatient.value
+  if (!jobId || !folder || !preview || preview.carpeta !== folder || !['disponible', 'crear'].includes(preview.estado) || patientLinkSaving.value) return
+  if (preview.avisos?.length && !patientLinkConfirmed.value) return
+  patientLinkSaving.value = true
+  workspaceMutationBusy.value = true
+  patientLinkError.value = ''
+  try {
+    const { response, data } = await fetchWorkspaceJSON(`/api/v1/expedientes/planilla-carpeta/${encodeURIComponent(jobId)}`, {
+      method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ carpeta: folder, pdi_tramite: preview.planilla?.pdi_tramite, crear: preview.estado === 'crear' }),
+    }, 120000, 'asociar la planilla a la carpeta')
+    if (response.status === 401) { await signOut(); return }
+    if (!response.ok) throw new Error(data.error || 'No se pudo asociar la planilla a la carpeta.')
+    await Promise.all([
+      loadPatientCoveragePlanillas(jobId),
+      loadWorkspaceDocuments(jobId, selectedWorkspacePDF.value),
+    ])
+    const linkedID = Number(data.vista?.planilla?.pdi_id) || null
+    if (linkedID && patientCoverageRowsForFolder.value.some(row => Number(row.pdi_id) === linkedID)) patientCoverageSelectedID.value = linkedID
+    resetPatientPlanillaLink(false)
+    patientCoverageNotice.value = `${data.message || 'La planilla quedó asociada a esta carpeta.'} Ya puedes consultar la cobertura con la fecha que necesites.`
+  } catch (error) {
+    patientLinkError.value = error.message || 'No se pudo asociar la planilla a la carpeta.'
+  } finally { patientLinkSaving.value = false; workspaceMutationBusy.value = false }
 }
 async function downloadSelectedCoverageSheets() {
   const ids = coverageDownloadableSelectedIds.value
@@ -3606,20 +3703,67 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
                   <v-btn v-if="!patientCoverageRows.length" type="button" size="small" variant="text" @click="loadPatientCoveragePlanillas(ingestResult.job_id)">Reintentar carga</v-btn>
                 </v-alert>
                 <v-alert v-if="patientCoverageNotice" type="info" variant="tonal" density="comfortable" class="patient-coverage-alert">{{ patientCoverageNotice }}</v-alert>
-                <div v-if="!patientCoverageLoading && !patientCoverageError && !patientCoverageRowsForFolder.length" class="patient-coverage-empty">No se encontró un trámite Oracle asociado a esta carpeta del período.</div>
+                <div v-if="!patientCoverageLoading && !patientCoverageError && !patientCoverageRowsForFolder.length" class="patient-coverage-empty">Esta carpeta todavía no tiene una planilla de Oracle asociada. Si tienes el número de planilla (PDI_TRAMITE), búscalo aquí para asociarlo y consultar la cobertura.</div>
+                <div v-if="!patientCoverageLoading && workspacePatient && (patientLinkOpen || !patientCoverageRowsForFolder.length)" class="patient-planilla-link">
+                  <div class="patient-planilla-link-search">
+                    <v-text-field v-model="patientLinkTramite" label="N.º de planilla (PDI_TRAMITE)" placeholder="Ej.: 6093842" prepend-inner-icon="mdi-database-search-outline" inputmode="numeric" maxlength="12" density="comfortable" variant="outlined" hide-details :disabled="patientLinkSearching || patientLinkSaving" @keydown.enter.prevent="searchPatientPlanilla"/>
+                    <v-btn type="button" color="primary" variant="tonal" prepend-icon="mdi-magnify" :loading="patientLinkSearching" :disabled="!String(patientLinkTramite || '').trim() || patientLinkSaving || workspaceMutationBusy" @click="searchPatientPlanilla">Buscar planilla</v-btn>
+                    <v-btn v-if="patientCoverageRowsForFolder.length" type="button" variant="text" :disabled="patientLinkSearching || patientLinkSaving" @click="resetPatientPlanillaLink(false)">Cancelar</v-btn>
+                  </div>
+                  <v-alert v-if="patientLinkError" type="error" variant="tonal" density="comfortable" class="patient-coverage-alert">{{ patientLinkError }}</v-alert>
+                  <div v-if="patientLinkPreview" class="patient-planilla-link-card" :class="`is-${patientLinkPreview.estado}`">
+                    <template v-if="patientLinkPreview.estado === 'rechazada'">
+                      <strong>No se puede asociar la planilla {{ patientLinkPreview.planilla?.pdi_tramite }}</strong>
+                      <span>{{ patientLinkPreview.motivo }}</span>
+                      <dl v-if="patientLinkPreview.planilla?.paciente">
+                        <div><dt>Paciente</dt><dd>{{ patientLinkPreview.planilla.paciente }}</dd></div>
+                        <div v-if="patientLinkPreview.planilla.servicio"><dt>Servicio</dt><dd>{{ patientLinkPreview.planilla.servicio }}</dd></div>
+                        <div v-if="patientLinkPreview.planilla.mes"><dt>Período</dt><dd>{{ coverageMonthLabel(patientLinkPreview.planilla.mes) }} {{ patientLinkPreview.planilla.anio }}</dd></div>
+                      </dl>
+                    </template>
+                    <template v-else>
+                      <strong v-if="patientLinkPreview.estado === 'asociada'">La planilla {{ patientLinkPreview.planilla?.pdi_tramite }} ya está asociada a esta carpeta.</strong>
+                      <strong v-else-if="patientLinkPreview.estado === 'crear'">La planilla {{ patientLinkPreview.planilla?.pdi_tramite }} aún no está en PLANILLA_DIGITAL, pero sí en SIS.</strong>
+                      <strong v-else>Planilla {{ patientLinkPreview.planilla?.pdi_tramite }} encontrada en Oracle.</strong>
+                      <span v-if="patientLinkPreview.estado === 'crear'">Se creará el registro con los datos de SIS, igual que en Recepción de planillas, y quedará asociado a esta carpeta.</span>
+                      <dl>
+                        <div><dt>Paciente</dt><dd>{{ patientLinkPreview.planilla?.paciente || '—' }}</dd></div>
+                        <div><dt>Cédula</dt><dd>{{ patientLinkPreview.planilla?.cedula || '—' }}<template v-if="patientLinkPreview.planilla?.menor_edad === 'S'"> · menor de edad</template></dd></div>
+                        <div><dt>Servicio</dt><dd>{{ patientLinkPreview.planilla?.servicio || patientLinkPreview.planilla?.cod_servicio || '—' }}</dd></div>
+                        <div><dt>Atención</dt><dd>{{ patientLinkDate(patientLinkPreview.planilla?.fecha_desde) }}<template v-if="patientLinkPreview.planilla?.fecha_hasta && patientLinkPreview.planilla.fecha_hasta !== patientLinkPreview.planilla.fecha_desde"> al {{ patientLinkDate(patientLinkPreview.planilla.fecha_hasta) }}</template></dd></div>
+                        <div v-if="patientLinkPreview.estado !== 'crear'"><dt>Cobertura en Oracle</dt><dd>{{ patientLinkPreview.planilla?.cobertura === 'S' ? 'Descargada antes' : 'Pendiente' }}</dd></div>
+                      </dl>
+                      <v-alert v-for="warning in patientLinkPreview.avisos || []" :key="warning" type="warning" variant="tonal" density="comfortable" class="patient-coverage-alert">{{ warning }}</v-alert>
+                      <v-checkbox v-if="patientLinkPreview.estado !== 'asociada' && patientLinkPreview.avisos?.length" v-model="patientLinkConfirmed" label="Revisé el aviso y confirmo que esta planilla corresponde a esta carpeta" density="compact" hide-details color="primary"/>
+                      <div v-if="patientLinkPreview.estado !== 'asociada'" class="patient-planilla-link-actions">
+                        <v-btn type="button" color="primary" prepend-icon="mdi-link-variant" :loading="patientLinkSaving" :disabled="patientLinkSearching || workspaceMutationBusy || workspaceSending || mergeSending || mergeAllSending || Boolean(patientLinkPreview.avisos?.length && !patientLinkConfirmed)" @click="linkPatientPlanilla">{{ patientLinkPreview.estado === 'crear' ? 'Crear desde SIS y asociar a esta carpeta' : 'Asociar a esta carpeta' }}</v-btn>
+                      </div>
+                    </template>
+                  </div>
+                </div>
+                <v-btn v-if="!patientCoverageLoading && patientCoverageRowsForFolder.length && !patientLinkOpen" type="button" variant="text" size="small" prepend-icon="mdi-plus" class="patient-planilla-link-toggle" :disabled="workspaceMutationBusy" @click="resetPatientPlanillaLink(true)">Agregar otra planilla del mismo servicio y mes</v-btn>
                 <template v-if="patientCoverageRowsForFolder.length">
                   <div class="patient-coverage-controls">
                     <v-select v-if="patientCoverageRowsForFolder.length > 1" v-model="patientCoverageSelectedID" :items="patientCoverageTramiteItems" item-title="title" item-value="value" label="Trámite al que asociar las hojas" density="comfortable" variant="outlined" hide-details/>
                     <div v-else class="patient-coverage-tramite">Trámite {{ patientCoverageSelectedRow?.pdi_tramite }}</div>
                     <v-text-field v-model="patientCoverageDate" type="date" label="Fecha de consulta" density="comfortable" variant="outlined" hide-details :disabled="patientCoverageGenerating || patientCoverageLoading"/>
                     <v-text-field v-if="patientCoverageSelectedRow?.cedula_manual_permitida" v-model="patientCoverageCedula" label="Cédula a consultar (opcional)" placeholder="10 dígitos" prepend-inner-icon="mdi-card-account-details-outline" inputmode="numeric" maxlength="10" density="comfortable" variant="outlined" :hint="patientCoverageCedula ? 'Se consultará solo esta cédula.' : 'Vacía: se usarán las cédulas de la planilla.'" persistent-hint :error-messages="patientCoverageCedulaError ? [patientCoverageCedulaError] : []" :disabled="patientCoverageGenerating || patientCoverageLoading"/>
-                    <v-btn type="button" color="primary" prepend-icon="mdi-cloud-download-outline" :loading="patientCoverageGenerating" :disabled="!patientCoverageSelectedRow || !patientCoverageDate || Boolean(patientCoverageCedulaError) || patientCoverageGenerating || patientCoverageLoading || workspaceMutationBusy || workspaceSending || mergeSending || mergeAllSending" @click="generatePatientCoverageAtChosenDate">Consultar y guardar</v-btn>
+                    <v-btn type="button" color="primary" prepend-icon="mdi-cloud-download-outline" :loading="patientCoverageGenerating" :disabled="!patientCoverageSelectedRow || !patientCoverageDate || Boolean(patientCoverageCedulaError) || (patientCoverageDateOffAttention && !patientCoverageOffDateConfirmed) || patientCoverageGenerating || patientCoverageLoading || workspaceMutationBusy || workspaceSending || mergeSending || mergeAllSending" @click="generatePatientCoverageAtChosenDate">Consultar y guardar</v-btn>
+                  </div>
+                  <div v-if="patientCoverageSelectedRow?.fechas_atencion?.length" class="patient-coverage-attention">
+                    <span>Días de atención del trámite:</span>
+                    <v-chip v-for="date in patientCoverageSelectedRow.fechas_atencion" :key="date" size="small" :color="patientCoverageDate === date ? 'primary' : undefined" :variant="patientCoverageDate === date ? 'flat' : 'outlined'" :prepend-icon="(patientCoverageSelectedRow.fechas_cobertura || []).includes(date) ? 'mdi-check' : undefined" :disabled="patientCoverageGenerating || patientCoverageLoading" :title="(patientCoverageSelectedRow.fechas_cobertura || []).includes(date) ? 'Ya hay una hoja guardada con esta fecha' : 'Usar esta fecha'" @click="patientCoverageDate = date">{{ coverageDateLabel(date) }}</v-chip>
+                    <small>La fecha propuesta es la última atención. ✓ = ya tiene hoja guardada.</small>
+                  </div>
+                  <div v-if="patientCoverageDateOffAttention" class="patient-coverage-off-date">
+                    <v-alert type="warning" variant="tonal" density="comfortable" class="patient-coverage-alert">La fecha {{ coverageDateLabel(patientCoverageDate) }} no corresponde a ningún día de atención del trámite ({{ patientCoverageSelectedRow.fechas_atencion.map(coverageDateLabel).join(', ') }}). La hoja de cobertura debe ser de un día de atención.</v-alert>
+                    <v-checkbox v-model="patientCoverageOffDateConfirmed" label="Consultar igualmente con esta fecha" density="compact" hide-details color="warning"/>
                   </div>
                   <div v-if="patientCoverageSelectedRow" class="patient-coverage-row-detail">
                     <span v-if="patientCoverageCedula">Cédula elegida para esta consulta: {{ patientCoverageCedula }}</span>
                     <span v-else-if="patientCoverageSelectedRow.menor_edad === 'S'">Cédulas a consultar: {{ coverageQueryCedulas(patientCoverageSelectedRow).join(' · ') || 'No hay cédulas válidas registradas' }}</span>
                     <span v-else>Cédula a consultar: {{ coverageQueryCedulas(patientCoverageSelectedRow).join(' · ') || 'No hay cédula válida registrada' }}</span>
-                    <span>Fechas guardadas: {{ patientCoverageSelectedRow.fechas_cobertura?.join(', ') || 'ninguna todavía' }}</span>
+                    <span>Fechas guardadas: {{ patientCoverageSelectedRow.fechas_cobertura?.map(coverageDateLabel).join(', ') || 'ninguna todavía' }}</span>
                   </div>
                   <div v-if="patientCoverageSelectedRow?.descarga_manual" class="patient-coverage-manual">
                     <strong>El portal MSP no entregó todas las hojas de esta fecha.</strong>

@@ -45,6 +45,7 @@ type coveragePlanilla struct {
 	ManualQueryDate  string                 `json:"fecha_consulta_manual,omitempty"`
 	ManualCustomDate bool                   `json:"fecha_personalizada_manual,omitempty"`
 	CoverageDates    []string               `json:"fechas_cobertura,omitempty"`
+	AttentionDates   []string               `json:"fechas_atencion,omitempty"`
 	ManualMembers    []coverageManualMember `json:"coberturas_manual,omitempty"`
 }
 
@@ -113,6 +114,11 @@ func (s *server) listCoveragePlanillas(w http.ResponseWriter, r *http.Request) {
 		log.Printf("coberturas %s: consulta Oracle fallida (%T)", id, err)
 		writeError(w, http.StatusServiceUnavailable, "No se pudieron consultar las planillas de cobertura de este lote en Oracle.")
 		return
+	}
+	// The attention days only guide the chosen-date query; without them the
+	// listing still works and the screen falls back to PDI_FECHA_HASTA.
+	if err := s.addCoverageAttentionDates(ctx, job, rows); err != nil {
+		log.Printf("coberturas %s: no se pudieron leer los días de atención en SIS: %v", id, err)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"job_id": job.ID, "tipo_servicio": job.Service, "mes": job.Month, "anio": job.Year,
@@ -1182,4 +1188,50 @@ func (s *server) coverageDocumentsForPlanilla(job stagedJob, pdiID int64) []work
 		}
 	}
 	return documents
+}
+
+// addCoverageAttentionDates fills each row with the distinct days of its
+// non-annulled SIS accounts. The coverage sheet is consulted on one of these
+// days; by default the last one.
+func (s *server) addCoverageAttentionDates(ctx context.Context, job stagedJob, rows []coveragePlanilla) error {
+	if len(rows) == 0 || s.serviceDB == nil {
+		return nil
+	}
+	index := make(map[int64]int, len(rows))
+	for i := range rows {
+		index[rows[i].ID] = i
+	}
+	query := "SELECT TO_CHAR(p.PDI_ID), TO_CHAR(TRUNC(cta.fecha), 'YYYY-MM-DD') FROM " + oracleTableName(s.schema) + " p " +
+		"JOIN SIS.CUENTAS cta ON cta.pla_numero_planilla = p.PDI_TRAMITE AND cta.prm_codigo = p.PDI_COD_ASEGURADORA AND cta.estado NOT LIKE 'AN%' " +
+		"WHERE p.PDI_MES = :mes AND p.PDI_ANIO = :anio AND p.PDI_PLANILLADO = 'S' AND p.PDI_ASEGURADORA = 'MSP' " +
+		"GROUP BY p.PDI_ID, TRUNC(cta.fecha)"
+	result, err := s.serviceDB.QueryContext(ctx, query, sql.Named("mes", job.Month), sql.Named("anio", job.Year))
+	if err != nil {
+		return err
+	}
+	defer result.Close()
+	dates := make(map[int64][]string)
+	for result.Next() {
+		var rawID, rawDate sql.NullString
+		if err := result.Scan(&rawID, &rawDate); err != nil {
+			return err
+		}
+		id, err := strconv.ParseInt(strings.TrimSpace(rawID.String), 10, 64)
+		if err != nil {
+			continue
+		}
+		if date, ok := normalizeCoverageDate(rawDate.String); ok {
+			if _, wanted := index[id]; wanted {
+				dates[id] = append(dates[id], date)
+			}
+		}
+	}
+	if err := result.Err(); err != nil {
+		return err
+	}
+	for id, values := range dates {
+		sort.Strings(values)
+		rows[index[id]].AttentionDates = values
+	}
+	return nil
 }

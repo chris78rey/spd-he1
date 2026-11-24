@@ -195,43 +195,34 @@ func (s *server) provisionMissingPlanillas(ctx context.Context, job stagedJob) (
 		report.Unresolved = missing
 		return report, cause
 	}
-	insertSQL := missingPlanillaInsertSQL(oracleTableName(s.schema), serviceCodes)
 	for _, tramite := range missing {
-		var count int
-		if err := tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM "+oracleTableName(s.schema)+" WHERE PDI_TRAMITE = :tramite", sql.Named("tramite", tramite)).Scan(&count); err != nil {
-			return rollback(errors.New("No se pudo comprobar si un trámite faltante ya apareció en Oracle."))
+		outcome, err := insertPlanillaFromSource(ctx, tx, oracleTableName(s.schema), job, serviceCodes, tramite)
+		if err != nil {
+			var insertErr *planillaInsertError
+			if !errors.As(err, &insertErr) {
+				return rollback(errors.New("Oracle no pudo crear uno de los registros faltantes; se revirtieron las inserciones de este ZIP."))
+			}
+			switch insertErr.stage {
+			case planillaInsertStageCheck:
+				return rollback(errors.New("No se pudo comprobar si un trámite faltante ya apareció en Oracle."))
+			case planillaInsertStageDuplicate:
+				return rollback(fmt.Errorf("Oracle contiene más de una fila para la planilla %s; no se hicieron cambios.", tramite))
+			case planillaInsertStageRowCount:
+				return rollback(errors.New("Oracle no confirmó cuántos registros se crearon; se revirtieron las inserciones de este ZIP."))
+			case planillaInsertStageSourceRows:
+				return rollback(fmt.Errorf("La fuente Oracle devolvió %d filas para la planilla %s; se revirtieron las inserciones de este ZIP.", insertErr.rows, tramite))
+			case planillaInsertStageFinalize:
+				return rollback(errors.New("No se pudo completar la información complementaria de un nuevo registro; se revirtieron las inserciones de este ZIP."))
+			default:
+				return rollback(errors.New("Oracle no pudo crear uno de los registros faltantes; se revirtieron las inserciones de este ZIP."))
+			}
 		}
-		if count > 1 {
-			return rollback(fmt.Errorf("Oracle contiene más de una fila para la planilla %s; no se hicieron cambios.", tramite))
-		}
-		if count == 1 {
+		switch outcome {
+		case planillaAlreadyInTable:
 			continue
-		}
-		args := []any{
-			sql.Named("period_start", job.Year+"-"+job.Month+"-01"),
-			sql.Named("zip_tramite", tramite),
-			sql.Named("zip_tramite_guard", tramite),
-		}
-		for index, code := range serviceCodes {
-			args = append(args, sql.Named(fmt.Sprintf("service_%d", index), code))
-		}
-		result, err := tx.ExecContext(ctx, insertSQL, args...)
-		if err != nil {
-			return rollback(errors.New("Oracle no pudo crear uno de los registros faltantes; se revirtieron las inserciones de este ZIP."))
-		}
-		inserted, err := result.RowsAffected()
-		if err != nil {
-			return rollback(errors.New("Oracle no confirmó cuántos registros se crearon; se revirtieron las inserciones de este ZIP."))
-		}
-		if inserted == 0 {
+		case planillaNotInSource:
 			report.Unresolved = append(report.Unresolved, tramite)
 			continue
-		}
-		if inserted != 1 {
-			return rollback(fmt.Errorf("La fuente Oracle devolvió %d filas para la planilla %s; se revirtieron las inserciones de este ZIP.", inserted, tramite))
-		}
-		if err := finalizeNewPlanilla(ctx, tx, oracleTableName(s.schema), tramite); err != nil {
-			return rollback(errors.New("No se pudo completar la información complementaria de un nuevo registro; se revirtieron las inserciones de este ZIP."))
 		}
 		report.Created = append(report.Created, tramite)
 	}
@@ -243,11 +234,86 @@ func (s *server) provisionMissingPlanillas(ctx context.Context, job stagedJob) (
 	return report, nil
 }
 
-func missingPlanillaInsertSQL(table string, serviceCodes []string) string {
-	servicePlaceholders := make([]string, len(serviceCodes))
-	for index := range serviceCodes {
-		servicePlaceholders[index] = fmt.Sprintf(":service_%d", index)
+type planillaInsertOutcome int
+
+const (
+	planillaInserted planillaInsertOutcome = iota
+	planillaAlreadyInTable
+	planillaNotInSource
+)
+
+const (
+	planillaInsertStageCheck      = "check"
+	planillaInsertStageDuplicate  = "duplicate"
+	planillaInsertStageInsert     = "insert"
+	planillaInsertStageRowCount   = "row_count"
+	planillaInsertStageSourceRows = "source_rows"
+	planillaInsertStageFinalize   = "finalize"
+)
+
+// planillaInsertError tells callers which step failed so each flow can keep
+// its own user-facing message while sharing one insert path.
+type planillaInsertError struct {
+	stage string
+	rows  int64
+	err   error
+}
+
+func (e *planillaInsertError) Error() string {
+	if e.err != nil {
+		return e.stage + ": " + e.err.Error()
 	}
+	return e.stage
+}
+
+func (e *planillaInsertError) Unwrap() error { return e.err }
+
+func planillaSourceArgs(job stagedJob, serviceCodes []string, tramite string) []any {
+	args := []any{
+		sql.Named("period_start", job.Year+"-"+job.Month+"-01"),
+		sql.Named("zip_tramite", tramite),
+		sql.Named("zip_tramite_guard", tramite),
+	}
+	for index, code := range serviceCodes {
+		args = append(args, sql.Named(fmt.Sprintf("service_%d", index), code))
+	}
+	return args
+}
+
+// insertPlanillaFromSource creates one PDI row from SIS inside the caller's
+// transaction. It never creates a second row for the same PDI_TRAMITE.
+func insertPlanillaFromSource(ctx context.Context, tx *sql.Tx, table string, job stagedJob, serviceCodes []string, tramite string) (planillaInsertOutcome, error) {
+	var count int
+	if err := tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM "+table+" WHERE PDI_TRAMITE = :tramite", sql.Named("tramite", tramite)).Scan(&count); err != nil {
+		return 0, &planillaInsertError{stage: planillaInsertStageCheck, err: err}
+	}
+	if count > 1 {
+		return 0, &planillaInsertError{stage: planillaInsertStageDuplicate}
+	}
+	if count == 1 {
+		return planillaAlreadyInTable, nil
+	}
+	result, err := tx.ExecContext(ctx, missingPlanillaInsertSQL(table, serviceCodes), planillaSourceArgs(job, serviceCodes, tramite)...)
+	if err != nil {
+		return 0, &planillaInsertError{stage: planillaInsertStageInsert, err: err}
+	}
+	inserted, err := result.RowsAffected()
+	if err != nil {
+		return 0, &planillaInsertError{stage: planillaInsertStageRowCount, err: err}
+	}
+	if inserted == 0 {
+		return planillaNotInSource, nil
+	}
+	if inserted != 1 {
+		return 0, &planillaInsertError{stage: planillaInsertStageSourceRows, rows: inserted}
+	}
+	if err := finalizeNewPlanilla(ctx, tx, table, tramite); err != nil {
+		return 0, &planillaInsertError{stage: planillaInsertStageFinalize, err: err}
+	}
+	return planillaInserted, nil
+}
+
+func missingPlanillaInsertSQL(table string, serviceCodes []string) string {
 	return `INSERT INTO ` + table + ` (
 		PDI_TRAMITE, PDI_COD_ASEGURADORA, PDI_ASEGURADORA, PDI_FECHA_DESDE, PDI_FECHA_HASTA,
 		PDI_COD_SERVICIO, PDI_SERVICIO, PDI_MES, PDI_ANIO, PDI_HC, PDI_PACIENTE,
@@ -255,10 +321,22 @@ func missingPlanillaInsertSQL(table string, serviceCodes []string) string {
 		PDI_USUARIO, PDI_FECHA_PROCESO, PDI_FECHA_ALTA, PDI_MENOR_EDAD, PDI_CERRADO,
 		PDI_PLANILLADO, PDI_COBERTURA, PDI_PROCESADO
 	)
-	WITH period AS (
+	` + missingPlanillaSourceSQL(table, serviceCodes)
+}
+
+// missingPlanillaSourceSQL is the SIS row that would be inserted for one
+// trámite. The preview runs it read-only, so both paths apply the same rules.
+// Care dates come from MIN/MAX(fecha): ROWID order is not chronological.
+func missingPlanillaSourceSQL(table string, serviceCodes []string) string {
+	servicePlaceholders := make([]string, len(serviceCodes))
+	for index := range serviceCodes {
+		servicePlaceholders[index] = fmt.Sprintf(":service_%d", index)
+	}
+	return `WITH period AS (
 		SELECT TO_DATE(:period_start, 'YYYY-MM-DD') AS period_start FROM DUAL
 	), source_groups AS (
 		SELECT MIN(cta.ROWID) AS first_rowid, MAX(cta.ROWID) AS last_rowid,
+			MIN(TRUNC(cta.fecha)) AS care_from, MAX(TRUNC(cta.fecha)) AS care_until,
 			cta.pla_numero_planilla AS tramite, cta.prm_codigo AS promocion,
 			DECODE(cta.prm_codigo, 14, cta.pcn_numero_hc, cta.pcn_numero_hc_migrado) AS hc,
 			MIN(cta.numero_permanencia) AS numero_permanencia,
@@ -274,15 +352,16 @@ func missingPlanillaInsertSQL(table string, serviceCodes []string) string {
 		GROUP BY cta.pla_numero_planilla, cta.prm_codigo,
 			cta.pcn_numero_hc, cta.pcn_numero_hc_migrado
 	)
-	SELECT source.tramite, source.promocion, promo.descripcion,
-		TRUNC(first_row.fecha), TRUNC(last_row.fecha), first_row.servicio, UPPER(codes.rv_meaning),
-		TO_CHAR(period.period_start, 'MM'), TO_CHAR(period.period_start, 'YYYY'), source.hc,
-		pct.apellido_paterno || ' ' || pct.apellido_materno || ' ' || pct.primer_nombre || ' ' || pct.segundo_nombre,
-		pct.cedula, pct.fecha_nacimiento,
-		(SELECT pe.codigo FROM SIS.PERSONAL pe JOIN SIS.CUENTAS c ON pe.usuario = c.actualizado_por WHERE c.ROWID = source.last_rowid),
-		source.numero_permanencia, last_row.actualizado_por, SYSDATE,
-		(SELECT TRUNC(pya.fecha_alta) FROM SIS.PERMANENCIAS_Y_ATENCIONES pya WHERE pya.numero = source.numero_permanencia),
-		'N', 'N', 'S', 'N', 'N'
+	SELECT source.tramite AS tramite, source.promocion AS promocion, promo.descripcion AS aseguradora,
+		source.care_from AS fecha_desde, source.care_until AS fecha_hasta,
+		first_row.servicio AS cod_servicio, UPPER(codes.rv_meaning) AS servicio,
+		TO_CHAR(period.period_start, 'MM') AS mes, TO_CHAR(period.period_start, 'YYYY') AS anio, source.hc AS hc,
+		pct.apellido_paterno || ' ' || pct.apellido_materno || ' ' || pct.primer_nombre || ' ' || pct.segundo_nombre AS paciente,
+		pct.cedula AS cedula, pct.fecha_nacimiento AS fecha_nacimiento,
+		(SELECT pe.codigo FROM SIS.PERSONAL pe JOIN SIS.CUENTAS c ON pe.usuario = c.actualizado_por WHERE c.ROWID = source.last_rowid) AS codigo_usuario,
+		source.numero_permanencia AS numero_permanencia, last_row.actualizado_por AS usuario, SYSDATE AS fecha_proceso,
+		(SELECT TRUNC(pya.fecha_alta) FROM SIS.PERMANENCIAS_Y_ATENCIONES pya WHERE pya.numero = source.numero_permanencia) AS fecha_alta,
+		'N' AS menor_edad, 'N' AS cerrado, 'S' AS planillado, 'N' AS cobertura, 'N' AS procesado
 	FROM source_groups source
 	JOIN period ON 1 = 1
 	JOIN SIS.CUENTAS first_row ON first_row.ROWID = source.first_rowid

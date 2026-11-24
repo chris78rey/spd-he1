@@ -121,6 +121,7 @@ func main() {
 	mux.HandleFunc("/api/v1/expedientes/eliminar/", s.deleteWorkspace)
 	mux.HandleFunc("/api/v1/expedientes/documentos/renombrar/", s.renameWorkspacePDF)
 	mux.HandleFunc("/api/v1/expedientes/documentos/asociar-oracle/", s.associateAuditorPDF)
+	mux.HandleFunc("/api/v1/expedientes/planilla-carpeta/", s.planillaFolderLink)
 	mux.HandleFunc("/api/v1/expedientes/documentos/renombrar-sugeridos/", s.suggestWorkspacePDFNames)
 	mux.HandleFunc("/api/v1/expedientes/oracle-nuevos/", s.syncWorkspaceOracleRecords)
 	mux.HandleFunc("/api/v1/expedientes/importar-carpetas/", s.importAuditorFolders)

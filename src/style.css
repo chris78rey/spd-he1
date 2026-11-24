@@ -506,7 +506,24 @@ body{min-width:320px}
 .patient-coverage-manual ul{display:grid;gap:3px;margin:0;padding-left:22px}
 .patient-coverage-manual a{width:max-content;color:#365848;font-weight:650}
 .patient-coverage-manual .coverage-manual-upload{width:max-content;position:relative;min-height:44px;font-size:14px}
+.patient-coverage-attention{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;color:#526256;font-size:14px}
+.patient-coverage-attention small{flex-basis:100%;color:#6a7a6e;font-size:12px}
+.patient-coverage-off-date{display:grid;gap:4px}
+.patient-planilla-link{display:grid;gap:10px}
+.patient-planilla-link-search{display:grid;grid-template-columns:minmax(180px,320px) auto auto;align-items:center;gap:10px;justify-content:start}
+.patient-planilla-link-search>.v-btn{min-height:48px}
+.patient-planilla-link-card{display:grid;gap:8px;padding:12px;border:1px solid #d2ded4;border-radius:10px;background:#fff;color:#344b3a;font-size:14px;line-height:1.5;overflow-wrap:anywhere}
+.patient-planilla-link-card.is-rechazada{border-color:#e5d6c4;background:#fffaf4}
+.patient-planilla-link-card.is-rechazada>strong{color:#714b29}
+.patient-planilla-link-card.is-crear{border-color:#c9d8e8;background:#f6f9fc}
+.patient-planilla-link-card dl{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:6px 18px;margin:0}
+.patient-planilla-link-card dt{color:#6a7a6e;font-size:12px}
+.patient-planilla-link-card dd{margin:0;color:#304738;font-weight:600}
+.patient-planilla-link-actions{display:flex;flex-wrap:wrap;gap:10px}
+.patient-planilla-link-toggle{justify-self:start}
 @media(max-width:700px){
+  .patient-planilla-link-search{grid-template-columns:minmax(0,1fr)}
+  .patient-planilla-link-search>.v-btn,.patient-planilla-link-actions .v-btn{width:100%}
   .patient-coverage-heading{flex-direction:column}
   .patient-coverage-controls{grid-template-columns:minmax(0,1fr)}
   .patient-coverage-controls>.v-btn,.patient-coverage-manual .coverage-manual-upload{width:100%}
