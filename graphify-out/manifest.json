@@ -144,9 +144,9 @@
     "semantic_hash": "0308368873d810f250d04829e91bb3a3"
   },
   "cmd/server/workspace.go": {
-    "mtime": 1795547729.8218374,
-    "seen": 1795547806.589266,
-    "ast_hash": "3b321814ca0032a8e0bd6404db15a43a",
+    "mtime": 1795550989.662972,
+    "seen": 1795551000.4526982,
+    "ast_hash": "4dddb3d445f51915a92ee67de4946ac4",
     "semantic_hash": ""
   },
   "catalogos/codigos_msp.json": {
@@ -228,10 +228,10 @@
     "semantic_hash": "7e8c44f5909c17f16c9113991b060473"
   },
   "cmd/server/workspace_download_test.go": {
-    "mtime": 1794605801.0739686,
-    "seen": 1795009093.8173077,
-    "ast_hash": "942e67319776f509cf3567081a22d09b",
-    "semantic_hash": "942e67319776f509cf3567081a22d09b"
+    "mtime": 1795550989.669972,
+    "seen": 1795551000.4529634,
+    "ast_hash": "573c353a0ddcfb866d6fa551151dfeb7",
+    "semantic_hash": ""
   },
   "cmd/server/objeciones_sync.go": {
     "mtime": 1795020626.856855,
