@@ -444,6 +444,11 @@ body{min-width:320px}
 .coverage-custom-date-content{display:grid;grid-template-columns:minmax(0,1fr) minmax(220px,280px);align-items:center;gap:18px}
 .coverage-custom-date-content strong{font-size:16px}
 .coverage-custom-date-content p{margin:4px 0 0;font-size:14px;line-height:1.5}
+.coverage-last-attention-content{display:grid;gap:10px}
+.coverage-last-attention-content strong{font-size:16px}
+.coverage-last-attention-content p{margin:4px 0 0;font-size:14px;line-height:1.5}
+.coverage-last-attention-content>.v-btn{justify-self:start;white-space:normal;height:auto;min-height:40px}
+.coverage-last-attention-missing{color:#9a4b1c;font-weight:650}
 .coverage-custom-date-alert small{display:block;margin-top:8px;font-size:14px;line-height:1.5}
 .coverage-custom-date-input{min-width:0}
 .coverage-member-detail{display:block;margin-top:4px;color:#526256;font-size:14px;line-height:1.5;overflow-wrap:anywhere}

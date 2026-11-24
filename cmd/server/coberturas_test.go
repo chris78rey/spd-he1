@@ -194,3 +194,16 @@ func TestCoverageSheetHasDateRequiresRequestedDate(t *testing.T) {
 		}
 	}
 }
+
+func TestLastAttentionDateUsesLastSISDayAndFallsBackToFechaHasta(t *testing.T) {
+	row := coveragePlanilla{CareUntil: "2026-07-07", AttentionDates: []string{"2026-07-07", "2026-07-10", "2026-07-17", "2026-07-24"}}
+	if got := lastAttentionDate(row); got != "2026-07-24" {
+		t.Fatalf("lastAttentionDate() = %q; want the last SIS attention day", got)
+	}
+	if got := lastAttentionDate(coveragePlanilla{CareUntil: "2026-10-14"}); got != "2026-10-14" {
+		t.Fatalf("lastAttentionDate() = %q; want PDI_FECHA_HASTA when SIS has no days", got)
+	}
+	if got := lastAttentionDate(coveragePlanilla{CareUntil: "14/10/2026"}); got != "" {
+		t.Fatalf("lastAttentionDate() = %q; want empty for an invalid fallback date", got)
+	}
+}

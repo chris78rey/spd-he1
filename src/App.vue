@@ -187,12 +187,14 @@ const coverageSelectedIds = ref([])
 const coverageLoading = ref(false)
 const coverageGenerating = ref(false)
 const coverageProgress = ref('')
-const coverageSelectableRows = computed(() => coveragePlanillas.value.filter(row => coverageMode.value === 'chosen-date' || row.pdi_cobertura !== 'S'))
+const coverageSelectableRows = computed(() => coveragePlanillas.value.filter(row => coverageMode.value !== 'standard' || row.pdi_cobertura !== 'S'))
+const coverageLastAttentionPending = computed(() => coveragePlanillas.value.filter(row => coverageLastAttention(row) && !coverageHasLastAttentionSheet(row)))
 const coverageAllSelected = computed(() => coverageSelectableRows.value.length > 0 && coverageSelectableRows.value.every(row => coverageSelectedIds.value.includes(row.pdi_id)))
 const coverageDownloadableSelectedIds = computed(() => coverageSelectedIds.value.filter(id => {
   const row = coveragePlanillas.value.find(item => item.pdi_id === id)
   if (!row) return false
   if (coverageMode.value === 'chosen-date') return Boolean(coverageQueryDate.value && (row.fechas_cobertura || []).includes(coverageQueryDate.value))
+  if (coverageMode.value === 'last-attention') return coverageHasLastAttentionSheet(row)
   return row.hoja_generada
 }))
 const coverageManualUploadingId = ref(null)
@@ -938,8 +940,20 @@ function toggleCoveragePlanilla(row) {
   else selected.add(row.pdi_id)
   coverageSelectedIds.value = [...selected]
 }
+function coverageLastAttention(row) {
+  const dates = row?.fechas_atencion || []
+  if (dates.length) return dates[dates.length - 1]
+  return /^\d{4}-\d{2}-\d{2}$/.test(row?.fecha_hasta || '') ? row.fecha_hasta : ''
+}
+function coverageHasLastAttentionSheet(row) {
+  const date = coverageLastAttention(row)
+  return Boolean(date && (row.fechas_cobertura || []).includes(date))
+}
+function selectCoverageLastAttentionPending() {
+  coverageSelectedIds.value = coverageLastAttentionPending.value.map(row => row.pdi_id)
+}
 function setCoverageMode(mode) {
-  if (!['standard', 'chosen-date'].includes(mode) || coverageMode.value === mode) return
+  if (!['standard', 'chosen-date', 'last-attention'].includes(mode) || coverageMode.value === mode) return
   coverageMode.value = mode
   coverageSelectedIds.value = []
   coverageError.value = ''
@@ -967,7 +981,10 @@ async function generateCoverageSheetsAtChosenDate() {
   }
   return generateCoverageSheetsForDate(coverageQueryDate.value)
 }
-async function generateCoverageSheetsForDate(queryDate) {
+async function generateCoverageSheetsAtLastAttention() {
+  return generateCoverageSheetsForDate('', true)
+}
+async function generateCoverageSheetsForDate(queryDate, lastAttention = false) {
   if (!selectedCoverageWorkspace.value || !coverageSelectedIds.value.length || coverageGenerating.value) return
   const selectedIds = [...coverageSelectedIds.value]
   const jobId = selectedCoverageWorkspace.value
@@ -979,8 +996,8 @@ async function generateCoverageSheetsForDate(queryDate) {
     const failures = []
     for (let offset = 0; offset < selectedIds.length; offset += 10) {
       const batch = selectedIds.slice(offset, offset + 10)
-      coverageProgress.value = `Procesando ${Math.min(offset + batch.length, selectedIds.length)} de ${selectedIds.length} planillas${queryDate ? ` con fecha ${queryDate}` : ''}…`
-      const endpoint = queryDate ? 'generar-fecha' : 'generar'
+      coverageProgress.value = `Procesando ${Math.min(offset + batch.length, selectedIds.length)} de ${selectedIds.length} planillas${queryDate ? ` con fecha ${queryDate}` : lastAttention ? ' con la última atención de cada una' : ''}…`
+      const endpoint = lastAttention ? 'generar-ultima-atencion' : queryDate ? 'generar-fecha' : 'generar'
       const response = await fetch(`/api/v1/coberturas/${endpoint}/${encodeURIComponent(jobId)}`, {
         method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pdi_ids: batch, ...(queryDate ? { fecha_consulta: queryDate } : {}) }),
@@ -995,7 +1012,9 @@ async function generateCoverageSheetsForDate(queryDate) {
     coverageSelectedIds.value = selectedIds.filter(id => coveragePlanillas.value.some(row => row.pdi_id === id))
     const manualCount = failures.filter(item => item.manual).length
     const dataErrorCount = failures.length - manualCount
-    coverageNotice.value = queryDate
+    coverageNotice.value = lastAttention
+      ? `${processed.length} planillas revisadas, cada una con su última atención; las hojas quedaron guardadas en sus expedientes y Oracle las marca con cobertura.${manualCount ? ` ${manualCount} requieren descarga manual en el portal MSP con la fecha indicada en la tabla.` : ''}${dataErrorCount ? ` ${dataErrorCount} requieren corregir datos o revisar el expediente.` : ''}`
+      : queryDate
       ? `${processed.length} planillas revisadas con fecha ${queryDate}; las hojas disponibles quedaron guardadas en sus expedientes. Esta consulta no cambia el estado de cobertura en Oracle.${manualCount ? ` ${manualCount} requieren descarga manual en el portal MSP; usa la misma fecha indicada.` : ''}${dataErrorCount ? ` ${dataErrorCount} requieren corregir datos o revisar el expediente.` : ''}`
       : `${processed.length} planillas revisadas; las hojas disponibles quedaron guardadas en sus expedientes.${manualCount ? ` ${manualCount} requieren descarga manual en el portal MSP.` : ''}${dataErrorCount ? ` ${dataErrorCount} requieren corregir datos o revisar el expediente.` : ''}`
   } catch (error) {
@@ -1110,6 +1129,7 @@ async function downloadSelectedCoverageSheets() {
   try {
     const query = new URLSearchParams({ pdi_ids: ids.join(',') })
     if (coverageMode.value === 'chosen-date') query.set('fecha_consulta', coverageQueryDate.value)
+    if (coverageMode.value === 'last-attention') query.set('ultima_atencion', '1')
     const response = await fetch(`/api/v1/coberturas/descargar/${encodeURIComponent(selectedCoverageWorkspace.value)}?${query}`, { credentials: 'same-origin' })
     if (response.status === 401) { await signOut(); return }
     if (!response.ok) {
@@ -3113,6 +3133,7 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
           <v-card class="planilla-card coverage-card" rounded="xl" elevation="0">
             <div class="coverage-mode-switch" role="group" aria-label="Forma de consultar las coberturas">
               <v-btn type="button" :variant="coverageMode === 'standard' ? 'flat' : 'outlined'" :color="coverageMode === 'standard' ? 'primary' : undefined" @click="setCoverageMode('standard')">Fecha del trámite</v-btn>
+              <v-btn type="button" :variant="coverageMode === 'last-attention' ? 'flat' : 'outlined'" :color="coverageMode === 'last-attention' ? 'primary' : undefined" @click="setCoverageMode('last-attention')">Última atención de cada trámite</v-btn>
               <v-btn type="button" :variant="coverageMode === 'chosen-date' ? 'flat' : 'outlined'" :color="coverageMode === 'chosen-date' ? 'primary' : undefined" @click="setCoverageMode('chosen-date')">Elegir otra fecha</v-btn>
             </div>
             <div class="coverage-picker-actions">
@@ -3140,8 +3161,14 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
               </div>
               <small v-if="coverageSelectedIds.length">La fecha se aplicará a todas las planillas seleccionadas. En menores también se consultarán las cédulas registradas como referentes, con esta misma fecha.</small>
             </v-alert>
+            <v-alert v-if="coverageMode === 'last-attention'" class="coverage-custom-date-alert" type="info" variant="tonal" density="comfortable" prepend-icon="mdi-calendar-check">
+              <div class="coverage-last-attention-content">
+                <div><strong>Cada trámite con su última atención</strong><p>Cada planilla se consulta con su propio último día de atención en SIS, también las que ya tienen cobertura. Solo se consultan las cédulas que aún no tienen hoja de esa fecha; las hojas se guardan en cada expediente y Oracle marca la planilla con cobertura.</p></div>
+                <v-btn type="button" variant="tonal" prepend-icon="mdi-checkbox-multiple-marked-outline" :disabled="!coverageLastAttentionPending.length || coverageGenerating" @click="selectCoverageLastAttentionPending">Seleccionar las que no tienen hoja de su última atención ({{ coverageLastAttentionPending.length }})</v-btn>
+              </div>
+            </v-alert>
             <div class="coverage-picker-buttons">
-              <v-btn color="primary" :prepend-icon="coverageMode === 'chosen-date' ? 'mdi-calendar-arrow-right' : 'mdi-content-save-outline'" :loading="coverageGenerating" :disabled="!coverageSelectedIds.length || (coverageMode === 'chosen-date' && !coverageQueryDate) || coverageGenerating" @click="coverageMode === 'chosen-date' ? generateCoverageSheetsAtChosenDate() : generateCoverageSheets()">{{ coverageMode === 'chosen-date' ? 'Consultar y guardar' : 'Generar y guardar' }} ({{ coverageSelectedIds.length }})</v-btn>
+              <v-btn color="primary" :prepend-icon="coverageMode === 'standard' ? 'mdi-content-save-outline' : 'mdi-calendar-arrow-right'" :loading="coverageGenerating" :disabled="!coverageSelectedIds.length || (coverageMode === 'chosen-date' && !coverageQueryDate) || coverageGenerating" @click="coverageMode === 'chosen-date' ? generateCoverageSheetsAtChosenDate() : coverageMode === 'last-attention' ? generateCoverageSheetsAtLastAttention() : generateCoverageSheets()">{{ coverageMode === 'standard' ? 'Generar y guardar' : 'Consultar y guardar' }} ({{ coverageSelectedIds.length }})</v-btn>
               <v-btn variant="tonal" prepend-icon="mdi-download-outline" :loading="coverageGenerating" :disabled="!coverageDownloadableSelectedIds.length || coverageDownloadableSelectedIds.length > 500 || coverageGenerating" @click="downloadSelectedCoverageSheets">Descargar ZIP ({{ coverageDownloadableSelectedIds.length }})</v-btn>
             </div>
             <div v-if="coverageProgress" class="coverage-notice"><v-progress-circular indeterminate color="primary" size="18"/><span>{{ coverageProgress }}</span></div>
@@ -3151,8 +3178,8 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
             <div v-else-if="savedWorkspacesError" class="planilla-state planilla-error"><v-icon icon="mdi-alert-circle-outline"/><span>No se pudieron cargar los períodos para Coberturas: {{ savedWorkspacesError }}</span><v-btn type="button" size="small" variant="text" @click="openCoverageDownloads">Reintentar</v-btn></div>
             <div v-else-if="!selectedCoverageWorkspace" class="planilla-state"><v-icon icon="mdi-folder-search-outline"/><span>Prepara primero el ZIP en “Recibir planillas” y selecciona aquí ese mismo servicio y período.</span></div>
             <div v-else-if="!coveragePlanillas.length" class="planilla-state"><v-icon icon="mdi-file-search-outline"/><span>No se encontraron planillas MSP de ese período en las carpetas del ZIP.</span></div>
-            <div v-else class="planilla-table-wrap"><v-table class="planilla-table" density="comfortable" fixed-header height="min(62vh, 620px)"><thead><tr><th><label :title="coverageMode === 'chosen-date' ? 'Seleccionar todas las planillas' : 'Seleccionar todas las pendientes'"><input type="checkbox" :checked="coverageAllSelected" :disabled="!coverageSelectableRows.length || coverageGenerating" :aria-label="coverageMode === 'chosen-date' ? 'Seleccionar todas las planillas' : 'Seleccionar todas las planillas pendientes'" @change="toggleAllCoveragePlanillas"/> Todas</label></th><th>Trámite del ZIP</th><th>Paciente</th><th>Fecha hasta</th><th>Fechas de cobertura guardadas</th><th>Estado de cobertura</th><th>Acción manual</th></tr></thead><tbody><tr v-for="row in coveragePlanillas" :key="row.pdi_id"><td><input type="checkbox" :checked="coverageSelectedIds.includes(row.pdi_id)" :disabled="(coverageMode === 'standard' && row.pdi_cobertura === 'S' && !row.hoja_generada) || coverageGenerating" :aria-label="`Seleccionar planilla ${row.pdi_tramite}`" @change="toggleCoveragePlanilla(row)"/></td><td>{{ row.pdi_tramite }}</td><td><div>{{ row.paciente || '—' }}</div><small v-if="coverageMode === 'chosen-date' && row.menor_edad === 'S'" class="coverage-member-detail">Menor; se consultarán las cédulas: {{ coverageQueryCedulas(row).join(', ') || 'no hay cédulas válidas registradas' }}</small></td><td>{{ row.fecha_hasta || '—' }}</td><td>{{ (row.fechas_cobertura || []).join(', ') || '—' }}</td><td><v-chip size="small" :color="row.pdi_cobertura === 'S' ? 'success' : row.hoja_generada ? 'info' : (row.descarga_manual || row.motivo_manual) ? 'error' : 'warning'" variant="tonal">{{ row.pdi_cobertura === 'S' ? 'Generada' : row.hoja_generada ? 'PDF en expediente · Oracle pendiente' : row.descarga_manual ? 'Descarga manual' : row.motivo_manual ? 'Revisar datos' : 'Pendiente' }}</v-chip><small v-if="row.motivo_manual" class="coverage-failure">{{ row.motivo_manual }}</small></td><td><div v-if="row.descarga_manual" class="coverage-manual"><a href="https://coberturasalud.msp.gob.ec/" target="_blank" rel="noopener noreferrer">Abrir portal MSP</a><small>Descarga un PDF por cédula para {{ row.fecha_consulta_manual || row.fecha_hasta }}: {{ row.coberturas_manual?.map(member => member.cedula).join(', ') || coverageQueryCedulas(row).join(', ') }}</small><small>El sistema comprueba la cédula; confirma en el portal que cada hoja corresponda a la fecha indicada.</small><label class="coverage-manual-upload"><input type="file" accept="application/pdf,.pdf" multiple :disabled="coverageManualUploadingId === row.pdi_id" @change="uploadManualCoverageSheets(row,$event)"/>{{ coverageManualUploadingId === row.pdi_id ? 'Adjuntando…' : 'Adjuntar PDFs descargados' }}</label></div><span v-else>—</span></td></tr></tbody></v-table></div>
-            <div v-if="coveragePlanillas.length" class="coverage-footnote">Marca la casilla del encabezado para seleccionar todas las {{ coverageMode === 'chosen-date' ? 'planillas' : 'pendientes' }}. Se procesan en grupos de 10; las hojas se guardan en cada expediente. El ZIP admite hasta 500 planillas{{ coverageMode === 'chosen-date' ? ' y, si eliges una fecha, contiene solo las coberturas consultadas para esa fecha.' : '.' }}</div>
+            <div v-else class="planilla-table-wrap"><v-table class="planilla-table" density="comfortable" fixed-header height="min(62vh, 620px)"><thead><tr><th><label :title="coverageMode !== 'standard' ? 'Seleccionar todas las planillas' : 'Seleccionar todas las pendientes'"><input type="checkbox" :checked="coverageAllSelected" :disabled="!coverageSelectableRows.length || coverageGenerating" :aria-label="coverageMode !== 'standard' ? 'Seleccionar todas las planillas' : 'Seleccionar todas las planillas pendientes'" @change="toggleAllCoveragePlanillas"/> Todas</label></th><th>Trámite del ZIP</th><th>Paciente</th><th>{{ coverageMode === 'last-attention' ? 'Última atención' : 'Fecha hasta' }}</th><th>Fechas de cobertura guardadas</th><th>Estado de cobertura</th><th>Acción manual</th></tr></thead><tbody><tr v-for="row in coveragePlanillas" :key="row.pdi_id"><td><input type="checkbox" :checked="coverageSelectedIds.includes(row.pdi_id)" :disabled="(coverageMode === 'standard' && row.pdi_cobertura === 'S' && !row.hoja_generada) || coverageGenerating" :aria-label="`Seleccionar planilla ${row.pdi_tramite}`" @change="toggleCoveragePlanilla(row)"/></td><td>{{ row.pdi_tramite }}</td><td><div>{{ row.paciente || '—' }}</div><small v-if="coverageMode !== 'standard' && row.menor_edad === 'S'" class="coverage-member-detail">Menor; se consultarán las cédulas: {{ coverageQueryCedulas(row).join(', ') || 'no hay cédulas válidas registradas' }}</small></td><td v-if="coverageMode === 'last-attention'"><div>{{ coverageDateLabel(coverageLastAttention(row)) || '—' }}</div><small class="coverage-member-detail" :class="{ 'coverage-last-attention-missing': coverageLastAttention(row) && !coverageHasLastAttentionSheet(row) }">{{ !coverageLastAttention(row) ? 'Sin días de atención en SIS' : coverageHasLastAttentionSheet(row) ? 'Hoja guardada con esta fecha' : 'Falta la hoja de esta fecha' }}</small><small v-if="(row.fechas_atencion || []).length > 1" class="coverage-member-detail">Atenciones: {{ row.fechas_atencion.map(coverageDateLabel).join(', ') }}</small></td><td v-else>{{ row.fecha_hasta || '—' }}</td><td>{{ (row.fechas_cobertura || []).map(coverageDateLabel).join(', ') || '—' }}</td><td><v-chip size="small" :color="row.pdi_cobertura === 'S' ? 'success' : row.hoja_generada ? 'info' : (row.descarga_manual || row.motivo_manual) ? 'error' : 'warning'" variant="tonal">{{ row.pdi_cobertura === 'S' ? 'Generada' : row.hoja_generada ? 'PDF en expediente · Oracle pendiente' : row.descarga_manual ? 'Descarga manual' : row.motivo_manual ? 'Revisar datos' : 'Pendiente' }}</v-chip><small v-if="row.motivo_manual" class="coverage-failure">{{ row.motivo_manual }}</small></td><td><div v-if="row.descarga_manual" class="coverage-manual"><a href="https://coberturasalud.msp.gob.ec/" target="_blank" rel="noopener noreferrer">Abrir portal MSP</a><small>Descarga un PDF por cédula para {{ row.fecha_consulta_manual || row.fecha_hasta }}: {{ row.coberturas_manual?.map(member => member.cedula).join(', ') || coverageQueryCedulas(row).join(', ') }}</small><small>El sistema comprueba la cédula; confirma en el portal que cada hoja corresponda a la fecha indicada.</small><label class="coverage-manual-upload"><input type="file" accept="application/pdf,.pdf" multiple :disabled="coverageManualUploadingId === row.pdi_id" @change="uploadManualCoverageSheets(row,$event)"/>{{ coverageManualUploadingId === row.pdi_id ? 'Adjuntando…' : 'Adjuntar PDFs descargados' }}</label></div><span v-else>—</span></td></tr></tbody></v-table></div>
+            <div v-if="coveragePlanillas.length" class="coverage-footnote">Marca la casilla del encabezado para seleccionar todas las {{ coverageMode !== 'standard' ? 'planillas' : 'pendientes' }}. Se procesan en grupos de 10; las hojas se guardan en cada expediente. El ZIP admite hasta 500 planillas{{ coverageMode === 'chosen-date' ? ' y, si eliges una fecha, contiene solo las coberturas consultadas para esa fecha.' : coverageMode === 'last-attention' ? ' y contiene solo la hoja de la última atención de cada una.' : '.' }}</div>
           </v-card>
         </section>
         <section v-else-if="activePage==='individual-coverage'" class="content-wrap individual-coverage-content">

@@ -126,12 +126,38 @@ func (s *server) listCoveragePlanillas(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// coverageQueryMode says which date each selected planilla is consulted with.
+type coverageQueryMode int
+
+const (
+	// coverageModeTramite uses PDI_FECHA_HASTA and skips planillas already covered.
+	coverageModeTramite coverageQueryMode = iota
+	// coverageModeChosenDate applies one date chosen by the user to every planilla.
+	coverageModeChosenDate
+	// coverageModeLastAttention uses each planilla's own last attention day in SIS.
+	coverageModeLastAttention
+)
+
 func (s *server) generateCoverageSheets(w http.ResponseWriter, r *http.Request) {
-	s.generateCoverageSheetsWithDate(w, r, false)
+	s.generateCoverageSheetsWithDate(w, r, coverageModeTramite)
 }
 
 func (s *server) generateCoverageSheetsAtDate(w http.ResponseWriter, r *http.Request) {
-	s.generateCoverageSheetsWithDate(w, r, true)
+	s.generateCoverageSheetsWithDate(w, r, coverageModeChosenDate)
+}
+
+func (s *server) generateCoverageSheetsAtLastAttention(w http.ResponseWriter, r *http.Request) {
+	s.generateCoverageSheetsWithDate(w, r, coverageModeLastAttention)
+}
+
+// lastAttentionDate is the day a planilla's coverage sheet is consulted with
+// by default: its last non-annulled SIS account, else PDI_FECHA_HASTA.
+func lastAttentionDate(row coveragePlanilla) string {
+	if len(row.AttentionDates) > 0 {
+		return row.AttentionDates[len(row.AttentionDates)-1]
+	}
+	date, _ := normalizeCoverageDate(row.CareUntil)
+	return date
 }
 
 func (s *server) generateIndividualCoverage(w http.ResponseWriter, r *http.Request) {
@@ -188,7 +214,9 @@ func (s *server) generateIndividualCoverage(w http.ResponseWriter, r *http.Reque
 	http.ServeFile(w, r, pdfPath)
 }
 
-func (s *server) generateCoverageSheetsWithDate(w http.ResponseWriter, r *http.Request, useChosenDate bool) {
+func (s *server) generateCoverageSheetsWithDate(w http.ResponseWriter, r *http.Request, mode coverageQueryMode) {
+	useChosenDate := mode == coverageModeChosenDate
+	customDate := mode != coverageModeTramite
 	if r.Method != http.MethodPost {
 		writeError(w, http.StatusMethodNotAllowed, "Método no permitido.")
 		return
@@ -198,8 +226,11 @@ func (s *server) generateCoverageSheetsWithDate(w http.ResponseWriter, r *http.R
 		return
 	}
 	prefix := "/api/v1/coberturas/generar/"
-	if useChosenDate {
+	switch mode {
+	case coverageModeChosenDate:
 		prefix = "/api/v1/coberturas/generar-fecha/"
+	case coverageModeLastAttention:
+		prefix = "/api/v1/coberturas/generar-ultima-atencion/"
 	}
 	id := strings.TrimPrefix(r.URL.Path, prefix)
 	job, err := s.coverageJob(id)
@@ -249,6 +280,13 @@ func (s *server) generateCoverageSheetsWithDate(w http.ResponseWriter, r *http.R
 		writeError(w, http.StatusServiceUnavailable, "No se pudieron consultar las planillas de cobertura de este lote en Oracle.")
 		return
 	}
+	if mode == coverageModeLastAttention {
+		if err := s.addCoverageAttentionDates(ctx, job, rows); err != nil {
+			log.Printf("coberturas %s: no se pudieron leer los días de atención en SIS: %v", job.ID, err)
+			writeError(w, http.StatusServiceUnavailable, "No se pudieron consultar en SIS los días de atención de las planillas.")
+			return
+		}
+	}
 	byID := make(map[int64]coveragePlanilla, len(rows))
 	for _, row := range rows {
 		byID[row.ID] = row
@@ -264,7 +302,7 @@ func (s *server) generateCoverageSheetsWithDate(w http.ResponseWriter, r *http.R
 			writeError(w, http.StatusBadRequest, "La cédula manual solo está disponible para trámites con PDFs importados desde Carpetas del equipo.")
 			return
 		}
-		if !useChosenDate && strings.EqualFold(row.CoverageStatus, "S") && !coverageHasDate(row, row.CareUntil) {
+		if mode == coverageModeTramite && strings.EqualFold(row.CoverageStatus, "S") && !coverageHasDate(row, row.CareUntil) {
 			writeError(w, http.StatusConflict, "Oracle ya marca una de las planillas como cubierta, pero el lote no contiene su PDF. Revisa el expediente antes de continuar.")
 			return
 		}
@@ -294,6 +332,7 @@ func (s *server) generateCoverageSheetsWithDate(w http.ResponseWriter, r *http.R
 		}
 	}
 	generatedIDs := make([]int64, 0, len(chosen))
+	queryDates := make(map[int64]string, len(chosen))
 	failures := make([]coverageFailureItem, 0)
 	if job.CoverageFailures == nil {
 		job.CoverageFailures = make(map[int64]coverageFailure)
@@ -301,14 +340,24 @@ func (s *server) generateCoverageSheetsWithDate(w http.ResponseWriter, r *http.R
 	for _, row := range chosen {
 		rowQueryDate := row.CareUntil
 		members := coverageMembersAt(row, rowQueryDate)
-		if useChosenDate {
+		if customDate {
 			rowQueryDate = queryDate
-			expectedMembers := coverageMembersAt(row, queryDate)
+			if mode == coverageModeLastAttention {
+				rowQueryDate = lastAttentionDate(row)
+				if rowQueryDate == "" {
+					reason := "SIS no registra días de atención para esta planilla ni Oracle tiene su fecha hasta."
+					job.CoverageFailures[row.ID] = coverageFailure{Reason: reason, Manual: false}
+					failures = append(failures, coverageFailureItem{PlanillaID: row.ID, Tramite: row.Tramite, Reason: reason, Manual: false})
+					continue
+				}
+			}
+			queryDates[row.ID] = rowQueryDate
+			expectedMembers := coverageMembersAt(row, rowQueryDate)
 			if input.Cedula != "" {
-				expectedMembers = []coverageMember{{Cedula: input.Cedula, Fecha: queryDate}}
-				members = missingCoverageMemberForDate(s, job, row, queryDate, input.Cedula)
+				expectedMembers = []coverageMember{{Cedula: input.Cedula, Fecha: rowQueryDate}}
+				members = missingCoverageMemberForDate(s, job, row, rowQueryDate, input.Cedula)
 			} else {
-				members = missingCoverageMembersForDate(s, job, row, queryDate)
+				members = missingCoverageMembersForDate(s, job, row, rowQueryDate)
 			}
 			if len(members) == 0 && len(expectedMembers) > 0 {
 				generatedIDs = append(generatedIDs, row.ID)
@@ -320,7 +369,7 @@ func (s *server) generateCoverageSheetsWithDate(w http.ResponseWriter, r *http.R
 				if row.ManualCedula {
 					reason += " Como sus PDFs vienen de Carpetas del equipo, escribe la cédula que quieres consultar."
 				}
-				failure := coverageFailure{Reason: reason, QueryDate: rowQueryDate, CustomDate: true, Manual: false}
+				failure := coverageFailure{Reason: reason, QueryDate: rowQueryDate, CustomDate: customDate, Manual: false}
 				job.CoverageFailures[row.ID] = failure
 				failures = append(failures, coverageFailureItem{PlanillaID: row.ID, Tramite: row.Tramite, Reason: reason, Manual: false})
 				continue
@@ -332,7 +381,7 @@ func (s *server) generateCoverageSheetsWithDate(w http.ResponseWriter, r *http.R
 		}
 		documents, targets, sources, failure := s.generateCoveragePlanilla(ctx, job, packageRoot, sourceRoot, row, rowQueryDate, members)
 		if failure != nil {
-			failure.QueryDate, failure.CustomDate = rowQueryDate, useChosenDate
+			failure.QueryDate, failure.CustomDate = rowQueryDate, customDate
 			failure.PendingCedulas = coverageMemberCedulas(members)
 			job.CoverageFailures[row.ID] = *failure
 			failures = append(failures, coverageFailureItem{PlanillaID: row.ID, Tramite: row.Tramite, Reason: failure.Reason, Manual: failure.Manual})
@@ -394,6 +443,9 @@ func (s *server) generateCoverageSheetsWithDate(w http.ResponseWriter, r *http.R
 	response := map[string]any{"job_id": job.ID, "generadas": generatedIDs, "errores": failures, "oracle_actualizado": !useChosenDate}
 	if useChosenDate {
 		response["fecha_consulta"] = queryDate
+	}
+	if mode == coverageModeLastAttention {
+		response["fechas_consulta"] = queryDates
 	}
 	writeJSON(w, http.StatusOK, response)
 }
@@ -588,6 +640,11 @@ func (s *server) downloadCoverageSheets(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 	}
+	lastAttention := r.URL.Query().Get("ultima_atencion") == "1"
+	if lastAttention && queryDate != "" {
+		writeError(w, http.StatusBadRequest, "Elige una fecha o la última atención, no ambas.")
+		return
+	}
 	ids := strings.Split(r.URL.Query().Get("pdi_ids"), ",")
 	if len(ids) == 0 || len(ids) > maxCoverageDownload {
 		writeError(w, http.StatusBadRequest, "La descarga no contiene una selección válida.")
@@ -597,6 +654,13 @@ func (s *server) downloadCoverageSheets(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		writeError(w, http.StatusServiceUnavailable, "No se pudieron consultar las planillas de este lote.")
 		return
+	}
+	if lastAttention {
+		if err := s.addCoverageAttentionDates(r.Context(), job, rows); err != nil {
+			log.Printf("coberturas %s: no se pudieron leer los días de atención en SIS: %v", job.ID, err)
+			writeError(w, http.StatusServiceUnavailable, "No se pudieron consultar en SIS los días de atención de las planillas.")
+			return
+		}
 	}
 	byID := make(map[int64]coveragePlanilla, len(rows))
 	for _, row := range rows {
@@ -614,13 +678,17 @@ func (s *server) downloadCoverageSheets(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		row, ok := byID[id]
-		if !ok || (queryDate == "" && !row.HasPDF) {
+		if !ok || (queryDate == "" && !lastAttention && !row.HasPDF) {
 			_ = writer.Close()
 			writeError(w, http.StatusConflict, "Una de las planillas no tiene todas sus hojas guardadas en el expediente.")
 			return
 		}
+		rowDate := queryDate
+		if lastAttention {
+			rowDate = lastAttentionDate(row)
+		}
 		for _, doc := range s.coverageDocumentsForPlanilla(job, id) {
-			if queryDate != "" && coverageDocumentDate(doc, row) != queryDate {
+			if rowDate != "" && coverageDocumentDate(doc, row) != rowDate {
 				continue
 			}
 			path, err := safeWorkspacePath(packageRoot, doc.RelativePath)
@@ -651,6 +719,8 @@ func (s *server) downloadCoverageSheets(w http.ResponseWriter, r *http.Request) 
 	filename := fmt.Sprintf("COBERTURAS_%s_%s_%s", job.Service, job.Month, job.Year)
 	if queryDate != "" {
 		filename += "_FECHA_" + strings.ReplaceAll(queryDate, "-", "")
+	} else if lastAttention {
+		filename += "_ULTIMA_ATENCION"
 	}
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s.zip"`, filename))
 	w.WriteHeader(http.StatusOK)

@@ -105,6 +105,7 @@ func main() {
 	mux.HandleFunc("/api/v1/coberturas/individual", s.generateIndividualCoverage)
 	mux.HandleFunc("/api/v1/coberturas/generar/", s.generateCoverageSheets)
 	mux.HandleFunc("/api/v1/coberturas/generar-fecha/", s.generateCoverageSheetsAtDate)
+	mux.HandleFunc("/api/v1/coberturas/generar-ultima-atencion/", s.generateCoverageSheetsAtLastAttention)
 	mux.HandleFunc("/api/v1/coberturas/descargar/", s.downloadCoverageSheets)
 	mux.HandleFunc("/api/v1/coberturas/manual/", s.uploadManualCoverageSheets)
 	mux.HandleFunc("/api/v1/ingesta/lote-dual", s.receiveDualUpload)
