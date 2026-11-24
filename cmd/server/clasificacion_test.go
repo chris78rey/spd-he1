@@ -57,10 +57,19 @@ func TestMatchClassificationPrioritizesHCU007InterconsultaPhrase(t *testing.T) {
 		t.Fatalf("loadClassificationRules() error = %v", err)
 	}
 
-	text := "FORMULARIO 7 – INTERCONSULTA\nFORMULARIO 017\nPROTOCOLO QUIRURGICO\nCIRUGIA"
-	code, matches, tied := matchClassification(text, rules)
-	if code != "HCU_007.pdf" || matches != 1 || tied {
-		t.Fatalf("matchClassification() = (%q, %d, %t), want prioritized HCU_007.pdf", code, matches, tied)
+	// An interconsulta that mentions surgery outside the header stays HCU_007:
+	// generic words such as "CIRUGIA" must not turn it into a surgical protocol.
+	header := "FORMULARIO 7 – INTERCONSULTA\nHOSPITAL\nSERVICIO\nPACIENTE\nEDAD\nFECHA\nMOTIVO\nCUADRO CLINICO\nDIAGNOSTICO\nPLAN\nMEDICO\nFIRMA"
+	code, _, tied := matchClassification(header+"\nSE SOLICITA VALORACION POR CIRUGIA\nPROTOCOLO QUIRURGICO PREVIO", rules)
+	if code != "HCU_007.pdf" || tied {
+		t.Fatalf("matchClassification() = (%q, tied=%t), want HCU_007.pdf", code, tied)
+	}
+
+	// Signals of two document types in the header leave the PDF pending
+	// review instead of forcing one name (product rule: header first).
+	code, _, tied = matchClassification("FORMULARIO 7 – INTERCONSULTA\nFORMULARIO 017\nPROTOCOLO QUIRURGICO\nCIRUGIA", rules)
+	if code != "" || !tied {
+		t.Fatalf("matchClassification() = (%q, tied=%t), want pending review for conflicting header", code, tied)
 	}
 }
 

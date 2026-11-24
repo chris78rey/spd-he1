@@ -57,6 +57,7 @@ reglas:
   - codigo: HCU_007.pdf
     palabras_clave: ["FORMULARIO 7 – INTERCONSULTA"]
     palabras_clave_prioritarias: ["FORMULARIO 7 – INTERCONSULTA"]
+    palabras_clave_titulo: ["FORMULARIO 7 – INTERCONSULTA"]
   - codigo: HCU_018A.pdf
     palabras_clave: ["FORMULARIO 018A", "TRANSANESTESICO", "ANESTESIA"]
     palabras_clave_prioritarias: ["FORMULARIO 018A"]
