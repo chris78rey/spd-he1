@@ -174,9 +174,9 @@
     "semantic_hash": "34c6851ce060f07f2b6158267f717097"
   },
   "cmd/server/coberturas.go": {
-    "mtime": 1795538531.618698,
-    "seen": 1795538541.4484804,
-    "ast_hash": "6f9bb002016521c2b3d9d9decc9ced2d",
+    "mtime": 1795538805.6726453,
+    "seen": 1795538870.9192276,
+    "ast_hash": "6be55f0749259b11d26cb633723abdfe",
     "semantic_hash": ""
   },
   "scripts/cobertura/runtime_config.cjs": {
@@ -270,9 +270,9 @@
     "semantic_hash": "7bfa8dccb8d738ca2ed9e2ab9539f120"
   },
   "cmd/server/coberturas_test.go": {
-    "mtime": 1795538531.618698,
-    "seen": 1795538541.4484868,
-    "ast_hash": "71b449d6343ff45df4150eb8156bf7f5",
+    "mtime": 1795538805.6806452,
+    "seen": 1795538870.9192371,
+    "ast_hash": "637920ae551ce12aebe33c53c4ab88b8",
     "semantic_hash": ""
   },
   "cmd/server/workspace_coverage_test.go": {
