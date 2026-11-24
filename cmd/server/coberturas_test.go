@@ -297,3 +297,42 @@ func TestRemovedSheetOfOneReferenteOnlyRequeriesThatCedula(t *testing.T) {
 		t.Fatalf("another date needs the minor and both referentes: %v", other)
 	}
 }
+
+func TestOnlyTheLatestRecordOfAPathCountsAsSavedSheet(t *testing.T) {
+	s := &server{workspacesDir: t.TempDir()}
+	job := stagedJob{ID: "WORK-AMBULATORIO-202607", Service: "AMBULATORIO", Month: "07", Year: "2026"}
+	folder := filepath.Join(s.jobRoot(job.ID), "trabajo", packageFolderName(&job), "4. EXPEDIENTES", "PACIENTE_PRUEBA")
+	if err := os.MkdirAll(folder, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(folder, "C_COBERTURA.pdf"), []byte("%PDF-"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	path := "4. EXPEDIENTES/PACIENTE_PRUEBA/C_COBERTURA.pdf"
+	// Records left by a file removed before the fix, then a new sheet at the same path.
+	job.ExternalPDFs = []workspaceDocument{
+		{RelativePath: path, PlanillaID: 10, CoverageCedula: "1700000001", CoverageDate: "2026-07-07"},
+		{RelativePath: path, PlanillaID: 10, CoverageCedula: "1700000001", CoverageDate: "2026-07-10"},
+		{RelativePath: path, PlanillaID: 10, CoverageCedula: "1700000001", CoverageDate: "2026-07-24"},
+		{RelativePath: path, PlanillaID: 10, CoverageCedula: "1700000001", CoverageDate: "2026-07-24"},
+	}
+	index := s.indexCoverageDocuments(job)[10]
+	if index == nil || len(index.Dates) != 1 || !index.Dates["2026-07-24"] {
+		t.Fatalf("only the current file's sheet must count: %+v", index)
+	}
+	row := coveragePlanilla{ID: 10, Cedula: "1700000001", Minor: "N", CareUntil: "2026-07-24"}
+	if missing := missingCoverageMembersForDate(s, job, row, "2026-07-07"); len(missing) != 1 {
+		t.Fatalf("07/07 must be consultable again: %v", missing)
+	}
+	if missing := missingCoverageMembersForDate(s, job, row, "2026-07-24"); len(missing) != 0 {
+		t.Fatalf("24/07 is saved in the current file: %v", missing)
+	}
+	// A merged file keeps every sheet in a single, latest record.
+	job.ExternalPDFs = append(job.ExternalPDFs, workspaceDocument{RelativePath: path, PlanillaID: 10, CoverageItems: []coverageDocumentMetadata{
+		{PlanillaID: 10, Cedula: "1700000001", Date: "2026-07-07"},
+		{PlanillaID: 10, Cedula: "1700000001", Date: "2026-07-24"},
+	}})
+	if index := s.indexCoverageDocuments(job)[10]; index == nil || !index.Dates["2026-07-07"] || !index.Dates["2026-07-24"] {
+		t.Fatalf("a merged file must keep all its sheets: %+v", index)
+	}
+}

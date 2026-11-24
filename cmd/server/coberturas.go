@@ -1202,8 +1202,9 @@ func (s *server) indexCoverageDocuments(job stagedJob) map[int64]*coverageDateIn
 			entry.HasUndated = true
 		}
 	}
-	for _, doc := range job.ExternalPDFs {
-		if !isCoveragePDFName(filepath.Base(doc.RelativePath)) || s.coverageDocumentRemoved(job, doc.RelativePath) {
+	current := currentRecordIndexByPath(job.ExternalPDFs)
+	for index, doc := range job.ExternalPDFs {
+		if !isCoveragePDFName(filepath.Base(doc.RelativePath)) || !isCurrentRecord(current, index, doc) || s.coverageDocumentRemoved(job, doc.RelativePath) {
 			continue
 		}
 		items := coverageDocumentMetadataItems(doc)
@@ -1232,8 +1233,9 @@ func (s *server) indexCoverageDocuments(job stagedJob) map[int64]*coverageDateIn
 
 func (s *server) coverageDocumentsForPlanilla(job stagedJob, pdiID int64) []workspaceDocument {
 	documents := make([]workspaceDocument, 0)
-	for _, doc := range job.ExternalPDFs {
-		if !isCoveragePDFName(filepath.Base(doc.RelativePath)) || s.coverageDocumentRemoved(job, doc.RelativePath) {
+	current := currentRecordIndexByPath(job.ExternalPDFs)
+	for index, doc := range job.ExternalPDFs {
+		if !isCoveragePDFName(filepath.Base(doc.RelativePath)) || !isCurrentRecord(current, index, doc) || s.coverageDocumentRemoved(job, doc.RelativePath) {
 			continue
 		}
 		items := coverageDocumentMetadataItems(doc)
@@ -1357,4 +1359,21 @@ func withoutWorkspaceDocumentsAt(documents []workspaceDocument, relative string)
 		}
 	}
 	return kept
+}
+
+// currentRecordIndexByPath maps each PDF path to its latest record. A path
+// holds one file: a merge leaves a single record with every sheet in its
+// coverage items, and a new file at the path is recorded after the old one.
+// Older records at the same path describe a file that was removed or
+// replaced, and must not count as saved sheets.
+func currentRecordIndexByPath(documents []workspaceDocument) map[string]int {
+	current := make(map[string]int, len(documents))
+	for index, doc := range documents {
+		current[filepath.ToSlash(filepath.Clean(filepath.FromSlash(doc.RelativePath)))] = index
+	}
+	return current
+}
+
+func isCurrentRecord(current map[string]int, index int, doc workspaceDocument) bool {
+	return current[filepath.ToSlash(filepath.Clean(filepath.FromSlash(doc.RelativePath)))] == index
 }
