@@ -336,3 +336,49 @@ func TestOnlyTheLatestRecordOfAPathCountsAsSavedSheet(t *testing.T) {
 		t.Fatalf("a merged file must keep all its sheets: %+v", index)
 	}
 }
+
+func TestMergedDuplicateCountsOnlyWhenTheMergedFileDoesNotListItsSheets(t *testing.T) {
+	s := &server{workspacesDir: t.TempDir()}
+	job := stagedJob{ID: "WORK-AMBULATORIO-202607", Service: "AMBULATORIO", Month: "07", Year: "2026"}
+	folder := filepath.Join(s.jobRoot(job.ID), "trabajo", packageFolderName(&job), "4. EXPEDIENTES", "PACIENTE_PRUEBA")
+	if err := os.MkdirAll(folder, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(folder, "C_COBERTURA.pdf"), []byte("%PDF-"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	canonical := "4. EXPEDIENTES/PACIENTE_PRUEBA/C_COBERTURA.pdf"
+	duplicate := "4. EXPEDIENTES/PACIENTE_PRUEBA/C_COBERTURA_1.pdf"
+	job.MergedDuplicates = map[string][]string{canonical: {duplicate}}
+	job.ExternalPDFs = []workspaceDocument{
+		{RelativePath: duplicate, PlanillaID: 10, CoverageCedula: "1700000001", CoverageDate: "2026-07-07"},
+		{RelativePath: canonical, PlanillaID: 10, CoverageCedula: "1700000001", CoverageDate: "2026-07-24"},
+	}
+	// Old merge without the list of sheets: the duplicate still counts.
+	if !s.indexCoverageDocuments(job)[10].Dates["2026-07-07"] {
+		t.Fatal("a sheet merged by an old merge without coverage items must keep counting")
+	}
+	// Merge that lists its sheets: the duplicate adds nothing by itself.
+	job.ExternalPDFs[1].CoverageItems = []coverageDocumentMetadata{{PlanillaID: 10, Cedula: "1700000001", Date: "2026-07-24"}}
+	if s.indexCoverageDocuments(job)[10].Dates["2026-07-07"] {
+		t.Fatal("a merged-away sheet not listed by the merged file must not count")
+	}
+}
+
+func TestMergeMetadataUsesOnlyTheCurrentRecordOfEachPath(t *testing.T) {
+	path := "4. EXPEDIENTES/PACIENTE_PRUEBA/C_COBERTURA.pdf"
+	other := "4. EXPEDIENTES/PACIENTE_PRUEBA/C_COBERTURA_1.pdf"
+	job := stagedJob{ExternalPDFs: []workspaceDocument{
+		{RelativePath: path, PlanillaID: 10, CoverageCedula: "1700000001", CoverageDate: "2026-07-10"},
+		{RelativePath: path, PlanillaID: 10, CoverageCedula: "1700000001", CoverageDate: "2026-07-24"},
+		{RelativePath: other, PlanillaID: 10, CoverageCedula: "1700000001", CoverageDate: "2026-07-07"},
+	}}
+	items := workspaceCoverageMetadataForPaths(job, []string{path, other})
+	dates := []string{}
+	for _, item := range items {
+		dates = append(dates, item.Date)
+	}
+	if strings.Join(dates, ",") != "2026-07-07,2026-07-24" {
+		t.Fatalf("merged file must list only the sheets it contains, got %v", dates)
+	}
+}

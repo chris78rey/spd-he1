@@ -1321,10 +1321,22 @@ func (s *server) addCoverageAttentionDates(ctx context.Context, job stagedJob, r
 // the patient folder. Such a sheet no longer counts as saved for its date, so
 // the same date can be consulted again. A file re-created at that path still
 // counts even when an older removal mark remains.
+//
+// A sheet merged into another file also stops counting by itself when the
+// merged file records its sheets: the merged file's record already lists
+// them, and an earlier record at its path must not add phantom dates.
 func (s *server) coverageDocumentRemoved(job stagedJob, relative string) bool {
 	clean := filepath.ToSlash(filepath.Clean(filepath.FromSlash(relative)))
-	if !job.DeletedPDFs[clean] {
-		return false
+	removed := job.DeletedPDFs[clean]
+	if !removed {
+		canonical := mergedCanonicalPath(job, clean)
+		if canonical == "" {
+			return false
+		}
+		removed = job.DeletedPDFs[canonical] || currentRecordHasCoverageItems(job, canonical)
+		if !removed {
+			return false
+		}
 	}
 	packageRoot := filepath.Join(s.jobRoot(job.ID), "trabajo", packageFolderName(&job))
 	path, err := safeWorkspacePath(packageRoot, clean)
@@ -1333,6 +1345,23 @@ func (s *server) coverageDocumentRemoved(job stagedJob, relative string) bool {
 	}
 	_, err = os.Stat(path)
 	return errors.Is(err, os.ErrNotExist)
+}
+
+// mergedCanonicalPath returns the file a merged duplicate was folded into.
+func mergedCanonicalPath(job stagedJob, relative string) string {
+	for canonical, duplicates := range job.MergedDuplicates {
+		for _, duplicate := range duplicates {
+			if filepath.ToSlash(filepath.Clean(filepath.FromSlash(duplicate))) == relative {
+				return filepath.ToSlash(filepath.Clean(filepath.FromSlash(canonical)))
+			}
+		}
+	}
+	return ""
+}
+
+func currentRecordHasCoverageItems(job stagedJob, relative string) bool {
+	index, ok := currentRecordIndexByPath(job.ExternalPDFs)[relative]
+	return ok && len(job.ExternalPDFs[index].CoverageItems) > 0
 }
 
 // adoptRemovedPaths prepares paths that will hold a new PDF. When the path

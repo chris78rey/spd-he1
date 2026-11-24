@@ -124,7 +124,7 @@ Si la planilla no existe en `PLANILLA_DIGITAL` pero sí en SIS, se puede crear c
 
 ## Decisión de producto: fecha propuesta para la cobertura del paciente
 
-Evidencia de uso: tras asociar una planilla, la cobertura se consultó con la fecha del día y no con la de la atención. La sección de cobertura del paciente muestra los días de atención del trámite (cuentas no anuladas de SIS) y propone por defecto la última atención, en los tres servicios. Un clic en un día lo elige; los días que ya tienen hoja guardada se marcan. La persona puede escribir otra fecha, pero si no es un día de atención se le avisa y debe confirmarlo antes de consultar. Recargar la sección no cambia la fecha que la persona eligió para el mismo trámite.
+Evidencia de uso: tras asociar una planilla, la cobertura se consultó con la fecha del día y no con la de la atención. La sección de cobertura del paciente muestra los días de atención del trámite (cuentas no anuladas de SIS) y propone por defecto la última atención, en los tres servicios. Los días se pueden marcar varios a la vez y se consultan uno tras otro, cada uno con su fecha; los días que ya tienen hoja guardada se marcan. Una hoja cuenta como guardada solo mientras su archivo está en la carpeta: si se quita, o si se fusionó en otro PDF que ya lista sus hojas, su fecha vuelve a poder consultarse. La persona puede escribir otra fecha, pero si no es un día de atención se le avisa y debe confirmarlo antes de consultar. Recargar la sección no cambia la fecha que la persona eligió para el mismo trámite.
 
 ## Decisión de producto: cobertura individual sin expediente
 

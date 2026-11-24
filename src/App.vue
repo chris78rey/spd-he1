@@ -373,7 +373,14 @@ const workspaceNotice = ref('')
 const patientCoverageRows = ref([])
 const patientCoverageLoading = ref(false)
 const patientCoverageSelectedID = ref(null)
-const patientCoverageDate = ref('')
+// Dates to consult for the selected trámite. The attention-day buttons add or
+// remove dates; the date field replaces the selection with one date.
+const patientCoverageDates = ref([])
+const patientCoverageDate = computed({
+  get: () => patientCoverageDates.value.length === 1 ? patientCoverageDates.value[0] : '',
+  set: value => { patientCoverageDates.value = value ? [value] : [] },
+})
+const patientCoverageProgress = ref('')
 const patientCoverageDateKey = ref('')
 const patientCoverageOffDateConfirmed = ref(false)
 const patientCoverageCedula = ref('')
@@ -456,9 +463,13 @@ const patientCoverageRowsForFolder = computed(() => workspacePatient.value
   ? patientCoverageRows.value.filter(row => row.carpeta_paciente === workspacePatient.value)
   : [])
 const patientCoverageSelectedRow = computed(() => patientCoverageRowsForFolder.value.find(row => Number(row.pdi_id) === Number(patientCoverageSelectedID.value)) || patientCoverageRowsForFolder.value[0] || null)
+const patientCoverageOffAttentionDates = computed(() => {
+  const dates = patientCoverageSelectedRow.value?.fechas_atencion || []
+  return dates.length ? patientCoverageDates.value.filter(date => !dates.includes(date)) : []
+})
 const patientCoverageDateOffAttention = computed(() => {
   const dates = patientCoverageSelectedRow.value?.fechas_atencion || []
-  return Boolean(patientCoverageDate.value && dates.length && !dates.includes(patientCoverageDate.value))
+  return Boolean(dates.length && patientCoverageOffAttentionDates.value.length)
 })
 const patientCoverageCedulaError = computed(() => {
   const cedula = String(patientCoverageCedula.value || '').trim()
@@ -491,7 +502,7 @@ watch(() => {
   patientCoverageDateKey.value = `${jobId}|${pdiID}`
   patientCoverageDate.value = patientCoverageDefaultDate(patientCoverageSelectedRow.value)
 }, { immediate: true })
-watch([patientCoverageDate, patientCoverageSelectedID], () => { patientCoverageOffDateConfirmed.value = false })
+watch([patientCoverageDates, patientCoverageSelectedID], () => { patientCoverageOffDateConfirmed.value = false }, { deep: true })
 watch(workspacePatient, () => { resetPatientPlanillaLink(false) })
 watch(patientLinkTramite, () => { patientLinkPreview.value = null; patientLinkError.value = '' })
 watch(patientLinkPreview, () => { patientLinkConfirmed.value = false })
@@ -1021,11 +1032,18 @@ async function generateCoverageSheetsForDate(queryDate, lastAttention = false) {
     coverageError.value = error.message || 'No se pudieron generar las hojas seleccionadas.'
   } finally { coverageProgress.value = ''; coverageGenerating.value = false }
 }
+function togglePatientCoverageDate(date) {
+  const selected = new Set(patientCoverageDates.value)
+  if (selected.has(date)) selected.delete(date)
+  else selected.add(date)
+  patientCoverageDates.value = [...selected].sort()
+}
 async function generatePatientCoverageAtChosenDate() {
   const jobId = ingestResult.value?.job_id
   const row = patientCoverageSelectedRow.value
   if (!jobId || !row || patientCoverageGenerating.value || workspaceMutationBusy.value) return
-  if (!patientCoverageDate.value) {
+  const dates = [...patientCoverageDates.value].sort()
+  if (!dates.length) {
     patientCoverageError.value = 'Elige la fecha que consultará el portal MSP.'
     return
   }
@@ -1040,26 +1058,45 @@ async function generatePatientCoverageAtChosenDate() {
   patientCoverageGenerating.value = true
   patientCoverageError.value = ''
   patientCoverageNotice.value = ''
+  const done = []
+  const manual = []
+  let stopError = ''
   try {
-    const { response, data } = await fetchWorkspaceJSON(`/api/v1/coberturas/generar-fecha/${encodeURIComponent(jobId)}`, {
-      method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pdi_ids: [row.pdi_id], fecha_consulta: patientCoverageDate.value, cedula: patientCoverageCedula.value.trim() }),
-    }, 15 * 60 * 1000, 'consultar las coberturas del paciente')
-    if (response.status === 401) { await signOut(); return }
-    if (!response.ok) throw new Error(data.error || 'No se pudieron consultar las coberturas del paciente.')
-    const failure = (data.errores || []).find(item => item.pdi_id === row.pdi_id)
-    if (failure && !failure.manual) throw new Error(failure.motivo || 'No se pudieron generar las coberturas.')
-    await Promise.all([
-      loadPatientCoveragePlanillas(jobId),
-      loadWorkspaceDocuments(jobId, selectedWorkspacePDF.value),
-    ])
-    selectLatestPatientCoveragePDF()
-    patientCoverageNotice.value = failure?.manual
-      ? `El portal no entregó todas las hojas para ${patientCoverageDate.value}. Puedes adjuntar las pendientes aquí.`
-      : `Consulta terminada para el trámite ${row.pdi_tramite} con fecha ${patientCoverageDate.value}. Las coberturas se guardaron en esta carpeta; Oracle conserva el estado anterior.`
+    // The portal is consulted one date at a time; each date is saved before
+    // the next one starts, so a later failure keeps the earlier sheets.
+    for (const [position, date] of dates.entries()) {
+      patientCoverageProgress.value = dates.length > 1
+        ? `Consultando ${coverageDateLabel(date)} (${position + 1} de ${dates.length})…`
+        : `Consultando ${coverageDateLabel(date)}…`
+      const { response, data } = await fetchWorkspaceJSON(`/api/v1/coberturas/generar-fecha/${encodeURIComponent(jobId)}`, {
+        method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pdi_ids: [row.pdi_id], fecha_consulta: date, cedula: patientCoverageCedula.value.trim() }),
+      }, 15 * 60 * 1000, 'consultar las coberturas del paciente')
+      if (response.status === 401) { await signOut(); return }
+      if (!response.ok) { stopError = `${coverageDateLabel(date)}: ${data.error || 'No se pudieron consultar las coberturas del paciente.'}`; break }
+      const failure = (data.errores || []).find(item => item.pdi_id === row.pdi_id)
+      if (failure && !failure.manual) { stopError = `${coverageDateLabel(date)}: ${failure.motivo || 'No se pudieron generar las coberturas.'}`; break }
+      if (failure?.manual) manual.push(date)
+      else done.push(date)
+    }
   } catch (error) {
-    patientCoverageError.value = error.message || 'No se pudieron consultar las coberturas del paciente.'
-  } finally { patientCoverageGenerating.value = false }
+    stopError = error.message || 'No se pudieron consultar las coberturas del paciente.'
+  } finally {
+    patientCoverageProgress.value = ''
+    if (done.length || manual.length) {
+      await Promise.all([
+        loadPatientCoveragePlanillas(jobId),
+        loadWorkspaceDocuments(jobId, selectedWorkspacePDF.value),
+      ]).catch(() => {})
+      selectLatestPatientCoveragePDF()
+    }
+    const parts = []
+    if (done.length) parts.push(`Consulta terminada para el trámite ${row.pdi_tramite} con ${done.length > 1 ? 'las fechas' : 'la fecha'} ${done.map(coverageDateLabel).join(', ')}. Las coberturas se guardaron en esta carpeta.`)
+    if (manual.length) parts.push(`El portal no entregó todas las hojas para ${manual.map(coverageDateLabel).join(', ')}. Puedes adjuntar las pendientes aquí.`)
+    patientCoverageNotice.value = parts.join(' ')
+    patientCoverageError.value = stopError ? `${stopError}${done.length ? ' Las fechas anteriores sí se guardaron.' : ''}` : ''
+    patientCoverageGenerating.value = false
+  }
 }
 function resetPatientPlanillaLink(keepOpen = false) {
   patientLinkOpen.value = keepOpen
@@ -3773,17 +3810,18 @@ async function removeDoc(doc) { await (await dbPromise).delete('files', doc.id);
                   <div class="patient-coverage-controls">
                     <v-select v-if="patientCoverageRowsForFolder.length > 1" v-model="patientCoverageSelectedID" :items="patientCoverageTramiteItems" item-title="title" item-value="value" label="Trámite al que asociar las hojas" density="comfortable" variant="outlined" hide-details/>
                     <div v-else class="patient-coverage-tramite">Trámite {{ patientCoverageSelectedRow?.pdi_tramite }}</div>
-                    <v-text-field v-model="patientCoverageDate" type="date" label="Fecha de consulta" density="comfortable" variant="outlined" hide-details :disabled="patientCoverageGenerating || patientCoverageLoading"/>
+                    <v-text-field v-model="patientCoverageDate" type="date" :label="patientCoverageDates.length > 1 ? `${patientCoverageDates.length} fechas elegidas` : 'Fecha de consulta'" density="comfortable" variant="outlined" hide-details :disabled="patientCoverageGenerating || patientCoverageLoading"/>
                     <v-text-field v-if="patientCoverageSelectedRow?.cedula_manual_permitida" v-model="patientCoverageCedula" label="Cédula a consultar (opcional)" placeholder="10 dígitos" prepend-inner-icon="mdi-card-account-details-outline" inputmode="numeric" maxlength="10" density="comfortable" variant="outlined" :hint="patientCoverageCedula ? 'Se consultará solo esta cédula.' : 'Vacía: se usarán las cédulas de la planilla.'" persistent-hint :error-messages="patientCoverageCedulaError ? [patientCoverageCedulaError] : []" :disabled="patientCoverageGenerating || patientCoverageLoading"/>
-                    <v-btn type="button" color="primary" prepend-icon="mdi-cloud-download-outline" :loading="patientCoverageGenerating" :disabled="!patientCoverageSelectedRow || !patientCoverageDate || Boolean(patientCoverageCedulaError) || (patientCoverageDateOffAttention && !patientCoverageOffDateConfirmed) || patientCoverageGenerating || patientCoverageLoading || workspaceMutationBusy || workspaceSending || mergeSending || mergeAllSending" @click="generatePatientCoverageAtChosenDate">Consultar y guardar</v-btn>
+                    <v-btn type="button" color="primary" prepend-icon="mdi-cloud-download-outline" :loading="patientCoverageGenerating" :disabled="!patientCoverageSelectedRow || !patientCoverageDates.length || Boolean(patientCoverageCedulaError) || (patientCoverageDateOffAttention && !patientCoverageOffDateConfirmed) || patientCoverageGenerating || patientCoverageLoading || workspaceMutationBusy || workspaceSending || mergeSending || mergeAllSending" @click="generatePatientCoverageAtChosenDate">{{ patientCoverageDates.length > 1 ? `Consultar y guardar (${patientCoverageDates.length} fechas)` : 'Consultar y guardar' }}</v-btn>
                   </div>
                   <div v-if="patientCoverageSelectedRow?.fechas_atencion?.length" class="patient-coverage-attention">
                     <span>Días de atención del trámite:</span>
-                    <v-chip v-for="date in patientCoverageSelectedRow.fechas_atencion" :key="date" size="small" :color="patientCoverageDate === date ? 'primary' : undefined" :variant="patientCoverageDate === date ? 'flat' : 'outlined'" :prepend-icon="(patientCoverageSelectedRow.fechas_cobertura || []).includes(date) ? 'mdi-check' : undefined" :disabled="patientCoverageGenerating || patientCoverageLoading" :title="(patientCoverageSelectedRow.fechas_cobertura || []).includes(date) ? 'Ya hay una hoja guardada con esta fecha' : 'Usar esta fecha'" @click="patientCoverageDate = date">{{ coverageDateLabel(date) }}</v-chip>
-                    <small>La fecha propuesta es la última atención. ✓ = ya tiene hoja guardada.</small>
+                    <v-chip v-for="date in patientCoverageSelectedRow.fechas_atencion" :key="date" size="small" :color="patientCoverageDates.includes(date) ? 'primary' : undefined" :variant="patientCoverageDates.includes(date) ? 'flat' : 'outlined'" :aria-pressed="patientCoverageDates.includes(date)" :prepend-icon="(patientCoverageSelectedRow.fechas_cobertura || []).includes(date) ? 'mdi-check' : undefined" :disabled="patientCoverageGenerating || patientCoverageLoading" :title="(patientCoverageSelectedRow.fechas_cobertura || []).includes(date) ? 'Ya hay una hoja guardada con esta fecha' : 'Agregar o quitar esta fecha'" @click="togglePatientCoverageDate(date)">{{ coverageDateLabel(date) }}</v-chip>
+                    <small>La fecha propuesta es la última atención. Toca varios días para consultarlos juntos. ✓ = ya tiene hoja guardada.</small>
                   </div>
+                  <div v-if="patientCoverageProgress" class="patient-coverage-loading"><v-progress-circular indeterminate color="primary" size="20"/><span>{{ patientCoverageProgress }}</span></div>
                   <div v-if="patientCoverageDateOffAttention" class="patient-coverage-off-date">
-                    <v-alert type="warning" variant="tonal" density="comfortable" class="patient-coverage-alert">La fecha {{ coverageDateLabel(patientCoverageDate) }} no corresponde a ningún día de atención del trámite ({{ patientCoverageSelectedRow.fechas_atencion.map(coverageDateLabel).join(', ') }}). La hoja de cobertura debe ser de un día de atención.</v-alert>
+                    <v-alert type="warning" variant="tonal" density="comfortable" class="patient-coverage-alert">{{ patientCoverageOffAttentionDates.length > 1 ? 'Las fechas' : 'La fecha' }} {{ patientCoverageOffAttentionDates.map(coverageDateLabel).join(', ') }} no {{ patientCoverageOffAttentionDates.length > 1 ? 'corresponden' : 'corresponde' }} a ningún día de atención del trámite ({{ patientCoverageSelectedRow.fechas_atencion.map(coverageDateLabel).join(', ') }}). La hoja de cobertura debe ser de un día de atención.</v-alert>
                     <v-checkbox v-model="patientCoverageOffDateConfirmed" label="Consultar igualmente con esta fecha" density="compact" hide-details color="warning"/>
                   </div>
                   <div v-if="patientCoverageSelectedRow" class="patient-coverage-row-detail">

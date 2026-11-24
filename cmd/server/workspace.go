@@ -529,8 +529,18 @@ func (s *server) deleteWorkspacePDF(w http.ResponseWriter, r *http.Request, job 
 	job.DeletedPDFs[cleanRelative] = true
 	delete(job.ObjectionPDFSelection, cleanRelative)
 	// The records of a removed PDF describe a file that no longer exists; a
-	// coverage sheet kept here would still count as saved for its date.
+	// coverage sheet kept here would still count as saved for its date. The
+	// same applies to sheets that were merged into it and no longer exist.
 	job.ExternalPDFs = withoutWorkspaceDocumentsAt(job.ExternalPDFs, cleanRelative)
+	for _, duplicate := range job.MergedDuplicates[cleanRelative] {
+		duplicatePath, pathErr := safeWorkspacePath(packageRoot, duplicate)
+		if pathErr != nil {
+			continue
+		}
+		if _, statErr := os.Stat(duplicatePath); errors.Is(statErr, os.ErrNotExist) {
+			job.ExternalPDFs = withoutWorkspaceDocumentsAt(job.ExternalPDFs, filepath.ToSlash(filepath.Clean(filepath.FromSlash(duplicate))))
+		}
+	}
 	if err := s.saveStagedJob(job); err != nil {
 		job.DeletedPDFs = previousDeleted
 		job.ObjectionPDFSelection = previousObjectionSelection
@@ -1225,9 +1235,12 @@ func workspaceCoverageMetadataForPaths(job stagedJob, paths []string) []coverage
 		key := fmt.Sprintf("%d|%s|%s", item.PlanillaID, item.Cedula, item.Date)
 		itemsByKey[key] = item
 	}
-	for _, document := range job.ExternalPDFs {
+	// Only the latest record of each path describes the file being merged;
+	// older records belong to removed or replaced files at that path.
+	current := currentRecordIndexByPath(job.ExternalPDFs)
+	for index, document := range job.ExternalPDFs {
 		path := filepath.ToSlash(filepath.Clean(filepath.FromSlash(document.RelativePath)))
-		if !selected[path] {
+		if !selected[path] || current[path] != index {
 			continue
 		}
 		metadataPaths[path] = true
