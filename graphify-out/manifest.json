@@ -6,9 +6,9 @@
     "semantic_hash": ""
   },
   "src/App.vue": {
-    "mtime": 1795539273.264854,
-    "seen": 1795539292.72356,
-    "ast_hash": "1a7b83b6e76cb10a1103ff160a93244c",
+    "mtime": 1795542996.6622758,
+    "seen": 1795543005.6147423,
+    "ast_hash": "860c933949be928fe2a80345f62d506b",
     "semantic_hash": ""
   },
   "src/main.js": {
@@ -30,9 +30,9 @@
     "semantic_hash": "8d16fe2490aa9a9bd7f0ca0d46158518"
   },
   "PRINCIPIOS_DE_PRODUCTO.md": {
-    "mtime": 1795539288.108957,
-    "seen": 1795539292.7242486,
-    "ast_hash": "d9b8e7a3511b971cba82305e07bb840b",
+    "mtime": 1795542996.6632757,
+    "seen": 1795543005.6152453,
+    "ast_hash": "7641a5560d2c7051da7df1d99440a807",
     "semantic_hash": ""
   },
   "index.html": {
