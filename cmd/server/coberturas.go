@@ -1421,34 +1421,35 @@ func (s *server) addCoverageAttentionDates(ctx context.Context, job stagedJob, r
 	return nil
 }
 
-// coverageDocumentRemoved reports a coverage record whose PDF was removed from
-// the patient folder. Such a sheet no longer counts as saved for its date, so
-// the same date can be consulted again. A file re-created at that path still
-// counts even when an older removal mark remains.
+// coverageDocumentRemoved reports a coverage record whose PDF is no longer in
+// the patient folder: it was removed, replaced, or lost when an older copy of
+// the job was saved. Such a sheet no longer counts as saved for its date, so
+// the same date can be consulted again.
 //
-// A sheet merged into another file also stops counting by itself when the
-// merged file records its sheets: the merged file's record already lists
-// them, and an earlier record at its path must not add phantom dates.
+// One exception keeps real sheets: a sheet merged by an older merge that did
+// not list its sheets is inside the merged PDF, so it still counts while that
+// merged PDF exists.
 func (s *server) coverageDocumentRemoved(job stagedJob, relative string) bool {
 	clean := filepath.ToSlash(filepath.Clean(filepath.FromSlash(relative)))
-	removed := job.DeletedPDFs[clean]
-	if !removed {
-		canonical := mergedCanonicalPath(job, clean)
-		if canonical == "" {
-			return false
-		}
-		removed = job.DeletedPDFs[canonical] || currentRecordHasCoverageItems(job, canonical)
-		if !removed {
-			return false
-		}
-	}
 	packageRoot := filepath.Join(s.jobRoot(job.ID), "trabajo", packageFolderName(&job))
-	path, err := safeWorkspacePath(packageRoot, clean)
-	if err != nil {
-		return true
+	exists := func(path string) bool {
+		absolute, err := safeWorkspacePath(packageRoot, path)
+		if err != nil {
+			return false
+		}
+		info, err := os.Stat(absolute)
+		return err == nil && info.Mode().IsRegular()
 	}
-	_, err = os.Stat(path)
-	return errors.Is(err, os.ErrNotExist)
+	if exists(clean) {
+		return false
+	}
+	if renamed := strings.TrimSpace(job.Renames[clean]); renamed != "" && exists(filepath.ToSlash(filepath.Clean(filepath.FromSlash(renamed)))) {
+		return false
+	}
+	if canonical := mergedCanonicalPath(job, clean); canonical != "" && !currentRecordHasCoverageItems(job, canonical) && exists(canonical) {
+		return false
+	}
+	return true
 }
 
 // mergedCanonicalPath returns the file a merged duplicate was folded into.

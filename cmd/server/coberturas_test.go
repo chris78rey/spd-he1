@@ -97,6 +97,7 @@ func TestMissingCoverageMembersForDateOnlyReturnsMembersWithoutThatDate(t *testi
 		},
 	}
 	s := &server{workspacesDir: t.TempDir()}
+	writeCoverageRecordFiles(t, s, job)
 
 	got := missingCoverageMembersForDate(s, job, row, chosenDate)
 	if len(got) != 1 || got[0].Cedula != row.Dependent2 || got[0].Fecha != chosenDate {
@@ -409,5 +410,40 @@ func TestWorkspaceFolderPlanillasUsesLinkedPDFsAndFolderLinks(t *testing.T) {
 	}
 	if !folders["PACIENTE_TRES"][301] {
 		t.Fatalf("a folder link must count: %v", folders["PACIENTE_TRES"])
+	}
+}
+
+func TestCoverageRecordWithoutFileStopsCountingEvenWithoutRemovalMark(t *testing.T) {
+	s := &server{workspacesDir: t.TempDir()}
+	job := stagedJob{ID: "WORK-AMBULATORIO-202607", Service: "AMBULATORIO", Month: "07", Year: "2026"}
+	folder := filepath.Join(s.jobRoot(job.ID), "trabajo", packageFolderName(&job), "4. EXPEDIENTES", "PACIENTE_PRUEBA")
+	if err := os.MkdirAll(folder, 0700); err != nil {
+		t.Fatal(err)
+	}
+	// The PDF disappeared (an older copy of the job was saved) and no removal
+	// mark was left: the record must not keep the date as saved.
+	job.ExternalPDFs = []workspaceDocument{{RelativePath: "4. EXPEDIENTES/PACIENTE_PRUEBA/C_COBERTURA.pdf", PlanillaID: 10, CoverageCedula: "1700000001", CoverageDate: "2026-07-03"}}
+	if index := s.indexCoverageDocuments(job)[10]; index != nil {
+		t.Fatalf("a record without its file must not count: %+v", index.Dates)
+	}
+	row := coveragePlanilla{ID: 10, Cedula: "1700000001", Minor: "N", CareUntil: "2026-07-03"}
+	if missing := missingCoverageMembersForDate(s, job, row, "2026-07-03"); len(missing) != 1 {
+		t.Fatalf("03/07 must be consultable again: %v", missing)
+	}
+}
+
+// writeCoverageRecordFiles creates the PDF of every external record, so the
+// records count as saved sheets: a record counts only while its file exists.
+func writeCoverageRecordFiles(t *testing.T, s *server, job stagedJob) {
+	t.Helper()
+	root := filepath.Join(s.jobRoot(job.ID), "trabajo", packageFolderName(&job))
+	for _, doc := range job.ExternalPDFs {
+		path := filepath.Join(root, filepath.FromSlash(doc.RelativePath))
+		if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("%PDF-"), 0600); err != nil {
+			t.Fatal(err)
+		}
 	}
 }

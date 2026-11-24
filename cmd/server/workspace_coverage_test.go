@@ -178,6 +178,7 @@ func TestMergedCrossTramiteCoverageBelongsToEarliestAndBacksEveryTramite(t *test
 	}
 	// Ambos trámites siguen viéndose cubiertos, cada uno con su fecha.
 	s := &server{workspacesDir: t.TempDir()}
+	writeCoverageRecordFiles(t, s, merged)
 	index := s.indexCoverageDocuments(merged)
 	if index[501] == nil || !index[501].Dates["2026-09-20"] || index[502] == nil || !index[502].Dates["2026-09-05"] {
 		t.Fatalf("índice de coberturas = %#v", index)
