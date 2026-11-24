@@ -1,7 +1,7 @@
 # Graph Report - spd_msp  (2026-11-24)
 
 ## Corpus Check
-- 78 files · ~137,541 words
+- 78 files · ~137,624 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 7 file(s) not represented in the graph (top: (none) 3, .example 1, .zip 1)
 
@@ -11,7 +11,7 @@
 - Token cost: 98,403 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `fb4112bc`
+- Built from commit: `bef83b12`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -350,7 +350,7 @@ _Questions this graph is uniquely positioned to answer:_
 - **Should `App.vue Main UI State` be split into smaller, more focused modules?**
   _Cohesion score 0.005420054200542005 - nodes in this community are weakly interconnected._
 - **Why does `server` connect `Server Core Handlers` to `objeciones.go`, `Coverage Records & Indexing`, `Demo Lot & Coverage Marking`, `Historical Archive Tests`, `Workspace Rename & ZIP`, `testing.T`, `reemplazo_coberturas.go`, `stagedJob`, `ingesta.go`, `Buscar por Planilla`, `objeciones_sync.go`?**
-  _High betweenness centrality (0.019) - this node is a cross-community bridge._
+  _High betweenness centrality (0.018) - this node is a cross-community bridge._
 
 ### Low-confidence Hints
 _AMBIGUOUS edges — the extractor was unsure. Verify before acting on these._
