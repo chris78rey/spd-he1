@@ -414,9 +414,9 @@
     "semantic_hash": ""
   },
   "scripts/cobertura/download_site_pdf.cjs": {
-    "mtime": 1795014205.4766958,
-    "seen": 1795014473.184666,
-    "ast_hash": "85aeea230cf34aa20e896369ecbf3ac2",
+    "mtime": 1795543306.2265036,
+    "seen": 1795543384.9537435,
+    "ast_hash": "7ec65a391b93d4ece982537a67cfe999",
     "semantic_hash": ""
   },
   "cmd/server/reemplazo_coberturas.go": {

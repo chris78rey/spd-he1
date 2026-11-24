@@ -1,7 +1,7 @@
 # Graph Report - spd_msp  (2026-11-24)
 
 ## Corpus Check
-- 78 files · ~136,482 words
+- 78 files · ~136,532 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 7 file(s) not represented in the graph (top: (none) 3, .example 1, .zip 1)
 
@@ -11,7 +11,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `05148b4d`
+- Built from commit: `efec4488`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -89,10 +89,10 @@
 10. `Principios de producto de Folio` - 27 edges
 
 ## Surprising Connections (you probably didn't know these)
-- `OCR/classification pipeline (pdftoppm, Tesseract spa, PENDIENTE_tmp_)` --semantically_similar_to--> `OCR fallback: Tesseract Spanish on first page only when no text`  [INFERRED] [semantically similar]
-  README.md → .agents/skills/folio-pdf-review/SKILL.md
 - `Decision: classify by document header` --semantically_similar_to--> `Classification precedence: filename alias, header phrases, priority phrases, regular rules`  [INFERRED] [semantically similar]
   PRINCIPIOS_DE_PRODUCTO.md → .agents/skills/folio-pdf-review/SKILL.md
+- `OCR/classification pipeline (pdftoppm, Tesseract spa, PENDIENTE_tmp_)` --semantically_similar_to--> `OCR fallback: Tesseract Spanish on first page only when no text`  [INFERRED] [semantically similar]
+  README.md → .agents/skills/folio-pdf-review/SKILL.md
 - `Query: de qué trata esta app` --references--> `Principios de producto de Folio`  [INFERRED]
   graphify-out/memory/query_20261023_185439_02b394f2_revisa_en_graphify_de_que_se_trata_este_app.md → PRINCIPIOS_DE_PRODUCTO.md
 - `folio.service systemd unit` --references--> `Compare active service process executable, bin/folio-server, dist/ and HTTP frontend with fresh build`  [INFERRED]
@@ -332,16 +332,16 @@ Nodes (3): coverageEarliestDate(), coveragePlanillaKey(), workspaceCrossCoverage
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `server` connect `PDF Ingest Handlers` to `Demo Batch Generator`, `testing.T`, `workspace.go`, `context.Context`, `objeciones.go`?**
-  _High betweenness centrality (0.016) - this node is a cross-community bridge._
+- **Why does `stagedJob` connect `PDF Ingest Handlers` to `ingesta.go`, `testing.T`, `workspace.go`, `ingesta.go`, `context.Context`, `objeciones.go`?**
+  _High betweenness centrality (0.026) - this node is a cross-community bridge._
 - **Are the 52 inferred relationships involving `packageFolderName()` (e.g. with `TestMergedDuplicateCountsOnlyWhenTheMergedFileDoesNotListItsSheets()` and `TestOnlyTheLatestRecordOfAPathCountsAsSavedSheet()`) actually correct?**
   _`packageFolderName()` has 52 INFERRED edges - model-reasoned connections that need verification._
 - **What connects `folio`, `Remove all PDFs of selected team folders with three confirmations`, `Resultado principal: save, find and trust document actions` to the rest of the system?**
   _50 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `App.vue Main Component State` be split into smaller, more focused modules?**
   _Cohesion score 0.005420054200542005 - nodes in this community are weakly interconnected._
-- **Why does `stagedJob` connect `PDF Ingest Handlers` to `ingesta.go`, `testing.T`, `workspace.go`, `ingesta.go`, `context.Context`, `objeciones.go`?**
-  _High betweenness centrality (0.013) - this node is a cross-community bridge._
+- **Why does `server` connect `PDF Ingest Handlers` to `Demo Batch Generator`, `testing.T`, `workspace.go`, `context.Context`, `objeciones.go`?**
+  _High betweenness centrality (0.014) - this node is a cross-community bridge._
 - **Should `PDF Ingest Handlers` be split into smaller, more focused modules?**
   _Cohesion score 0.06314127861089187 - nodes in this community are weakly interconnected._
 
