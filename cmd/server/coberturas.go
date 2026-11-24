@@ -395,8 +395,8 @@ func (s *server) generateCoverageSheetsWithDate(w http.ResponseWriter, r *http.R
 	}
 	previousExternal := append([]workspaceDocument(nil), job.ExternalPDFs...)
 	previousDeleted := cloneBoolMap(job.DeletedPDFs)
+	adoptRemovedPaths(&job, newDocuments)
 	job.ExternalPDFs = append(job.ExternalPDFs, newDocuments...)
-	forgetDeletedPaths(&job, newDocuments)
 	if err := s.saveStagedJob(job); err != nil {
 		job.ExternalPDFs = previousExternal
 		job.DeletedPDFs = previousDeleted
@@ -894,8 +894,8 @@ func (s *server) uploadManualCoverageSheets(w http.ResponseWriter, r *http.Reque
 	}
 	previousExternal := append([]workspaceDocument(nil), job.ExternalPDFs...)
 	previousDeleted := cloneBoolMap(job.DeletedPDFs)
+	adoptRemovedPaths(&job, documents)
 	job.ExternalPDFs = append(job.ExternalPDFs, documents...)
-	forgetDeletedPaths(&job, documents)
 	delete(job.CoverageFailures, row.ID)
 	if err := s.saveStagedJob(job); err != nil {
 		job.ExternalPDFs = previousExternal
@@ -1333,11 +1333,19 @@ func (s *server) coverageDocumentRemoved(job stagedJob, relative string) bool {
 	return errors.Is(err, os.ErrNotExist)
 }
 
-// forgetDeletedPaths clears the removal mark of paths that hold a new PDF, so
-// a later reclassification does not remove the new file.
-func forgetDeletedPaths(job *stagedJob, documents []workspaceDocument) {
+// adoptRemovedPaths prepares paths that will hold a new PDF. When the path
+// was marked as removed, its older records describe the removed file and are
+// dropped, so they do not count again as saved sheets; the mark is cleared so
+// a later reclassification does not remove the new file. Call it before
+// appending the new records.
+func adoptRemovedPaths(job *stagedJob, documents []workspaceDocument) {
 	for _, doc := range documents {
-		delete(job.DeletedPDFs, filepath.ToSlash(filepath.Clean(filepath.FromSlash(doc.RelativePath))))
+		path := filepath.ToSlash(filepath.Clean(filepath.FromSlash(doc.RelativePath)))
+		if !job.DeletedPDFs[path] {
+			continue
+		}
+		job.ExternalPDFs = withoutWorkspaceDocumentsAt(job.ExternalPDFs, path)
+		delete(job.DeletedPDFs, path)
 	}
 }
 

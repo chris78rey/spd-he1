@@ -238,16 +238,30 @@ func TestRemovedCoverageSheetNoLongerCountsAsSavedForItsDate(t *testing.T) {
 	}
 }
 
-func TestForgetDeletedPathsAndWithoutWorkspaceDocumentsAt(t *testing.T) {
+func TestAdoptRemovedPathsDropsRecordsOfTheRemovedFile(t *testing.T) {
 	path := "4. EXPEDIENTES/PACIENTE_PRUEBA/C_COBERTURA.pdf"
-	job := stagedJob{DeletedPDFs: map[string]bool{path: true, "4. EXPEDIENTES/OTRO/HCU_002.pdf": true}}
-	forgetDeletedPaths(&job, []workspaceDocument{{RelativePath: path}})
+	other := "4. EXPEDIENTES/PACIENTE_PRUEBA/HCU_002.pdf"
+	job := stagedJob{
+		DeletedPDFs: map[string]bool{path: true, "4. EXPEDIENTES/OTRO/HCU_002.pdf": true},
+		ExternalPDFs: []workspaceDocument{
+			{RelativePath: path, PlanillaID: 10, CoverageCedula: "1700000001", CoverageDate: "2026-07-07"},
+			{RelativePath: path, PlanillaID: 10, CoverageCedula: "1700000001", CoverageDate: "2026-07-10"},
+			{RelativePath: other, PlanillaID: 10},
+		},
+	}
+	fresh := workspaceDocument{RelativePath: path, PlanillaID: 10, CoverageCedula: "1700000001", CoverageDate: "2026-07-24"}
+	adoptRemovedPaths(&job, []workspaceDocument{fresh})
+	job.ExternalPDFs = append(job.ExternalPDFs, fresh)
 	if job.DeletedPDFs[path] || !job.DeletedPDFs["4. EXPEDIENTES/OTRO/HCU_002.pdf"] {
 		t.Fatalf("only the new PDF's path must lose its removal mark: %v", job.DeletedPDFs)
 	}
-	kept := withoutWorkspaceDocumentsAt([]workspaceDocument{{RelativePath: path}, {RelativePath: path}, {RelativePath: "4. EXPEDIENTES/PACIENTE_PRUEBA/HCU_002.pdf"}}, path)
-	if len(kept) != 1 || kept[0].RelativePath != "4. EXPEDIENTES/PACIENTE_PRUEBA/HCU_002.pdf" {
-		t.Fatalf("records of the removed path must be dropped: %+v", kept)
+	if len(job.ExternalPDFs) != 2 || job.ExternalPDFs[0].RelativePath != other || job.ExternalPDFs[1].CoverageDate != "2026-07-24" {
+		t.Fatalf("records of the removed file must be replaced by the new one: %+v", job.ExternalPDFs)
+	}
+	s := &server{workspacesDir: t.TempDir()}
+	row := coveragePlanilla{ID: 10, Cedula: "1700000001", Minor: "N", CareUntil: "2026-07-24"}
+	if missing := missingCoverageMembersForDate(s, job, row, "2026-07-07"); len(missing) != 1 {
+		t.Fatalf("the date of the removed file must still be consultable: %v", missing)
 	}
 }
 
