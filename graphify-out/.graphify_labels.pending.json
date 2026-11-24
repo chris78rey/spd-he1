@@ -2,8 +2,8 @@
   "2": ".indexCoverageDocuments",
   "5": "go_pkg_os",
   "8": "reemplazo_coberturas.cjs",
-  "9": "loadIngestPreview",
-  "12": "reemplazo_coberturas_test.go",
+  "9": "loadSavedWorkspaces",
+  "12": "testing.T",
   "14": "workspace.go",
   "16": "ingesta.go",
   "17": "download_site_pdf.cjs",
@@ -11,9 +11,9 @@
   "19": "planilla_provision.go",
   "20": "cobertura_marca.go",
   "23": "runtime_config.cjs",
-  "27": "historical_archive.go",
+  "27": "reemplazo_coberturas.go",
   "28": "ocr_respaldo",
-  "31": "stagedJob",
+  "31": "objeciones.go",
   "32": "Security decision: deleting full periods requires SPD_BORRA_EXPEDIENTE",
   "33": "historicalArchiveTestServer",
   "36": "coverageHasLastAttentionSheet",
@@ -23,7 +23,7 @@
   "44": "reglas_clasificacion.yaml",
   "47": "reemplazo_coberturas.test.cjs",
   "48": "context.Context",
-  "62": "testing.T",
-  "63": "workspaceCrossCoverageGroups",
-  "66": "workspace_auditor_import.go"
+  "57": "objeciones_sync.go",
+  "61": "stagedJob",
+  "63": "workspaceCrossCoverageGroups"
 }

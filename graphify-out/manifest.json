@@ -6,9 +6,9 @@
     "semantic_hash": ""
   },
   "src/App.vue": {
-    "mtime": 1795535966.0603123,
-    "seen": 1795538115.1004715,
-    "ast_hash": "ceb678de3e2d8e904c1163836f6f37a7",
+    "mtime": 1795539273.264854,
+    "seen": 1795539292.72356,
+    "ast_hash": "1a7b83b6e76cb10a1103ff160a93244c",
     "semantic_hash": ""
   },
   "src/main.js": {
@@ -30,9 +30,9 @@
     "semantic_hash": "8d16fe2490aa9a9bd7f0ca0d46158518"
   },
   "PRINCIPIOS_DE_PRODUCTO.md": {
-    "mtime": 1795535966.044312,
-    "seen": 1795538115.1010273,
-    "ast_hash": "266b316b852235cee36e0a36931c83bd",
+    "mtime": 1795539288.108957,
+    "seen": 1795539292.7242486,
+    "ast_hash": "d9b8e7a3511b971cba82305e07bb840b",
     "semantic_hash": ""
   },
   "index.html": {
@@ -144,9 +144,9 @@
     "semantic_hash": "0308368873d810f250d04829e91bb3a3"
   },
   "cmd/server/workspace.go": {
-    "mtime": 1795538086.5435243,
-    "seen": 1795538115.0986269,
-    "ast_hash": "1291d587e9d7308087992ac2fc1799c1",
+    "mtime": 1795539212.3834317,
+    "seen": 1795539292.722444,
+    "ast_hash": "7e45138ad58d895aaf8f28d8d59060ce",
     "semantic_hash": ""
   },
   "catalogos/codigos_msp.json": {
@@ -174,9 +174,9 @@
     "semantic_hash": "34c6851ce060f07f2b6158267f717097"
   },
   "cmd/server/coberturas.go": {
-    "mtime": 1795538805.6726453,
-    "seen": 1795538870.9192276,
-    "ast_hash": "6be55f0749259b11d26cb633723abdfe",
+    "mtime": 1795539212.3824317,
+    "seen": 1795539292.7207053,
+    "ast_hash": "225a223bf5688732ead8ccf82db98dbc",
     "semantic_hash": ""
   },
   "scripts/cobertura/runtime_config.cjs": {
@@ -270,9 +270,9 @@
     "semantic_hash": "7bfa8dccb8d738ca2ed9e2ab9539f120"
   },
   "cmd/server/coberturas_test.go": {
-    "mtime": 1795538805.6806452,
-    "seen": 1795538870.9192371,
-    "ast_hash": "637920ae551ce12aebe33c53c4ab88b8",
+    "mtime": 1795539227.6115372,
+    "seen": 1795539292.7207146,
+    "ast_hash": "98dfd40f4ad18b883031bd578f0d5ed6",
     "semantic_hash": ""
   },
   "cmd/server/workspace_coverage_test.go": {
