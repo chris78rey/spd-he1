@@ -399,3 +399,16 @@ func withRepositoryWorkingDirectory(t *testing.T) {
 		}
 	})
 }
+
+func TestFolioWorkingCopiesAreNotDelivered(t *testing.T) {
+	for _, name := range []string{"C_COBERTURA.pdf.folio-fusion-backup-0", "HCU_010_1.pdf.folio-fusion-backup-2", "HCU_002.pdf.folio-delete-0a1b2c3d4e5f6a7b", "C_COBERTURA.pdf.folio-reemplazo-backup", "P_INDIVIDUAL.pdf.folio-backup"} {
+		if !isFolioWorkingCopy(name) {
+			t.Errorf("%s must be excluded from the ZIP", name)
+		}
+	}
+	for _, name := range []string{"C_COBERTURA.pdf", "HCU_010_1.pdf", "Anexos.pdf", "3. MATRIZ_OBJECIONES.xlsm"} {
+		if isFolioWorkingCopy(name) {
+			t.Errorf("%s must be delivered", name)
+		}
+	}
+}

@@ -812,6 +812,9 @@ func (s *server) downloadWorkspaceZIP(w http.ResponseWriter, r *http.Request) {
 			}
 			return nil
 		}
+		if !file.IsDir() && isFolioWorkingCopy(file.Name()) {
+			return nil
+		}
 		relative, err := filepath.Rel(root, filePath)
 		if err != nil {
 			return err
@@ -2318,13 +2321,16 @@ func (s *server) mergeWorkspacePDFs(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "No se pudo registrar la fusión; se restauraron los originales.")
 		return
 	}
+	// The merge is saved: the backups are no longer needed for a rollback.
+	// Remove them before syncing Oracle, so a sync failure does not leave
+	// *.folio-fusion-backup-N files in the patient folder (and the ZIP).
+	for _, saved := range backupPaths {
+		_ = os.Remove(saved)
+	}
 	if err := s.syncOracleWorkspace(r.Context(), &job, packageRoot); err != nil {
 		log.Printf("expediente %s: falló sincronización Oracle tras fusionar %s: %v", job.ID, canonicalRelative, err)
 		writeError(w, http.StatusInternalServerError, "Los PDFs se fusionaron en el espacio, pero no se pudo sincronizar Oracle.")
 		return
-	}
-	for _, saved := range backupPaths {
-		_ = os.Remove(saved)
 	}
 	// Update the stored report so duplicate entries no longer appear as separate active outputs.
 	reportPath := filepath.Join(s.jobRoot(job.ID), "reportes", "classification_report.json")
@@ -2662,4 +2668,11 @@ func (s *server) addWorkspacePDFs(w http.ResponseWriter, r *http.Request, job st
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"job_id": job.ID, "documents": documents, "patients": patients, "added": added, "added_count": len(added), "replaced_count": 0})
+}
+
+// isFolioWorkingCopy reports temporary copies Folio keeps next to a PDF while
+// it merges, removes, replaces or uploads it (for example
+// HCU_010.pdf.folio-fusion-backup-0). They are never part of the delivery.
+func isFolioWorkingCopy(name string) bool {
+	return strings.Contains(strings.ToLower(name), ".folio-")
 }
