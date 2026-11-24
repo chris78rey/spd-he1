@@ -128,8 +128,11 @@ async function launchChrome() {
   if ((process.getuid && process.getuid() === 0) || isTrue(process.env.COBERTURA_CHROME_NO_SANDBOX)) {
     args.push("--no-sandbox");
   }
+  // El portal escribe "Fecha de consulta" con la hora del navegador. El servidor está en UTC,
+  // así que Chrome usa la zona horaria de Ecuador (o COBERTURA_TZ) para que la hoja muestre la hora real.
+  const env = { ...process.env, TZ: (process.env.COBERTURA_TZ || "").trim() || "America/Guayaquil" };
   // detached: Chrome crea procesos auxiliares; se cierran todos matando el grupo.
-  const child = spawn(exe, args, { stdio: ["ignore", "ignore", "pipe"], detached: true });
+  const child = spawn(exe, args, { stdio: ["ignore", "ignore", "pipe"], detached: true, env });
   let exited = false;
   let stderrTail = "";
   child.stderr.on("data", (chunk) => {
