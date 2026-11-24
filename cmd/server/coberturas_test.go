@@ -382,3 +382,32 @@ func TestMergeMetadataUsesOnlyTheCurrentRecordOfEachPath(t *testing.T) {
 		t.Fatalf("merged file must list only the sheets it contains, got %v", dates)
 	}
 }
+
+func TestKeepMissingMembersDropsSheetsSavedMeanwhile(t *testing.T) {
+	members := []coverageMember{{Cedula: "1700000010", Fecha: "2026-07-24"}, {Cedula: "1700000011", Fecha: "2026-07-24"}}
+	files := []string{"/tmp/menor.pdf", "/tmp/referente.pdf"}
+	keptMembers, keptFiles := keepMissingMembers(members, files, []coverageMember{{Cedula: "1700000011", Fecha: "2026-07-24"}})
+	if len(keptMembers) != 1 || keptMembers[0].Cedula != "1700000011" || len(keptFiles) != 1 || keptFiles[0] != "/tmp/referente.pdf" {
+		t.Fatalf("only the sheet still missing must be saved: %v %v", keptMembers, keptFiles)
+	}
+}
+
+func TestWorkspaceFolderPlanillasUsesLinkedPDFsAndFolderLinks(t *testing.T) {
+	root := "/datos/trabajo/AMBULATORIO_JULIO_2026"
+	byPath := map[string]int64{
+		"4. EXPEDIENTES/PACIENTE_UNO/HCU_002.pdf":      101,
+		"4. EXPEDIENTES/PACIENTE_DOS/HCU_002.pdf":      201,
+		"4. EXPEDIENTES/PACIENTE_DOS/P_INDIVIDUAL.pdf": 202,
+	}
+	planillas := map[int64]string{301: filepath.Join(root, "4. EXPEDIENTES", "PACIENTE_TRES")}
+	folders := workspaceFolderPlanillas(byPath, planillas, root)
+	if len(folders["PACIENTE_UNO"]) != 1 || !folders["PACIENTE_UNO"][101] {
+		t.Fatalf("a folder with one trámite must resolve to it: %v", folders["PACIENTE_UNO"])
+	}
+	if len(folders["PACIENTE_DOS"]) != 2 {
+		t.Fatalf("a folder with two trámites must stay ambiguous: %v", folders["PACIENTE_DOS"])
+	}
+	if !folders["PACIENTE_TRES"][301] {
+		t.Fatalf("a folder link must count: %v", folders["PACIENTE_TRES"])
+	}
+}

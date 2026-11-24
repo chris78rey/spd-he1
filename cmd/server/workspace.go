@@ -406,10 +406,11 @@ func (s *server) workspaceDocuments(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "No se encontró el espacio de trabajo.")
 		return
 	}
-	if r.Method == http.MethodPost {
+	if r.Method == http.MethodPost || r.Method == http.MethodDelete {
 		s.ingestMu.Lock()
 		defer s.ingestMu.Unlock()
-		// Reload after taking the lock so concurrent additions reserve distinct suffixes.
+		// Reload after taking the lock so concurrent additions reserve distinct
+		// suffixes and a removal never overwrites a change saved meanwhile.
 		job, err = s.loadStagedJob(id)
 		if err != nil {
 			writeError(w, http.StatusNotFound, "No se encontró el espacio de trabajo.")

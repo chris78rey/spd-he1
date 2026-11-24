@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -297,6 +298,7 @@ func (s *server) syncOracleWorkspace(ctx context.Context, job *stagedJob, packag
 		return err
 	}
 	extraPlanillas := coverageExtraPlanillas(job, planillaByPath, planillas)
+	folderPlanillas := workspaceFolderPlanillas(planillaByPath, planillas, packageRoot)
 	active := make([]oracleDocument, 0, len(documents))
 	for _, doc := range documents {
 		if !strings.HasPrefix(doc.Path, "4. EXPEDIENTES/") {
@@ -306,6 +308,18 @@ func (s *server) syncOracleWorkspace(ctx context.Context, job *stagedJob, packag
 			continue
 		}
 		id := planillaByPath[doc.Path]
+		if id <= 0 {
+			// A PDF without its own record belongs to the only trámite of its
+			// folder; this keeps one unlinked PDF from blocking the period.
+			if parts := strings.Split(doc.Path, "/"); len(parts) >= 3 {
+				if ids := folderPlanillas[parts[1]]; len(ids) == 1 {
+					for only := range ids {
+						id = only
+					}
+					log.Printf("expediente %s: %s sin registro propio; se asocia al único trámite de su carpeta (PDI_ID=%d)", job.ID, doc.Path, id)
+				}
+			}
+		}
 		if id <= 0 {
 			return fmt.Errorf("no se pudo asociar %s a una planilla Oracle; seleccione un expediente con PDI_TRAMITE inequívoco", doc.Path)
 		}
@@ -506,4 +520,31 @@ func (s *server) clearOracleWorkspaceIndex(ctx context.Context, job stagedJob, p
 		}
 	}
 	return tx.Commit()
+}
+
+// workspaceFolderPlanillas lists the trámites known for each patient folder,
+// from the PDFs already linked to a planilla and from folder links.
+func workspaceFolderPlanillas(planillaByPath map[string]int64, planillas map[int64]string, packageRoot string) map[string]map[int64]bool {
+	folders := make(map[string]map[int64]bool)
+	add := func(folder string, id int64) {
+		if folder == "" || id <= 0 {
+			return
+		}
+		if folders[folder] == nil {
+			folders[folder] = make(map[int64]bool)
+		}
+		folders[folder][id] = true
+	}
+	for path, id := range planillaByPath {
+		if parts := strings.Split(path, "/"); len(parts) >= 3 && parts[0] == "4. EXPEDIENTES" {
+			add(parts[1], id)
+		}
+	}
+	expedientes := filepath.Join(packageRoot, "4. EXPEDIENTES")
+	for id, folderPath := range planillas {
+		if filepath.Dir(folderPath) == expedientes {
+			add(filepath.Base(folderPath), id)
+		}
+	}
+	return folders
 }

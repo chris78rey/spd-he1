@@ -320,23 +320,24 @@ func (s *server) generateCoverageSheetsWithDate(w http.ResponseWriter, r *http.R
 		writeError(w, http.StatusInternalServerError, "No se pudo preparar la carpeta privada de generación.")
 		return
 	}
-	newDocuments := make([]workspaceDocument, 0)
-	createdTargets := make([]string, 0)
-	createdSources := make([]string, 0)
-	rollback := func() {
-		for _, path := range createdTargets {
-			_ = os.Remove(path)
-		}
-		for _, path := range createdSources {
-			_ = os.Remove(path)
-		}
+	// Phase 1: consult the portal without holding s.ingestMu. It can take
+	// minutes, and nothing in the folder or the job changes here.
+	type coverageOutcome struct {
+		row       coveragePlanilla
+		queryDate string
+		members   []coverageMember
+		files     []string
+		done      bool
+		failure   *coverageFailure
 	}
-	generatedIDs := make([]int64, 0, len(chosen))
+	outcomes := make([]coverageOutcome, 0, len(chosen))
 	queryDates := make(map[int64]string, len(chosen))
-	failures := make([]coverageFailureItem, 0)
-	if job.CoverageFailures == nil {
-		job.CoverageFailures = make(map[int64]coverageFailure)
-	}
+	tempRoots := make([]string, 0)
+	defer func() {
+		for _, root := range tempRoots {
+			_ = os.RemoveAll(root)
+		}
+	}()
 	for _, row := range chosen {
 		rowQueryDate := row.CareUntil
 		members := coverageMembersAt(row, rowQueryDate)
@@ -345,9 +346,7 @@ func (s *server) generateCoverageSheetsWithDate(w http.ResponseWriter, r *http.R
 			if mode == coverageModeLastAttention {
 				rowQueryDate = lastAttentionDate(row)
 				if rowQueryDate == "" {
-					reason := "SIS no registra días de atención para esta planilla ni Oracle tiene su fecha hasta."
-					job.CoverageFailures[row.ID] = coverageFailure{Reason: reason, Manual: false}
-					failures = append(failures, coverageFailureItem{PlanillaID: row.ID, Tramite: row.Tramite, Reason: reason, Manual: false})
+					outcomes = append(outcomes, coverageOutcome{row: row, failure: &coverageFailure{Reason: "SIS no registra días de atención para esta planilla ni Oracle tiene su fecha hasta.", Manual: false}})
 					continue
 				}
 			}
@@ -360,8 +359,7 @@ func (s *server) generateCoverageSheetsWithDate(w http.ResponseWriter, r *http.R
 				members = missingCoverageMembersForDate(s, job, row, rowQueryDate)
 			}
 			if len(members) == 0 && len(expectedMembers) > 0 {
-				generatedIDs = append(generatedIDs, row.ID)
-				delete(job.CoverageFailures, row.ID)
+				outcomes = append(outcomes, coverageOutcome{row: row, queryDate: rowQueryDate, done: true})
 				continue
 			}
 			if len(members) == 0 {
@@ -369,19 +367,79 @@ func (s *server) generateCoverageSheetsWithDate(w http.ResponseWriter, r *http.R
 				if row.ManualCedula {
 					reason += " Como sus PDFs vienen de Carpetas del equipo, escribe la cédula que quieres consultar."
 				}
-				failure := coverageFailure{Reason: reason, QueryDate: rowQueryDate, CustomDate: customDate, Manual: false}
-				job.CoverageFailures[row.ID] = failure
-				failures = append(failures, coverageFailureItem{PlanillaID: row.ID, Tramite: row.Tramite, Reason: reason, Manual: false})
+				outcomes = append(outcomes, coverageOutcome{row: row, failure: &coverageFailure{Reason: reason, QueryDate: rowQueryDate, CustomDate: customDate, Manual: false}})
 				continue
 			}
 		} else if coverageHasDate(row, row.CareUntil) {
+			outcomes = append(outcomes, coverageOutcome{row: row, queryDate: rowQueryDate, done: true})
+			continue
+		}
+		tempRoot, files, failure := s.fetchCoverageSheetsFromPortal(ctx, job, packageRoot, row, members)
+		if tempRoot != "" {
+			tempRoots = append(tempRoots, tempRoot)
+		}
+		if failure != nil {
+			failure.QueryDate, failure.CustomDate = rowQueryDate, customDate
+			failure.PendingCedulas = coverageMemberCedulas(members)
+		}
+		outcomes = append(outcomes, coverageOutcome{row: row, queryDate: rowQueryDate, members: members, files: files, failure: failure})
+	}
+
+	// Phase 2: save under s.ingestMu on the job as it is now. Other requests
+	// (merges, removals, other coverage queries) may have saved it meanwhile;
+	// reusing the copy read at the start would overwrite their changes and
+	// leave PDFs without a record.
+	s.ingestMu.Lock()
+	defer s.ingestMu.Unlock()
+	job, err = s.coverageJob(id)
+	if err != nil {
+		writeError(w, http.StatusConflict, err.Error())
+		return
+	}
+	newDocuments := make([]workspaceDocument, 0)
+	createdTargets := make([]string, 0)
+	createdSources := make([]string, 0)
+	rollback := func() {
+		for _, path := range createdTargets {
+			_ = os.Remove(path)
+		}
+		for _, path := range createdSources {
+			_ = os.Remove(path)
+		}
+	}
+	generatedIDs := make([]int64, 0, len(chosen))
+	failures := make([]coverageFailureItem, 0)
+	if job.CoverageFailures == nil {
+		job.CoverageFailures = make(map[int64]coverageFailure)
+	}
+	for _, outcome := range outcomes {
+		row := outcome.row
+		if outcome.done {
 			generatedIDs = append(generatedIDs, row.ID)
 			delete(job.CoverageFailures, row.ID)
 			continue
 		}
-		documents, targets, sources, failure := s.generateCoveragePlanilla(ctx, job, packageRoot, sourceRoot, row, rowQueryDate, members)
+		if outcome.failure != nil {
+			job.CoverageFailures[row.ID] = *outcome.failure
+			failures = append(failures, coverageFailureItem{PlanillaID: row.ID, Tramite: row.Tramite, Reason: outcome.failure.Reason, Manual: outcome.failure.Manual})
+			continue
+		}
+		members, files := outcome.members, outcome.files
+		if customDate {
+			current := missingCoverageMembersForDate(s, job, row, outcome.queryDate)
+			if input.Cedula != "" {
+				current = missingCoverageMemberForDate(s, job, row, outcome.queryDate, input.Cedula)
+			}
+			members, files = keepMissingMembers(members, files, current)
+			if len(members) == 0 {
+				generatedIDs = append(generatedIDs, row.ID)
+				delete(job.CoverageFailures, row.ID)
+				continue
+			}
+		}
+		documents, targets, sources, failure := s.placeCoverageSheets(packageRoot, sourceRoot, row, outcome.queryDate, members, files)
 		if failure != nil {
-			failure.QueryDate, failure.CustomDate = rowQueryDate, customDate
+			failure.QueryDate, failure.CustomDate = outcome.queryDate, customDate
 			failure.PendingCedulas = coverageMemberCedulas(members)
 			job.CoverageFailures[row.ID] = *failure
 			failures = append(failures, coverageFailureItem{PlanillaID: row.ID, Tramite: row.Tramite, Reason: failure.Reason, Manual: failure.Manual})
@@ -474,31 +532,38 @@ func coverageScriptFailureTag(output []byte) string {
 	}
 }
 
-func (s *server) generateCoveragePlanilla(ctx context.Context, job stagedJob, packageRoot, sourceRoot string, row coveragePlanilla, queryDate string, members []coverageMember) ([]workspaceDocument, []string, []string, *coverageFailure) {
+func coveragePatientFolder(row coveragePlanilla) string {
+	if folder := strings.TrimSpace(row.PatientFolder); folder != "" {
+		return folder
+	}
+	return normalizePatientFolder(row.Patient)
+}
+
+// fetchCoverageSheetsFromPortal consults the MSP portal for each member and returns
+// validated PDFs in a private temporary folder. It changes nothing in the
+// patient folder or the job, so it runs without holding s.ingestMu. The
+// caller removes tempRoot.
+func (s *server) fetchCoverageSheetsFromPortal(ctx context.Context, job stagedJob, packageRoot string, row coveragePlanilla, members []coverageMember) (string, []string, *coverageFailure) {
 	if len(members) == 0 {
-		return nil, nil, nil, &coverageFailure{Reason: "La planilla no tiene una cédula válida de 10 dígitos o una fecha de atención.", Manual: false}
+		return "", nil, &coverageFailure{Reason: "La planilla no tiene una cédula válida de 10 dígitos o una fecha de atención.", Manual: false}
 	}
-	patientFolder := strings.TrimSpace(row.PatientFolder)
+	patientFolder := coveragePatientFolder(row)
 	if patientFolder == "" {
-		patientFolder = normalizePatientFolder(row.Patient)
-	}
-	if patientFolder == "" {
-		return nil, nil, nil, &coverageFailure{Reason: "Oracle no devuelve un nombre de paciente utilizable para este trámite.", Manual: false}
+		return "", nil, &coverageFailure{Reason: "Oracle no devuelve un nombre de paciente utilizable para este trámite.", Manual: false}
 	}
 	patientDir := filepath.Join(packageRoot, "4. EXPEDIENTES", patientFolder)
 	if info, err := os.Stat(patientDir); err != nil || !info.IsDir() {
-		return nil, nil, nil, &coverageFailure{Reason: "El ZIP no produjo la carpeta de expediente de este trámite.", Manual: false}
+		return "", nil, &coverageFailure{Reason: "El ZIP no produjo la carpeta de expediente de este trámite.", Manual: false}
 	}
 	tempRoot, err := os.MkdirTemp(s.jobRoot(job.ID), ".coverage-")
 	if err != nil {
-		return nil, nil, nil, &coverageFailure{Reason: "No se pudo preparar la generación temporal del PDF.", Manual: false}
+		return "", nil, &coverageFailure{Reason: "No se pudo preparar la generación temporal del PDF.", Manual: false}
 	}
-	defer os.RemoveAll(tempRoot)
 	generated := make([]string, 0, len(members))
 	for index, member := range members {
 		outputDir := filepath.Join(tempRoot, strconv.Itoa(index+1))
 		if err := os.MkdirAll(outputDir, 0700); err != nil {
-			return nil, nil, nil, &coverageFailure{Reason: "No se pudo preparar una salida temporal.", Manual: false}
+			return tempRoot, nil, &coverageFailure{Reason: "No se pudo preparar una salida temporal.", Manual: false}
 		}
 		outputName := fmt.Sprintf("cobertura_%d_%d", row.ID, index+1)
 		cmd := exec.CommandContext(ctx, envOr("NODE_BIN", "node"), coverageScript, "--cedula", member.Cedula, "--fecha", member.Fecha, "--output_name", outputName, "--output_dir", outputDir)
@@ -507,16 +572,28 @@ func (s *server) generateCoveragePlanilla(ctx context.Context, job stagedJob, pa
 			tag := coverageScriptFailureTag(output)
 			log.Printf("coberturas %s PDI_ID=%d: consulta al portal fallida (%T, %s)", job.ID, row.ID, err, tag)
 			if tag == coverageTagSiteLimit {
-				return nil, nil, nil, &coverageFailure{Reason: "El portal MSP alcanzó su límite de consultas. Espera unos minutos y reintenta, o descarga manualmente las hojas de esta planilla.", Manual: true}
+				return tempRoot, nil, &coverageFailure{Reason: "El portal MSP alcanzó su límite de consultas. Espera unos minutos y reintenta, o descarga manualmente las hojas de esta planilla.", Manual: true}
 			}
-			return nil, nil, nil, &coverageFailure{Reason: "El portal MSP no respondió correctamente. Descarga manualmente las hojas de esta planilla.", Manual: true}
+			return tempRoot, nil, &coverageFailure{Reason: "El portal MSP no respondió correctamente. Descarga manualmente las hojas de esta planilla.", Manual: true}
 		}
 		pdfPath := filepath.Join(outputDir, outputName+".pdf")
 		if err := validateCoveragePDF(pdfPath, member.Cedula, member.Fecha); err != nil {
 			log.Printf("coberturas %s PDI_ID=%d: PDF automático rechazado (%T)", job.ID, row.ID, err)
-			return nil, nil, nil, &coverageFailure{Reason: "La descarga no produjo un PDF legible o no corresponde a la cédula y fecha consultadas. Descarga manualmente las hojas de esta planilla.", Manual: true}
+			return tempRoot, nil, &coverageFailure{Reason: "La descarga no produjo un PDF legible o no corresponde a la cédula y fecha consultadas. Descarga manualmente las hojas de esta planilla.", Manual: true}
 		}
 		generated = append(generated, pdfPath)
+	}
+	return tempRoot, generated, nil
+}
+
+// placeCoverageSheets copies downloaded sheets into the patient folder with
+// the next free C_COBERTURA name. The caller must hold s.ingestMu, so two
+// requests never pick the same name.
+func (s *server) placeCoverageSheets(packageRoot, sourceRoot string, row coveragePlanilla, queryDate string, members []coverageMember, generated []string) ([]workspaceDocument, []string, []string, *coverageFailure) {
+	patientFolder := coveragePatientFolder(row)
+	patientDir := filepath.Join(packageRoot, "4. EXPEDIENTES", patientFolder)
+	if info, err := os.Stat(patientDir); err != nil || !info.IsDir() {
+		return nil, nil, nil, &coverageFailure{Reason: "La carpeta del paciente ya no existe en el expediente.", Manual: false}
 	}
 	documents := make([]workspaceDocument, 0, len(members))
 	targets := make([]string, 0, len(members))
@@ -562,6 +639,24 @@ func (s *server) generateCoveragePlanilla(ctx context.Context, job stagedJob, pa
 		documents = append(documents, workspaceDocument{ID: strings.TrimSuffix(storedName, ".pdf"), StoredName: storedName, OriginalName: "C_COBERTURA.pdf", RelativePath: relative, Size: info.Size(), PlanillaID: row.ID, CoverageCedula: member.Cedula, CoverageDate: queryDate})
 	}
 	return documents, targets, sources, nil
+}
+
+// keepMissingMembers drops sheets another request saved while this one was
+// waiting for the portal, so the same cédula and date are not saved twice.
+func keepMissingMembers(members []coverageMember, files []string, missing []coverageMember) ([]coverageMember, []string) {
+	wanted := make(map[string]bool, len(missing))
+	for _, member := range missing {
+		wanted[member.Cedula] = true
+	}
+	keptMembers := make([]coverageMember, 0, len(members))
+	keptFiles := make([]string, 0, len(files))
+	for index, member := range members {
+		if wanted[member.Cedula] && index < len(files) {
+			keptMembers = append(keptMembers, member)
+			keptFiles = append(keptFiles, files[index])
+		}
+	}
+	return keptMembers, keptFiles
 }
 
 func validateCoveragePDF(path, expectedCedula, expectedDate string) error {
@@ -739,8 +834,8 @@ func (s *server) uploadManualCoverageSheets(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusUnauthorized, "Inicia sesión para continuar.")
 		return
 	}
-	job, err := s.coverageJob(strings.TrimPrefix(r.URL.Path, "/api/v1/coberturas/manual/"))
-	if err != nil {
+	jobID := strings.TrimPrefix(r.URL.Path, "/api/v1/coberturas/manual/")
+	if _, err := s.coverageJob(jobID); err != nil {
 		writeError(w, http.StatusConflict, err.Error())
 		return
 	}
@@ -751,6 +846,15 @@ func (s *server) uploadManualCoverageSheets(w http.ResponseWriter, r *http.Reque
 	}
 	if r.MultipartForm != nil {
 		defer r.MultipartForm.RemoveAll()
+	}
+	// Read the job under s.ingestMu after receiving the files, so a change
+	// saved meanwhile by another request is not overwritten.
+	s.ingestMu.Lock()
+	defer s.ingestMu.Unlock()
+	job, err := s.coverageJob(jobID)
+	if err != nil {
+		writeError(w, http.StatusConflict, err.Error())
+		return
 	}
 	pdiID, err := strconv.ParseInt(r.FormValue("pdi_id"), 10, 64)
 	if err != nil || pdiID <= 0 {
